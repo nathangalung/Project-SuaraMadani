@@ -1,0 +1,7 @@
+Aset SEMENTARA diambil dari https://km.itb.ac.id (milik KM ITB) untuk prototipe.
+Ganti dengan aset resmi dari Kominfo/Kabinet KM ITB sebelum rilis:
+- ribbon-*.webp, sparkle-yellow-lg.webp (ornamen pita & kilau)
+- ../logo-km.png       (lambang Keluarga Mahasiswa ITB)
+- blob-union.svg, rings-45.svg, ring-*.svg, arc-*.svg, star-*.webp, glow-star.webp (ornamen latar)
+- navlink-star.webp (bintang hover menu)
+- ../footer/*.webp (latar footer)
