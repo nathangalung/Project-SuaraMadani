@@ -1,0 +1,200 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      "**",
+      "!!**/build",
+      "!!**/.react-router",
+      "!!**/app/paraglide",
+      "!!**/project.inlang/cache"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 80
+  },
+  "javascript": {
+    "formatter": {
+      "semicolons": "asNeeded"
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "suspicious": {
+        "noExplicitAny": "error",
+        "noImportCycles": "error"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "app/**",
+        "!app/**/*.server.ts",
+        "!app/**/*.server.tsx",
+        "!app/**/*.test.ts",
+        "!app/components/**"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["**/server/**", "**/db/**"],
+                    "message": "Only *.server.ts files in app/ may import server/ or db/."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["app/root.tsx"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["**/db/**"],
+                    "message": "Only *.server.ts files in app/ may import db/."
+                  },
+                  {
+                    "group": ["**/server/**", "!**/server/**/*.server.ts"],
+                    "message": "app/root.tsx may import only server/**/*.server.ts."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["app/routes/api/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["**/db/**"],
+                    "message": "Only *.server.ts files in app/ may import db/."
+                  },
+                  {
+                    "group": ["**/server/**", "!**/server/**/*.server.ts"],
+                    "message": "API resource routes may import only server/**/*.server.ts."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["app/components/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["**/server/**", "**/db/**"],
+                    "message": "Only *.server.ts files in app/ may import server/ or db/."
+                  },
+                  {
+                    "group": ["**/features/**", "~/features/**"],
+                    "message": "app/components/ must not import app/features/."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["worker/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["**/app/**", "~/**"],
+                    "message": "worker/ must not import app/."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": ["shared/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "pg": "shared/ holds pure code without I/O.",
+                  "pg-boss": "shared/ holds pure code without I/O.",
+                  "drizzle-orm": "shared/ holds pure code without I/O.",
+                  "sharp": "shared/ holds pure code without I/O.",
+                  "hono": "shared/ holds pure code without I/O.",
+                  "better-auth": "shared/ holds pure code without I/O.",
+                  "node:fs": "shared/ holds pure code without I/O.",
+                  "node:fs/promises": "shared/ holds pure code without I/O."
+                },
+                "patterns": [
+                  {
+                    "group": ["**/server/**", "**/db/**", "**/app/**", "~/**"],
+                    "message": "shared/ holds pure code without I/O."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

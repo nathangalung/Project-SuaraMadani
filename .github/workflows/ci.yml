@@ -1,0 +1,242 @@
+# PLAN §10.7 gates, then deploy
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  OSV_SCANNER_VERSION: 2.6.0
+  OSV_SCANNER_SHA256: ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108
+  GITLEAKS_VERSION: 8.30.1
+  GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+  SQUAWK_VERSION: 2.66.0
+  SQUAWK_SHA256: e7965f8146b53cfa7a4625ceecfea5c6aeb35add39132210aa60b11ae180b9f4
+
+jobs:
+  gates:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.3
+      - run: bun install --frozen-lockfile
+      - name: Test environment
+        run: |
+          cp .env.example .env
+          {
+            echo "BETTER_AUTH_SECRETS=1:$(openssl rand -base64 32)"
+            echo "LACAK_LINK_KEYS=1:$(openssl rand -base64 32)"
+            echo "AUDIT_HMAC_KEY=$(openssl rand -base64 32)"
+          } >> .env
+      # Postgres, clamd and Mailpit
+      - name: Services
+        run: |
+          bun run db:up
+          docker compose -f infra/compose.dev.yaml --profile media build media-test
+      - run: bun run typecheck
+      - run: bunx biome ci .
+      # heif-dec, pdftoppm, ffmpeg live here
+      - name: Test
+        run: >-
+          docker compose -f infra/compose.dev.yaml --profile media run --rm
+          --user "$(id -u):$(id -g)" -e HOME=/tmp media-test bun run test
+      - run: bun run build
+      - run: bun run size
+      - run: bun run knip
+      - name: No published ports
+        run: |
+          if grep -nE '^\s+ports:' infra/compose.yaml; then
+            echo "::error::infra/compose.yaml publishes a port"
+            exit 1
+          fi
+      - name: No sql.raw outside migrations
+        run: |
+          if grep -rnE 'sql\.raw\(' app server worker db shared \
+            --include='*.ts' --include='*.tsx' \
+            | grep -v '^db/migrations/' | grep -v 'sql-raw-ok:'; then
+            echo "::error::sql.raw( needs // sql-raw-ok: <reason>"
+            exit 1
+          fi
+
+  # PLAN §10.7: Playwright and axe
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.3
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - run: bun install --frozen-lockfile
+      - name: Environment and sample data
+        run: |
+          cp .env.example .env
+          {
+            echo "BETTER_AUTH_SECRETS=1:$(openssl rand -base64 32)"
+            echo "LACAK_LINK_KEYS=1:$(openssl rand -base64 32)"
+            echo "AUDIT_HMAC_KEY=$(openssl rand -base64 32)"
+          } >> .env
+          bun run db:up
+          bun run db:migrate
+          bun db/seed/regions.ts
+          bun db/seed/organizations.ts
+          bun run db:seed:sample
+      - run: bun run build
+      - name: Production server on 5198
+        run: |
+          PORT=5198 NODE_ENV=production EMAIL_PROVIDER=brevo BREVO_API_KEY=unused \
+            bun --env-file=.env server/index.ts > "$RUNNER_TEMP/server.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -fsS -H 'Host: itb.localhost' http://127.0.0.1:5198/healthz && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/server.log"
+          exit 1
+      - run: npx playwright install --with-deps chromium
+      - run: bun run e2e
+      # PLAN §10.8 on sample data
+      - name: Lighthouse budgets, populated pages
+        run: |
+          first() {
+            curl -fsS -H 'Host: itb.localhost' "http://127.0.0.1:5198$1" |
+              grep -o "href=\"$2[A-Z0-9-]*\"" | sed -n 1p | cut -d'"' -f2
+          }
+          paths=(/ /isu /data /tuntutan "$(first /tuntutan /tuntutan/TUN-)" "$(first /isu /isu/ISU-)")
+          n=0
+          for path in "${paths[@]}"; do
+            n=$((n + 1))
+            npx -y lighthouse@13.5.0 "http://itb.localhost$path" --quiet \
+              --output=json --output-path="$RUNNER_TEMP/lh-$n.json" \
+              --throttling.rttMs=100 --throttling.throughputKbps=9000 \
+              --chrome-flags="--headless=new --no-sandbox --host-resolver-rules=\"MAP *.localhost:80 127.0.0.1:5198\""
+          done
+          bun infra/lighthouse-budget.ts "$RUNNER_TEMP"/lh-*.json
+
+  scans:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.3
+      - name: Install scanners
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          cd "$RUNNER_TEMP"
+          curl -fsSLo bin/osv-scanner "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          echo "$OSV_SCANNER_SHA256  bin/osv-scanner" | sha256sum -c
+          curl -fsSLo gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "$GITLEAKS_SHA256  gitleaks.tgz" | sha256sum -c
+          tar -xzf gitleaks.tgz -C bin gitleaks
+          curl -fsSLo bin/squawk "https://github.com/sbdchd/squawk/releases/download/v${SQUAWK_VERSION}/squawk-linux-x64"
+          echo "$SQUAWK_SHA256  bin/squawk" | sha256sum -c
+          chmod +x bin/*
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # Fixable HIGH or CRITICAL fails
+      - run: infra/osv-scan.sh lockfile bun.lock
+      - run: gitleaks git --redact --no-banner .
+      - name: New migrations
+        id: migrations
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          {
+            echo "files<<EOF"
+            git diff --name-only --diff-filter=A "$BASE" HEAD -- 'db/migrations/*.sql'
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      # Decisions: these rules stay off
+      - name: squawk
+        if: steps.migrations.outputs.files != ''
+        env:
+          FILES: ${{ steps.migrations.outputs.files }}
+        run: |
+          mapfile -t files <<<"$FILES"
+          squawk --assume-in-transaction \
+            --exclude=prefer-robust-stmts,require-concurrent-index-creation,require-concurrent-index-deletion,require-statement-timeout,require-lock-timeout,prefer-bigint-over-int,prefer-bigint-over-smallint \
+            "${files[@]}"
+      - name: Contract migrations need the label
+        if: contains(steps.migrations.outputs.files, '_contract.sql') && !contains(github.event.pull_request.labels.*.name, 'contract-migration')
+        run: |
+          echo "::error::a _contract migration needs the contract-migration label"
+          exit 1
+
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build args
+        id: args
+        run: echo "pgboss=$(jq -r '.dependencies["pg-boss"]' package.json)" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: infra/Dockerfile
+          target: runtime
+          load: true
+          tags: suara-madani:ci
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            PGBOSS_VERSION=${{ steps.args.outputs.pgboss }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: infra
+          file: infra/postgres.Dockerfile
+          load: true
+          tags: suara-madani-postgres:ci
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.3
+      - name: Scan image
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/osv-scanner" "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          echo "$OSV_SCANNER_SHA256  $RUNNER_TEMP/osv-scanner" | sha256sum -c
+          chmod +x "$RUNNER_TEMP/osv-scanner"
+          PATH="$RUNNER_TEMP:$PATH" infra/osv-scan.sh image suara-madani:ci
+      # Production compose, port 5199
+      # Runner has Chrome and Node
+      - name: Stack test
+        env:
+          STACK_LIGHTHOUSE: "1"
+        run: infra/stack-test.sh suara-madani:ci suara-madani-postgres:ci
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [gates, e2e, scans, image]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/deploy.yml
+    with:
+      sha: ${{ github.sha }}
+      action: deploy
+    secrets: inherit

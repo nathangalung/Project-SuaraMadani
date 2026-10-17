@@ -1,0 +1,11 @@
+[Unit]
+Description=Suara Madani database backup
+RequiresMountsFor=/mnt/pgdata
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+ExecStart=/opt/suara-madani/infra/backup-db.sh auto
+TimeoutStartSec=6h

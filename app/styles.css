@@ -1,0 +1,662 @@
+@import "tailwindcss" source(".");
+
+@font-face {
+  font-family: "Tilt Warp";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/tilt-warp-latin-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Aleo";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/aleo-latin-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Aleo";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./fonts/aleo-latin-700.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Barlow";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/barlow-latin-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Barlow";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./fonts/barlow-latin-600.woff2") format("woff2");
+}
+
+/* Metric-matched fallbacks, see DESIGN.md */
+@font-face {
+  font-family: "Tilt Warp Fallback";
+  font-weight: 400;
+  src: local("Arial"), local("ArialMT"), local("Liberation Sans");
+  size-adjust: 106.22%;
+  ascent-override: 93.21%;
+  descent-override: 25.61%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "Aleo Fallback";
+  font-weight: 400;
+  src: local("Georgia");
+  size-adjust: 102.48%;
+  ascent-override: 88.31%;
+  descent-override: 28.79%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "Aleo Fallback";
+  font-weight: 700;
+  src: local("Georgia Bold"), local("Georgia-Bold");
+  size-adjust: 91.72%;
+  ascent-override: 98.67%;
+  descent-override: 32.16%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "Barlow Fallback";
+  font-weight: 400;
+  src: local("Arial"), local("ArialMT"), local("Liberation Sans");
+  size-adjust: 95.68%;
+  ascent-override: 104.52%;
+  descent-override: 20.9%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "Barlow Fallback";
+  font-weight: 600;
+  src:
+    local("Arial Bold"), local("Arial-BoldMT"), local("Liberation Sans Bold");
+  size-adjust: 90.92%;
+  ascent-override: 109.99%;
+  descent-override: 22%;
+  line-gap-override: 0%;
+}
+
+/* Only theme colors exist */
+@theme {
+  --color-*: initial;
+  --font-*: initial;
+
+  /* One signature curve, mockup */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-scroll: cubic-bezier(0.45, 0, 0.55, 1);
+  --ease-exit: cubic-bezier(0.3, 0, 1, 1);
+  --default-transition-duration: var(--dur-hover);
+  --default-transition-timing-function: var(--ease-out);
+}
+
+@theme inline {
+  --color-surface: var(--theme-surface);
+  --color-surface-raised: var(--theme-surface-raised);
+  --color-ink: var(--theme-ink);
+  --color-ink-muted: var(--theme-ink-muted);
+  --color-ink-soft: var(--theme-ink-soft);
+  --color-ink-hover: var(--theme-ink-hover);
+  --color-accent: var(--theme-accent);
+  --color-accent-hover: var(--theme-accent-hover);
+  --color-accent-soft: var(--theme-accent-soft);
+  --color-on-accent: var(--theme-on-accent);
+  --color-brand: var(--theme-brand);
+  --color-brand-hover: var(--theme-brand-hover);
+  --color-brand-soft: var(--theme-brand-soft);
+  --color-pop: var(--theme-pop);
+  --color-pop-strong: var(--theme-pop-strong);
+  --color-chip: var(--theme-chip);
+  --color-mint: var(--theme-mint);
+  --color-mint-soft: var(--theme-mint-soft);
+  --color-line: var(--theme-line);
+  --color-line-subtle: var(--theme-line-subtle);
+  --color-danger: var(--theme-danger);
+  --color-danger-soft: var(--theme-danger-soft);
+  --color-danger-ink: var(--theme-danger-ink);
+  --color-success: var(--theme-success);
+  --color-success-soft: var(--theme-success-soft);
+  --color-success-ink: var(--theme-success-ink);
+  --color-highlight: var(--theme-highlight);
+  --color-focus: var(--theme-focus);
+  --font-body: var(--theme-font-body);
+  --font-heading: var(--theme-font-heading);
+  --font-ui: var(--theme-font-ui);
+  --shadow-floating:
+    0 0 0 1px color-mix(in srgb, var(--theme-ink) 6%, transparent),
+    0 16px 48px color-mix(in srgb, var(--theme-ink) 30%, transparent);
+  --shadow-toast:
+    0 0 0 1px color-mix(in srgb, var(--theme-ink) 6%, transparent),
+    0 8px 32px color-mix(in srgb, var(--theme-ink) 28%, transparent);
+  /* KM ITB About, mockup values */
+  --shadow-about-panel:
+    0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --shadow-about-card: 0 2px 16px rgb(0 0 0 / 0.06);
+}
+
+/* Defaults, tenant theme overrides unlayered */
+@layer base {
+  :root {
+    --theme-surface: #fff8e5;
+    --theme-surface-raised: #ffffff;
+    --theme-ink: #08266e;
+    --theme-ink-muted: #4a5578;
+    --theme-ink-soft: #2c3a66;
+    --theme-ink-hover: #0a2c86;
+    --theme-accent: #0f55d6;
+    --theme-accent-hover: #0b44ab;
+    --theme-accent-soft: #dde9ff;
+    --theme-on-accent: #ffffff;
+    --theme-brand: #0f55d6;
+    --theme-brand-hover: #0b44ab;
+    --theme-brand-soft: #eef4fd;
+    --theme-pop: #0f55d6;
+    --theme-pop-strong: #6b3fb8;
+    --theme-chip: #d5d9e4;
+    --theme-mint: #9cf0e1;
+    --theme-mint-soft: #e6fbf6;
+    --theme-line: #6c7591;
+    --theme-line-subtle: #d5d9e4;
+    --theme-danger: #c0141f;
+    --theme-danger-soft: #fde3e5;
+    --theme-danger-ink: #970f18;
+    --theme-success: #17784a;
+    --theme-success-soft: #bff3cf;
+    --theme-success-ink: #094e2c;
+    --theme-highlight: #ffe030;
+    --theme-focus: #0f55d6;
+    --theme-header-bg: #ffffff;
+    --theme-hero-bg: linear-gradient(180deg, #ffffff 0%, #dde9ff 100%);
+    --theme-band-bg: linear-gradient(
+      180deg,
+      #0f55d6 0%,
+      #0f55d6 34%,
+      #08266e 100%
+    );
+    --theme-page-bg: #fff8e5;
+    --theme-home-list-bg: #fff8e5;
+    --theme-footer-bg: #ffffff;
+    --theme-detail-bg: linear-gradient(180deg, #ffffff 0%, #dde9ff 100%);
+    --theme-font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --theme-font-heading:
+      system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --theme-font-ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+    /* Exits shorter than entries */
+    --dur-hover: 150ms;
+    --dur-underline: 200ms;
+    --dur-backdrop: 200ms;
+    --dur-dialog-in: 220ms;
+    --dur-toast-in: 250ms;
+    --dur-exit: 150ms;
+    --dur-progress: 200ms;
+    --dur-stagger: 520ms;
+    --dur-reveal: 700ms;
+    --step-stagger: 85ms;
+    --dur-bar: 640ms;
+    --delay-spinner: 150ms;
+  }
+
+  /* Targets clear the sticky header */
+  html {
+    -webkit-text-size-adjust: 100%;
+    background-color: var(--color-surface);
+    color: var(--color-ink);
+    scroll-padding-top: 5rem;
+  }
+
+  @media (width >= 64rem) {
+    html {
+      scroll-padding-top: 6rem;
+    }
+  }
+
+  /* Header turns static here */
+  @media (max-height: 30rem) {
+    html {
+      scroll-padding-top: 0;
+    }
+  }
+
+  body {
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background-color: var(--color-highlight);
+    color: var(--color-ink);
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 3px;
+  }
+
+  /* Focus fails 3:1 on ink */
+  .bg-ink :focus-visible {
+    outline-color: var(--color-highlight);
+  }
+
+  .bg-band :focus-visible {
+    outline-color: var(--color-highlight);
+  }
+
+  th,
+  td {
+    vertical-align: middle;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --dur-hover: 0s;
+      --dur-underline: 0s;
+      --dur-backdrop: 0s;
+      --dur-dialog-in: 0s;
+      --dur-toast-in: 0s;
+      --dur-exit: 0s;
+      --dur-progress: 0s;
+      --dur-stagger: 0s;
+      --dur-reveal: 0s;
+      --step-stagger: 0s;
+      --dur-bar: 0s;
+    }
+
+    *,
+    *::before,
+    *::after {
+      /* biome-ignore-start lint/complexity/noImportantStyles: must beat utilities */
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      /* biome-ignore-end lint/complexity/noImportantStyles: must beat utilities */
+    }
+  }
+}
+
+/* Utilities, so variants work */
+@utility header-bg {
+  background: var(--theme-header-bg);
+}
+
+@utility bg-hero {
+  background: var(--theme-hero-bg);
+}
+
+@utility bg-band {
+  background: var(--theme-band-bg);
+}
+
+@utility bg-page {
+  background: var(--theme-page-bg);
+}
+
+@utility bg-home-list {
+  background: var(--theme-home-list-bg);
+}
+
+@utility bg-footer {
+  background: var(--theme-footer-bg);
+}
+
+@utility bg-detail {
+  background: var(--theme-detail-bg);
+}
+
+/* Shadow while more scrolls right */
+@utility scroll-shadow-x {
+  background:
+    linear-gradient(to left, var(--color-surface-raised) 30%, transparent) right
+    / 2.5rem 100% no-repeat local,
+    radial-gradient(
+      farthest-side at 100% 50%,
+      rgb(21 21 21 / 0.25),
+      transparent
+    )
+    right / 0.875rem 100% no-repeat scroll;
+}
+
+/* Light panel in ink band */
+@utility focus-light {
+  & :focus-visible {
+    outline-color: var(--color-focus);
+  }
+}
+
+@layer components {
+  /* Mockup .sorot title box */
+  .highlight-box {
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+    padding: 0.04em 0.24em 0.08em;
+  }
+
+  /* About glow, KM ITB only */
+  .title-glow {
+    text-shadow:
+      0 0 52.6px #a500fd,
+      0 3px 4px rgb(255 255 255 / 0.89);
+  }
+
+  /* JS adds these offscreen only */
+  .reveal {
+    opacity: 0;
+    translate: 0 1.75rem;
+    transition:
+      opacity var(--dur-reveal) var(--ease-out),
+      translate var(--dur-reveal) var(--ease-out);
+  }
+
+  .reveal[data-shown] {
+    opacity: 1;
+    translate: 0;
+  }
+
+  .stagger > * {
+    opacity: 0;
+    translate: 0 1rem;
+    scale: 0.94;
+    transition:
+      opacity var(--dur-stagger) var(--ease-out),
+      translate var(--dur-stagger) var(--ease-out),
+      scale var(--dur-stagger) var(--ease-out);
+    transition-delay: calc(min(var(--i, 0), 5) * var(--step-stagger));
+  }
+
+  .stagger[data-shown] > * {
+    opacity: 1;
+    translate: 0;
+    scale: 1;
+  }
+
+  /* Keyframe in, shorter transition out */
+  .dialog-enter {
+    animation: dialog-enter var(--dur-dialog-in) var(--ease-out) backwards;
+    transition:
+      opacity var(--dur-exit) var(--ease-exit),
+      scale var(--dur-exit) var(--ease-exit),
+      translate var(--dur-exit) var(--ease-exit),
+      display var(--dur-exit) allow-discrete,
+      overlay var(--dur-exit) allow-discrete;
+  }
+
+  .dialog-enter:not([open]) {
+    opacity: 0;
+    scale: 0.96;
+    translate: 0 0.5rem;
+  }
+
+  .dialog-enter::backdrop {
+    animation: fade-in var(--dur-backdrop) ease backwards;
+    transition:
+      opacity var(--dur-exit) var(--ease-exit),
+      display var(--dur-exit) allow-discrete,
+      overlay var(--dur-exit) allow-discrete;
+  }
+
+  .dialog-enter:not([open])::backdrop {
+    opacity: 0;
+  }
+
+  .toast-enter {
+    animation: toast-enter var(--dur-toast-in) var(--ease-out) both;
+  }
+
+  /* Follow confirmation settles in */
+  .confirm-in {
+    animation: dialog-enter var(--dur-dialog-in) var(--ease-out) backwards;
+  }
+
+  /* CSS only, no JS */
+  .bar-grow {
+    transform-origin: left center;
+    animation: bar-grow var(--dur-bar) var(--ease-out) backwards;
+    animation-delay: calc(min(var(--i, 0), 8) * var(--step-stagger));
+  }
+
+  /* Fast responses never flash */
+  .pending-spinner {
+    animation:
+      pending-spin 1s linear infinite,
+      appear-late 0s linear var(--delay-spinner) backwards;
+  }
+}
+
+/* Unlayered, beats utility positions */
+@media (min-width: 64rem) and (min-height: 54rem) and (
+    prefers-reduced-motion: no-preference
+  ) {
+  @supports (animation-timeline: view()) {
+    /* Cara Kerja rises under fade */
+    .hero-scroll {
+      height: calc(100svh - 6rem + 110vh);
+      margin-bottom: -70vh;
+      view-timeline: --hero block;
+    }
+
+    .hero-scroll .hero-stage {
+      position: sticky;
+      top: 6rem;
+    }
+
+    .hero-scroll
+      :is(
+        .hero-graphic,
+        .hero-graphic-fade,
+        .hero-bg,
+        .hero-text,
+        .hero-actions
+      ) {
+      animation-duration: auto;
+      animation-fill-mode: both;
+      animation-timeline: --hero;
+      animation-range: contain 0% contain calc(100% + 6rem);
+    }
+
+    .hero-scroll .hero-graphic {
+      --hero-dx: max(-368px, -28.75vw);
+      --hero-dy: 36px;
+      animation-name: hero-graphic;
+    }
+
+    .hero-scroll .hero-graphic-fade {
+      animation-name: hero-fade-late;
+      animation-timing-function: linear;
+    }
+
+    .hero-scroll .hero-bg {
+      animation-name: hero-bg;
+    }
+
+    .hero-scroll .hero-text {
+      animation-name: hero-text;
+      animation-timing-function: linear;
+    }
+
+    .hero-scroll .hero-actions {
+      animation-name: hero-actions;
+      animation-timing-function: linear;
+    }
+  }
+}
+
+@keyframes pending-spin {
+  to {
+    rotate: 1turn;
+  }
+}
+
+@keyframes appear-late {
+  from {
+    visibility: hidden;
+  }
+}
+
+@keyframes dialog-enter {
+  from {
+    opacity: 0;
+    scale: 0.96;
+    translate: 0 0.5rem;
+  }
+}
+
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    translate: 0 0.75rem;
+  }
+}
+
+/* Apex reveal, no JS */
+@media screen and (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .view-rise {
+      animation: view-rise var(--ease-out) both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 25%;
+    }
+
+    .view-rise-list > * {
+      animation: view-rise-list var(--ease-out) both;
+      animation-timeline: view();
+      animation-range: entry calc(min(var(--i, 0), 5) * 4%) cover
+        calc(25% + min(var(--i, 0), 5) * 4%);
+    }
+  }
+}
+
+@keyframes view-rise {
+  from {
+    opacity: 0;
+    translate: 0 1.75rem;
+  }
+}
+
+@keyframes view-rise-list {
+  from {
+    opacity: 0;
+    translate: 0 1rem;
+    scale: 0.94;
+  }
+}
+
+@keyframes bar-grow {
+  from {
+    scale: 0 1;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Smoothstep approximated per segment */
+@keyframes hero-graphic {
+  0% {
+    translate: 0 0;
+    scale: 1;
+    animation-timing-function: var(--ease-scroll);
+  }
+
+  45% {
+    translate: var(--hero-dx) var(--hero-dy);
+    scale: 1.45;
+    animation-timing-function: linear;
+  }
+
+  55% {
+    translate: var(--hero-dx) var(--hero-dy);
+    scale: 1.45;
+    animation-timing-function: var(--ease-scroll);
+  }
+
+  80%,
+  100% {
+    translate: var(--hero-dx) calc(var(--hero-dy) + 0.95 * (100svh - 6rem));
+    scale: 1.2;
+  }
+}
+
+/* Fades before crossing Cara Kerja */
+@keyframes hero-fade-late {
+  0%,
+  52% {
+    opacity: 1;
+  }
+
+  60%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes hero-bg {
+  0%,
+  55% {
+    opacity: 1;
+    animation-timing-function: var(--ease-scroll);
+  }
+
+  80%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Heading stays in the tree */
+@keyframes hero-text {
+  0% {
+    opacity: 1;
+    translate: 0 0;
+  }
+
+  30%,
+  100% {
+    opacity: 0;
+    translate: 0 -40px;
+  }
+}
+
+/* Hidden controls leave tab order */
+@keyframes hero-actions {
+  0%,
+  29% {
+    visibility: visible;
+  }
+
+  30%,
+  100% {
+    visibility: hidden;
+  }
+}
+
+/* Printed pages: content only */
+@media print {
+  body > a,
+  body > div > :not(main) {
+    display: none;
+  }
+}

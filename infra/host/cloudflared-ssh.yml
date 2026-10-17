@@ -1,0 +1,5 @@
+# SSH only, token in ssh-tunnel.env
+ingress:
+  - hostname: SSH_HOSTNAME
+    service: ssh://localhost:22
+  - service: http_status:404

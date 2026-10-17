@@ -1,0 +1,4 @@
+[install]
+exact = true
+# Docs: 3 days, Renovate 14
+minimumReleaseAge = 259200

@@ -1,0 +1,11 @@
+# Daily 02:00 WIB, full Sunday
+[Unit]
+Description=Daily pgBackRest backup
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 Asia/Jakarta
+Persistent=true
+RandomizedDelaySec=5m
+
+[Install]
+WantedBy=timers.target

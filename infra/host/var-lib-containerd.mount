@@ -1,0 +1,14 @@
+# containerd root on LUKS
+[Unit]
+Description=containerd root on encrypted LV
+RequiresMountsFor=/mnt/docker
+Before=containerd.service
+
+[Mount]
+What=/mnt/docker/containerd
+Where=/var/lib/containerd
+Type=none
+Options=bind
+
+[Install]
+WantedBy=local-fs.target

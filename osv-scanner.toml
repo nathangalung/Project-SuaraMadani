@@ -1,0 +1,6 @@
+# Every ignore: reason and expiry
+
+[[IgnoredVulns]]
+id = "GHSA-67mh-4wv8-2f99"
+ignoreUntil = 2027-01-15
+reason = "esbuild 0.18.20 via drizzle-kit (dev only). The advisory covers esbuild serve mode, which drizzle-kit never starts. Not in the production image."

@@ -1,0 +1,11 @@
+# Template: deploy.sh fills APEX_HOST
+# Token from TUNNEL_TOKEN, ingress here
+ingress:
+  - hostname: APEX_HOST
+    service: http://caddy:80
+  - hostname: "*.APEX_HOST"
+    service: http://caddy:80
+  - service: http_status:404
+originRequest:
+  connectTimeout: 5s
+  keepAliveTimeout: 25s

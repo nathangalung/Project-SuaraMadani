@@ -1,0 +1,11 @@
+# Every 6 h, WIB
+[Unit]
+Description=restic evidence backup
+
+[Timer]
+OnCalendar=*-*-* 00/6:15:00 Asia/Jakarta
+Persistent=true
+RandomizedDelaySec=5m
+
+[Install]
+WantedBy=timers.target

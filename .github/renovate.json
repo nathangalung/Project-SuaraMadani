@@ -1,0 +1,13 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices"],
+  "minimumReleaseAge": "14 days",
+  "automerge": false,
+  "packageRules": [
+    {
+      "description": "Dev compose and postgres.Dockerfile move together",
+      "matchPackageNames": ["postgis/postgis"],
+      "groupName": "postgis"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+# Weekly scan, new advisories surface
+name: Scheduled Scan
+
+on:
+  schedule:
+    - cron: "0 1 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OSV_SCANNER_VERSION: 2.6.0
+  OSV_SCANNER_SHA256: ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108
+
+jobs:
+  osv:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.3
+      - name: Install osv-scanner
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/osv-scanner" "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          echo "$OSV_SCANNER_SHA256  $RUNNER_TEMP/osv-scanner" | sha256sum -c
+          chmod +x "$RUNNER_TEMP/osv-scanner"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - run: infra/osv-scan.sh lockfile bun.lock
+      - name: Build image
+        run: >-
+          docker build -f infra/Dockerfile --target runtime -t suara-madani:scan
+          --build-arg GIT_SHA="$GITHUB_SHA"
+          --build-arg PGBOSS_VERSION="$(jq -r '.dependencies["pg-boss"]' package.json)" .
+      - run: infra/osv-scan.sh image suara-madani:scan

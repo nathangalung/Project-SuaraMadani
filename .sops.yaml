@@ -1,0 +1,5 @@
+# Replace placeholder with real recipients
+creation_rules:
+  - path_regex: infra/\.env\.sops$
+    age: >-
+      age1replacewithrealpublickeyreplacewithrealpublickeyrepl

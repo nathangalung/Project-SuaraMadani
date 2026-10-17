@@ -1,0 +1,91 @@
+{
+  "name": "suara-madani",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "bun": "1.4.3"
+  },
+  "scripts": {
+    "dev": "bun --bun react-router dev",
+    "build": "bun --bun react-router build",
+    "start": "NODE_ENV=production bun server/index.ts",
+    "worker": "WORKER_QUEUES=aggregate-refresh,email-send,issue-notify,demand-notify,takedown,maintenance-daily bun worker/index.ts",
+    "worker:media": "WORKER_QUEUES=evidence,evidence-video,evidence-publish,evidence-brief bun worker/index.ts",
+    "worker:whatsapp": "WORKER_QUEUES=whatsapp-send bun worker/index.ts",
+    "typecheck": "bun --bun react-router typegen && tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "test": "bun test",
+    "db:up": "docker compose -f infra/compose.dev.yaml up -d --wait",
+    "db:down": "docker compose -f infra/compose.dev.yaml down",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "bun db/migrate.ts",
+    "db:seed:sample": "bun db/seed/sample.ts",
+    "db:superadmin": "bun db/superadmin.ts",
+    "size": "size-limit",
+    "knip": "knip",
+    "e2e": "playwright test -c e2e/playwright.config.ts"
+  },
+  "dependencies": {
+    "@better-auth/passkey": "1.7.7",
+    "@opentelemetry/api": "1.9.1",
+    "baileys": "6.7.24",
+    "better-auth": "1.7.7",
+    "clsx": "2.1.1",
+    "d3-geo": "3.1.1",
+    "drizzle-orm": "0.45.3",
+    "file-type": "22.1.1",
+    "hono": "4.13.12",
+    "lucide-react": "1.49.0",
+    "pg": "8.23.1",
+    "pg-boss": "12.35.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-router": "8.4.0",
+    "sharp": "0.35.5",
+    "topojson-client": "3.1.0",
+    "uqr": "0.1.3",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@biomejs/biome": "2.5.15",
+    "@inlang/paraglide-js": "2.25.4",
+    "@playwright/test": "1.63.0",
+    "@react-router/dev": "8.4.0",
+    "@size-limit/file": "14.1.0",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/bun": "1.4.2",
+    "@types/d3-geo": "3.1.1",
+    "@types/pg": "8.23.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/topojson-client": "3.1.5",
+    "drizzle-kit": "0.31.11",
+    "knip": "6.39.0",
+    "lefthook": "2.1.15",
+    "size-limit": "14.1.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
+    "vite": "8.3.2"
+  },
+  "knip": {
+    "entry": [
+      "db/seed/*.ts",
+      "db/jobs-cli.ts",
+      "e2e/*.ts"
+    ],
+    "project": [
+      "app/**/*.{ts,tsx,css}",
+      "server/**/*.ts",
+      "worker/**/*.ts",
+      "db/**/*.ts",
+      "shared/**/*.ts",
+      "e2e/**/*.ts"
+    ],
+    "ignoreDependencies": [
+      "lefthook"
+    ]
+  }
+}

@@ -1,0 +1,50 @@
+# Weekly R2-to-B2 database copy
+# B2 hides, lifecycle deletes
+name: Backup Copy
+
+on:
+  schedule:
+    - cron: "30 21 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-copy
+  cancel-in-progress: false
+
+env:
+  RCLONE_VERSION: 1.75.1
+  RCLONE_SHA256: 982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab
+
+jobs:
+  copy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    environment: backup
+    steps:
+      - name: Install rclone
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -fsSLo rclone.zip "https://github.com/rclone/rclone/releases/download/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-amd64.zip"
+          echo "$RCLONE_SHA256  rclone.zip" | sha256sum -c
+          unzip -q -j rclone.zip "rclone-v${RCLONE_VERSION}-linux-amd64/rclone"
+          chmod +x rclone
+      # R2 read, B2 write here
+      - name: Sync pgBackRest repository
+        env:
+          RCLONE_CONFIG_R2_TYPE: s3
+          RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+          RCLONE_CONFIG_R2_REGION: auto
+          RCLONE_CONFIG_R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_READ_KEY_ID }}
+          RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_READ_KEY }}
+          RCLONE_CONFIG_B2_TYPE: b2
+          RCLONE_CONFIG_B2_ACCOUNT: ${{ secrets.B2_WRITE_KEY_ID }}
+          RCLONE_CONFIG_B2_KEY: ${{ secrets.B2_WRITE_KEY }}
+          R2_BUCKET: ${{ secrets.R2_DB_BUCKET }}
+          B2_BUCKET: ${{ secrets.B2_BUCKET }}
+        run: |
+          "$RUNNER_TEMP/rclone" sync "r2:$R2_BUCKET/pgbackrest" "b2:$B2_BUCKET/pgbackrest" \
+            --transfers 8 --stats-one-line --stats 60s

@@ -1,0 +1,46 @@
+// Theme token names, shared
+import { m } from "~/paraglide/messages.js"
+import type { ThemeField } from "../../../shared/theme-defaults.ts"
+
+type Text = () => string
+
+export const TOKEN_TEXT: Record<ThemeField, Text> = {
+  brand: m.theme_token_brand,
+  brandHover: m.theme_token_brand_hover,
+  accent: m.theme_token_accent,
+  accentHover: m.theme_token_accent_hover,
+  pop: m.theme_token_pop,
+  popStrong: m.theme_token_pop_strong,
+  highlight: m.theme_token_highlight,
+  focus: m.theme_token_focus,
+  ink: m.theme_token_ink,
+  inkMuted: m.theme_token_ink_muted,
+  inkSoft: m.theme_token_ink_soft,
+  inkHover: m.theme_token_ink_hover,
+  onAccent: m.theme_token_on_accent,
+  surface: m.theme_token_surface,
+  surfaceRaised: m.theme_token_surface_raised,
+  line: m.theme_token_line,
+  lineSubtle: m.theme_token_line_subtle,
+  chip: m.theme_token_chip,
+  accentSoft: m.theme_token_accent_soft,
+  brandSoft: m.theme_token_brand_soft,
+  mint: m.theme_token_mint,
+  mintSoft: m.theme_token_mint_soft,
+  danger: m.theme_token_danger,
+  dangerSoft: m.theme_token_danger_soft,
+  dangerInk: m.theme_token_danger_ink,
+  success: m.theme_token_success,
+  successSoft: m.theme_token_success_soft,
+  successInk: m.theme_token_success_ink,
+  headerBg: m.theme_token_header_bg,
+  heroBg: m.theme_token_hero_bg,
+  bandBg: m.theme_token_band_bg,
+  pageBg: m.theme_token_page_bg,
+  homeListBg: m.theme_token_home_list_bg,
+  footerBg: m.theme_token_footer_bg,
+  detailBg: m.theme_token_detail_bg,
+  fontBody: m.theme_token_font_body,
+  fontHeading: m.theme_token_font_heading,
+  fontUi: m.theme_token_font_ui,
+}

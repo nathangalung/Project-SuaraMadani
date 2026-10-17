@@ -1,0 +1,77 @@
+# Dev only, throwaway credentials
+name: suara-madani-dev
+
+services:
+  postgres:
+    # Same digest as postgres.Dockerfile
+    image: postgis/postgis:18-3.6@sha256:60f6ad1d21ea86a67d47780b9a0d1e1d200500f62b19293fa834d0dea80b8677
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres-dev
+      POSTGRES_DB: suara_madani
+      SM_DATABASE: suara_madani
+      SM_TEST_DATABASE: suara_madani_test
+      SM_MIGRATOR_PASSWORD: sm-migrator-dev
+      SM_APP_PASSWORD: sm-app-dev
+      SM_MEDIA_PASSWORD: sm-media-dev
+      SM_BACKUP_PASSWORD: sm-backup-dev
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - ./initdb.sql:/docker-entrypoint-initdb.d/20-init.sql:ro
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      # Red until init finishes
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "suara_madani"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  mailpit:
+    image: axllent/mailpit:v1.31.3@sha256:ed9b00c609e77e99c79b93f1178255ebc271868920f2c69a8d166bd5634ed10d
+    ports:
+      - "127.0.0.1:51025:1025"
+      - "127.0.0.1:58025:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # PDF scan, signatures included
+  clamav:
+    image: clamav/clamav:1.5.4-debian13-slim@sha256:9a96980b265cb2b51a20bdcca921dc80aa55ed0e56cdfb076198ee27a9171927
+    environment:
+      # Starting Values: above PDF limit
+      CLAMD_CONF_StreamMaxLength: 12M
+      CLAMD_CONF_ConcurrentDatabaseReload: "no"
+    ports:
+      - "127.0.0.1:53310:3310"
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+
+  # heif-dec here, not hosts
+  media-test:
+    profiles: ["media"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: media-test
+    network_mode: host
+    working_dir: /app
+    volumes:
+      - ..:/app
+    environment:
+      REQUIRE_MEDIA_TOOLS: "true"
+    command: ["bun", "test", "worker/", "server/", "shared/"]
+
+volumes:
+  pgdata:

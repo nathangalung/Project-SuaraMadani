@@ -1,0 +1,1 @@
+ALTER TABLE "issues" ADD COLUMN "search" "tsvector" GENERATED ALWAYS AS (to_tsvector('indonesian', "issues"."title" || ' ' || "issues"."summary")) STORED NOT NULL;

@@ -1,0 +1,11 @@
+[Unit]
+Description=Suara Madani evidence backup
+RequiresMountsFor=/mnt/files
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+ExecStart=/opt/suara-madani/infra/backup-evidence.sh auto
+TimeoutStartSec=5h

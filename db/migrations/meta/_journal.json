@@ -1,0 +1,174 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1791861802353,
+      "tag": "0000_init",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791861802954,
+      "tag": "0001_force_rls_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791890432510,
+      "tag": "0002_indexes_loud_tenant",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791893990908,
+      "tag": "0003_totp_step",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791939628893,
+      "tag": "0004_dashboard_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792008456713,
+      "tag": "0005_issue_search",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792041864439,
+      "tag": "0006_follows_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792044993377,
+      "tag": "0007_moderation_flows",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792048611723,
+      "tag": "0008_evidence_pipeline",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792053672253,
+      "tag": "0009_content_complaints",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792057240339,
+      "tag": "0010_campus_admin",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792060430923,
+      "tag": "0011_national_aggregates",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792073810956,
+      "tag": "0012_backup_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792084145440,
+      "tag": "0013_referral_channels_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792091768706,
+      "tag": "0014_review_fixes",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1792104402575,
+      "tag": "0015_fk_indexes_legal_reasons",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1792116607236,
+      "tag": "0016_superadmin_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792137634698,
+      "tag": "0017_one_admin_role_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792140963853,
+      "tag": "0018_phone_whatsapp",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792145665154,
+      "tag": "0019_tuntutan",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792153913753,
+      "tag": "0020_national_demands",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792167108621,
+      "tag": "0021_whatsapp_purpose",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792174457084,
+      "tag": "0022_brief_withdraw",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792204007292,
+      "tag": "0023_email_quota_lever",
+      "breakpoints": true
+    }
+  ]
+}
