@@ -64,6 +64,8 @@ export const GRANTS: Grant[] = [
   { table: "demand_updates", app: "SELECT, INSERT" },
   { table: "demand_issues", app: "SELECT, INSERT, DELETE" },
   { table: "demand_follows", app: "SELECT, INSERT, DELETE" },
+  // UPDATE: raters change scores
+  { table: "demand_ratings", app: "SELECT, INSERT, UPDATE, DELETE" },
   // DELETE: replaced or infected files
   {
     table: "policy_briefs",

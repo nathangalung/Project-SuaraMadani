@@ -81,3 +81,66 @@ export function sharePercent(count: number, total: number): string {
   if (percent === 100 && count < total) return ">99%"
   return `${percent}%`
 }
+
+// Theme, labels in messages
+export const DEMAND_CATEGORIES = [
+  "pendidikan",
+  "kesehatan",
+  "lingkungan_hidup",
+  "ekonomi_kesejahteraan",
+  "infrastruktur_transportasi",
+  "hukum_ham",
+  "tata_kelola_demokrasi",
+  "kebencanaan",
+  "bantuan_sosial",
+] as const
+export type DemandCategory = (typeof DEMAND_CATEGORIES)[number]
+
+export function isDemandCategory(value: string): value is DemandCategory {
+  return (DEMAND_CATEGORIES as readonly string[]).includes(value)
+}
+
+// Importance, 1 lowest to 5
+export const IMPORTANCE_SCORES = [1, 2, 3, 4, 5] as const
+export type ImportanceScore = (typeof IMPORTANCE_SCORES)[number]
+
+// Starting Values: importance rating
+export const IMPORTANCE_MIN_RATERS = 10
+export const IMPORTANCE_ACCOUNT_DAYS = 7
+export const IMPORTANCE_NAMES_SHOWN = 20
+
+export function isImportanceScore(value: number): value is ImportanceScore {
+  return (IMPORTANCE_SCORES as readonly number[]).includes(value)
+}
+
+type ImportanceCounts = Record<ImportanceScore, number>
+
+export type Importance = {
+  raters: number
+  counts: ImportanceCounts
+  // Null below the threshold
+  mean: number | null
+}
+
+export function emptyImportance(): Importance {
+  return { raters: 0, counts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }, mean: null }
+}
+
+/** Counted rows, public summary. */
+export function importanceOf(
+  rows: readonly { score: number; n: number }[],
+): Importance {
+  const summary = emptyImportance()
+  let sum = 0
+  for (const row of rows) {
+    if (!isImportanceScore(row.score) || row.n <= 0) continue
+    summary.counts[row.score] += row.n
+    summary.raters += row.n
+    sum += row.score * row.n
+  }
+  if (summary.raters >= IMPORTANCE_MIN_RATERS) {
+    // One decimal, as shown
+    summary.mean = Math.round((sum / summary.raters) * 10) / 10
+  }
+  return summary
+}

@@ -46,7 +46,7 @@ export function html(
 }
 
 export type MailSite = {
-  // "Suara Madani · KM ITB"
+  // "Sadar Bersuara · KM ITB"
   name: string
   origin: string
   brand: string

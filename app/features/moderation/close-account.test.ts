@@ -215,6 +215,10 @@ describe("closeAccount", () => {
       "INSERT INTO demand_follows (org_id, demand_id, user_id) VALUES ($1, $2, $3)",
       [orgA, demand[0]?.id, minor],
     )
+    await su.query(
+      "INSERT INTO demand_ratings (org_id, demand_id, user_id, score, show_name) VALUES ($1, $2, $3, 5, true)",
+      [orgA, demand[0]?.id, minor],
+    )
     const hosts: string[][] = []
 
     const result = await closeAccount(input(shared))
@@ -252,6 +256,11 @@ describe("closeAccount", () => {
       [minor],
     )
     expect(demandFollows.rows).toHaveLength(0)
+    const ratings = await su.query(
+      "SELECT 1 FROM demand_ratings WHERE user_id = $1",
+      [minor],
+    )
+    expect(ratings.rows).toHaveLength(0)
     const { rows: issues } = await su.query(
       "SELECT public_code, report_count, published_at IS NOT NULL AS published FROM issues ORDER BY public_code",
     )

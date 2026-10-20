@@ -5,8 +5,9 @@ import { BoxedHeading } from "~/components/layout/boxed-heading"
 import { useStagger } from "~/components/layout/use-reveal"
 import { cn } from "~/components/ui/cn"
 import type { ShowcaseIssue } from "~/features/issues/issues.server"
+import { GOVERNMENT_TEXT } from "~/features/issues/labels"
 import { m } from "~/paraglide/messages.js"
-import { formatDate } from "../../../shared/format.ts"
+import type { GovernmentStatus } from "../../../shared/status.ts"
 
 // Neighbouring cards never share colour
 const CARD_BG = [
@@ -18,13 +19,18 @@ const CARD_BG = [
   "bg-ink",
 ]
 
+// Done reads green, rest plain
+function chipOf(status: GovernmentStatus): string {
+  return status === "confirmed_resolved"
+    ? "bg-success-soft text-success-ink"
+    : "bg-surface text-ink"
+}
+
 type ShowcaseProps = {
   id: string
   title: string
-  tone: "brand" | "ink"
   rule: string
   issues: ShowcaseIssue[]
-  chip: string
   empty: string
   emptyBody: string
   seeAll: { to: string; label: string }
@@ -39,11 +45,9 @@ function placeOf(issue: ShowcaseIssue): string {
 function ShowcaseCard({
   issue,
   index,
-  chip,
 }: {
   issue: ShowcaseIssue
   index: number
-  chip: string
 }) {
   return (
     <li
@@ -56,10 +60,10 @@ function ShowcaseCard({
       <p
         className={cn(
           "self-start rounded px-2 py-0.5 font-bold font-ui text-sm",
-          chip,
+          chipOf(issue.govStatus),
         )}
       >
-        {m.home_card_activity({ date: formatDate(issue.lastActivityAt) })}
+        {GOVERNMENT_TEXT[issue.govStatus]()}
       </p>
       <h3 className="mt-3 font-bold text-lg leading-snug">
         <Link
@@ -82,14 +86,12 @@ function ShowcaseCard({
   )
 }
 
-// Mockup IsuTerbaru, PLAN lists
+// Mockup IsuTerbaru
 export function IssueShowcase({
   id,
   title,
-  tone,
   rule,
   issues,
-  chip,
   empty,
   emptyBody,
   seeAll,
@@ -97,7 +99,7 @@ export function IssueShowcase({
   const list = useStagger<HTMLUListElement>()
   return (
     <section aria-labelledby={id} className="px-6 py-14 sm:px-10 lg:py-20">
-      <BoxedHeading id={id} tone={tone}>
+      <BoxedHeading id={id} tone="brand">
         {title}
       </BoxedHeading>
       <p className="mx-auto mt-4 max-w-2xl text-center text-ink text-lg leading-relaxed">
@@ -111,12 +113,7 @@ export function IssueShowcase({
             className="mx-auto mt-12 flex max-w-6xl flex-wrap justify-center gap-4"
           >
             {issues.map((issue, index) => (
-              <ShowcaseCard
-                key={issue.code}
-                issue={issue}
-                index={index}
-                chip={chip}
-              />
+              <ShowcaseCard key={issue.code} issue={issue} index={index} />
             ))}
           </ul>
           <p className="mt-10 text-center">

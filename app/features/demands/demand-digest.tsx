@@ -4,7 +4,7 @@ import { Link } from "react-router"
 import { useStagger } from "~/components/layout/use-reveal"
 import { cn } from "~/components/ui/cn"
 import { m } from "~/paraglide/messages.js"
-import type { LatestDemand } from "./demands.server"
+import type { DigestDemand } from "./digest.server"
 import { demandPlace, STATE_TEXT } from "./labels"
 import { FulfilmentMark, ProgressSquares } from "./status-mark"
 
@@ -13,7 +13,7 @@ export function DemandDigest({
   demands,
   ruled = true,
 }: {
-  demands: LatestDemand[]
+  demands: DigestDemand[]
   // Panel draws its own rule
   ruled?: boolean
 }) {
@@ -42,9 +42,13 @@ export function DemandDigest({
               </Link>
             </h3>
             <p className="mt-1 font-ui text-ink-muted text-sm">
-              {demand.state === "closed"
-                ? `${demandPlace(demand)} · ${STATE_TEXT.closed()}`
-                : demandPlace(demand)}
+              {[
+                demandPlace(demand),
+                demand.categoryText,
+                demand.state === "closed" ? STATE_TEXT.closed() : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2">
               <FulfilmentMark status={demand.progress.status} />
@@ -55,6 +59,12 @@ export function DemandDigest({
                   total: demand.progress.total,
                 })}
               />
+              {/* Server text, see toDigest */}
+              {demand.importanceText ? (
+                <p className="font-semibold font-ui text-sm">
+                  {demand.importanceText}
+                </p>
+              ) : null}
               {demand.briefs > 0 && (
                 <Link
                   to={`/tuntutan/${demand.code}#sub-tuntutan`}

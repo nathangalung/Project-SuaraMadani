@@ -138,7 +138,7 @@ function token(theme: unknown, name: ThemeToken | "brandAssets"): unknown {
     : undefined
 }
 
-/** Browser bar matches the masthead. */
+/** Browser bar matches the ink. */
 export function themeColor(theme: unknown): string {
   const ink = token(theme, "ink")
   return typeof ink === "string" && HEX.test(ink) ? ink : DEFAULT_INK

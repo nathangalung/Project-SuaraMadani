@@ -1,0 +1,1 @@
+var e=class extends Error{status;constructor(e,t){super(t),this.status=e}};async function t(t,n){let r=await fetch(`undefined${t}`,{credentials:`include`,headers:{"Content-Type":`application/json`,...n?.headers},...n});if(!r.ok)throw new e(r.status,await r.text());return r.json()}var n=(e,t=350)=>new Promise(n=>setTimeout(()=>n(e),t));export{n,t};

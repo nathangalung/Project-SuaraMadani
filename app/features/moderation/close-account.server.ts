@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm"
 import { auditLog } from "../../../db/schema/audit.ts"
 import { members, sessions, users } from "../../../db/schema/auth.ts"
-import { demandFollows } from "../../../db/schema/demands.ts"
+import { demandFollows, demandRatings } from "../../../db/schema/demands.ts"
 import { issueReports, issues } from "../../../db/schema/issues.ts"
 import { follows } from "../../../db/schema/notifications.ts"
 import { evidence, reports } from "../../../db/schema/reports.ts"
@@ -97,6 +97,7 @@ async function removeAtCampus(
   await tx.delete(reports).where(inArray(reports.id, ids))
   await tx.delete(follows).where(eq(follows.userId, userId))
   await tx.delete(demandFollows).where(eq(demandFollows.userId, userId))
+  await tx.delete(demandRatings).where(eq(demandRatings.userId, userId))
   await tx
     .delete(members)
     .where(and(eq(members.organizationId, orgId), eq(members.userId, userId)))

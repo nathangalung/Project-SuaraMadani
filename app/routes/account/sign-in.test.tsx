@@ -10,7 +10,7 @@ type Props = Parameters<typeof SignInPage>[0]
 function render(
   signedInAs: string | null,
   next: string | null = null,
-  extra: { needsPhone?: boolean; actionData?: unknown } = {},
+  extra: { needsPhone?: boolean; actionData?: unknown; signUp?: boolean } = {},
 ) {
   const props = {
     loaderData: {
@@ -18,6 +18,7 @@ function render(
       signedInAs,
       next,
       needsPhone: extra.needsPhone ?? false,
+      signUp: extra.signUp ?? false,
     },
     actionData: extra.actionData,
   } as unknown as Props
@@ -37,6 +38,20 @@ describe("/masuk flow", () => {
     expect(html).toContain(`>${m.signin_page_heading()}</h1>`)
     expect(html).toContain(`>${m.signin_tab_up()}</button>`)
     expect(html).toMatch(/href="\/privasi"[^>]*>Kebijakan privasi<\/a>/)
+  })
+
+  test("home Buat akun opens Daftar", () => {
+    const context = new RouterContextProvider()
+    context.set(sessionContext, null)
+    const data = loader({
+      request: new Request("http://itb.localhost/masuk?daftar=1"),
+      context,
+    } as unknown as Parameters<typeof loader>[0])
+    expect(data.signUp).toBe(true)
+    expect(render(null)).not.toContain('name="phone"')
+    const html = render(null, null, { signUp: data.signUp })
+    expect(html).toContain('name="phone"')
+    expect(html).toContain(m.signin_age())
   })
 
   test("signed in, one next step plus switching email", () => {

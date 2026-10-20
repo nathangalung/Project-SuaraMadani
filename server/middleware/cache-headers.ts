@@ -17,6 +17,7 @@ const PRIVATE_PATHS = [
   /^\/isu\/[^/]+\/laporkan(\/|$)/,
   /^\/isu\/[^/]+\/berhenti(\/|$)/,
   /^\/tuntutan\/[^/]+\/laporkan(\/|$)/,
+  /^\/tuntutan\/[^/]+\/nilai(\/|$)/,
   /^\/tuntutan\/[^/]+\/berhenti(\/|$)/,
   /^\/aduan(\/|$)/,
   /^\/undangan(\/|$)/,

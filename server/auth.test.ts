@@ -1093,7 +1093,7 @@ describe("auth body fields", () => {
     const res = await post("/two-factor/enable", { method: "totp" }, { cookie })
     expect(res.status).toBe(200)
     const { totpURI } = (await res.json()) as { totpURI: string }
-    expect(new URL(totpURI).searchParams.get("issuer")).toBe("Suara Madani")
+    expect(new URL(totpURI).searchParams.get("issuer")).toBe("Sadar Bersuara")
   })
 
   test("sign-out takes no redirect fields", async () => {

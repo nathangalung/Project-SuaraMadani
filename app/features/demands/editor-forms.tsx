@@ -10,6 +10,7 @@ import { Select } from "~/components/ui/select"
 import { m } from "~/paraglide/messages.js"
 import {
   briefTooLarge,
+  DEMAND_CATEGORIES,
   DEMAND_LENGTHS,
   MAX_DEMAND_ISSUES,
 } from "../../../shared/demands.ts"
@@ -26,6 +27,7 @@ import { ActionPanel } from "../moderation/action-panel"
 import { useSubmitting } from "../moderation/submitting"
 import { useHydrated } from "../report/hydrated"
 import type { RegencyGroup } from "../report/regions.server"
+import { CATEGORY_TEXT } from "./category-labels"
 import { type DemandErrorKey, lastStatusOn } from "./demand-form"
 import { briefUrl } from "./demand-href"
 import { ItemUpdates } from "./item-updates"
@@ -39,6 +41,8 @@ const FIELD_ID: Record<DemandErrorKey, string> = {
   scope: "demand-scope",
   province: "demand-province",
   regency: "demand-regency",
+  category: "demand-category",
+  publish_category: "demand-publish",
   title: "demand-title",
   body: "demand-body",
   summary: "demand-summary",
@@ -66,6 +70,8 @@ const ERROR_TEXT: Record<DemandErrorKey, () => string> = {
   scope: m.demand_error_scope,
   province: m.demand_error_province,
   regency: m.demand_error_regency,
+  category: m.demand_error_category,
+  publish_category: m.demand_publish_needs_category,
   title: () => m.demand_error_title(L.title),
   body: () => m.demand_error_body(L.body),
   summary: () => m.demand_error_summary(L.summary),
@@ -239,6 +245,23 @@ export function DemandFieldsForm({
           ))}
         </Select>
       </div>
+      <Select
+        id={FIELD_ID.category}
+        name="category"
+        label={m.demand_field_category()}
+        hint={m.demand_field_category_hint()}
+        defaultValue={values.category ?? ""}
+        error={at(errors, FIELD_ID.category)}
+        requiredMark
+      >
+        <option value="">{m.demand_field_category_choose()}</option>
+        {DEMAND_CATEGORIES.map((category) => (
+          <option key={category} value={category}>
+            {CATEGORY_TEXT[category]()}
+          </option>
+        ))}
+      </Select>
+      <Note>{m.demand_neutral_guide()}</Note>
       <TextInput
         id={FIELD_ID.title}
         name="title"
@@ -362,9 +385,11 @@ export function StateForms({
               tabIndex={-1}
               className="text-ink-soft"
             >
-              {demand.items.length > 0
-                ? m.demand_publish_lead()
-                : m.demand_publish_needs_items()}
+              {demand.items.length === 0
+                ? m.demand_publish_needs_items()
+                : demand.category
+                  ? m.demand_publish_lead()
+                  : m.demand_publish_needs_category()}
             </p>
             {refused ? (
               <p className="font-semibold text-danger-ink">{refused}</p>

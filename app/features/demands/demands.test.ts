@@ -50,6 +50,7 @@ const REGIONAL: DemandFields = {
   scope: "regional",
   provinceCode: "32",
   regencyCode: "32.73",
+  category: "infrastruktur_transportasi",
   title: "Standar layanan air bersih di Kota Bandung",
   body: "Kami menuntut standar waktu pemulihan suplai air bersih saat gangguan.",
   summary: "Waktu pemulihan suplai air dan kewajiban tangki air bantuan.",
@@ -310,6 +311,7 @@ describe("demandOverview", () => {
     const regional = overview.latest[0]
     expect(regional?.provinceName).toBe("Daerah Istimewa Yogyakarta")
     expect(regional?.marks).toEqual(["not_fulfilled", "not_fulfilled"])
+    expect(regional?.subs).toHaveLength(2)
     expect(overview.latest[2]?.state).toBe("closed")
     expect(overview.latest[2]?.progress.status).toBe("fulfilled")
     const empty = await demandOverview(ugm.id)

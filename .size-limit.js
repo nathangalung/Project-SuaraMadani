@@ -12,6 +12,7 @@ const BUDGETS = {
   "routes/demands/detail": "150 kB",
   "routes/demands/unfollow": "150 kB",
   "routes/demands/complaint": "150 kB",
+  "routes/demands/rate": "150 kB",
   "routes/account/complaint": "150 kB",
   "routes/account/track": "150 kB",
   "routes/data": "150 kB",

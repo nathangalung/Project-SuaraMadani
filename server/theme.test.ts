@@ -118,7 +118,7 @@ describe("themeStyle", () => {
 })
 
 describe("themeColor", () => {
-  test("matches the masthead ink", () => {
+  test("matches the theme ink", () => {
     expect(themeColor({ ink: "#1a2b3c" })).toBe("#1a2b3c")
   })
 

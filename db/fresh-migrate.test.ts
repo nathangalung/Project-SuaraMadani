@@ -45,7 +45,7 @@ describe("fresh database", () => {
         `SELECT count(*)::int AS forced FROM pg_class
          WHERE relnamespace = 'public'::regnamespace AND relforcerowsecurity`,
       )
-      expect(rows[0]?.forced).toBe(23)
+      expect(rows[0]?.forced).toBe(24)
     } finally {
       await fresh.end()
     }

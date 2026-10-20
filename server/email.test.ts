@@ -28,8 +28,8 @@ const message = {
 
 describe("parseAddress", () => {
   test("reads name and email", () => {
-    expect(parseAddress("Suara Madani <no-reply@suaramadani.id>")).toEqual({
-      name: "Suara Madani",
+    expect(parseAddress("Sadar Bersuara <no-reply@suaramadani.id>")).toEqual({
+      name: "Sadar Bersuara",
       email: "no-reply@suaramadani.id",
     })
     expect(parseAddress("no-reply@suaramadani.id")).toEqual({
@@ -44,14 +44,14 @@ describe("brevoSender", () => {
     const { fetch, calls } = fakeFetch(201)
     await brevoSender({
       apiKey: "key-1",
-      from: "Suara Madani <no-reply@suaramadani.id>",
+      from: "Sadar Bersuara <no-reply@suaramadani.id>",
       fetch,
     }).send(message)
     expect(calls[0]?.url).toBe("https://api.brevo.com/v3/smtp/email")
     const headers = new Headers(calls[0]?.init.headers)
     expect(headers.get("api-key")).toBe("key-1")
     expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
-      sender: { name: "Suara Madani", email: "no-reply@suaramadani.id" },
+      sender: { name: "Sadar Bersuara", email: "no-reply@suaramadani.id" },
       to: [{ email: "warga@contoh.id" }],
       subject: "Kode verifikasi",
       textContent: "Kode Anda 123456",
@@ -111,12 +111,12 @@ describe("mailpitSender", () => {
     const { fetch, calls } = fakeFetch(200)
     await mailpitSender({
       url: "http://127.0.0.1:58025",
-      from: "Suara Madani <no-reply@localhost>",
+      from: "Sadar Bersuara <no-reply@localhost>",
       fetch,
     }).send(message)
     expect(calls[0]?.url).toBe("http://127.0.0.1:58025/api/v1/send")
     expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
-      From: { Email: "no-reply@localhost", Name: "Suara Madani" },
+      From: { Email: "no-reply@localhost", Name: "Sadar Bersuara" },
       To: [{ Email: "warga@contoh.id" }],
       Subject: "Kode verifikasi",
       Text: "Kode Anda 123456",

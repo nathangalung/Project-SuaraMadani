@@ -17,6 +17,7 @@ import {
 import { TrendChart } from "~/features/data/trend-chart"
 import { DemandDigest } from "~/features/demands/demand-digest"
 import { demandOverview } from "~/features/demands/demands.server"
+import { toDigest } from "~/features/demands/digest.server"
 import { listIssueRanking } from "~/features/issues/issues.server"
 import { useSiteTitle } from "~/features/report/page-title"
 import { m } from "~/paraglide/messages.js"
@@ -42,7 +43,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const dashboard = await readDashboard(tenant.id, query, demands)
   return {
     dashboard,
-    demands: { counts: demands.counts, latest: demands.latest },
+    demands: { counts: demands.counts, latest: demands.latest.map(toDigest) },
     // Live, so redactions never linger
     ranking:
       dashboard.kind === "ready"

@@ -221,6 +221,7 @@ async function seedDemand(
       scope: plan.scope,
       provinceCode: plan.provinceCode,
       regencyCode: plan.regencyCode,
+      category: plan.category,
       title: plan.title,
       body: plan.body,
       summary: plan.summary,

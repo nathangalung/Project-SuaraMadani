@@ -140,7 +140,7 @@ async function compose(
   if (!org) throw new Error("organization not found")
   const origin = deps.originFor(org.host)
   const site: MailSite = {
-    name: `Suara Madani · ${org.name}`,
+    name: `Sadar Bersuara · ${org.name}`,
     origin,
     brand: brandColor(org.theme.brand),
   }

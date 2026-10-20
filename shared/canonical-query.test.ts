@@ -135,6 +135,7 @@ describe("querySpecFor", () => {
     expect(querySpecFor("/tuntutan/TUN-ITB-26-0001/og.png")).not.toBeNull()
     expect(querySpecFor("/tuntutan/TUN-ITB-26-0001/laporkan")).toBeNull()
     expect(querySpecFor("/tuntutan/TUN-ITB-26-0001/berhenti")).toBeNull()
+    expect(querySpecFor("/tuntutan/TUN-ITB-26-0001/nilai")).toBeNull()
   })
 
   test("tuntutan list keeps scope, province, status and search", () => {
@@ -147,6 +148,10 @@ describe("querySpecFor", () => {
     expect(canonical("?provinsi=32.73")).toBe("")
     expect(canonical("?status=in_progress")).toBe("")
     expect(canonical("?q=%20air%20%20bersih%20")).toBe("?q=air+bersih")
+    expect(canonical("?status=fulfilled&kategori=pendidikan")).toBe(
+      "?kategori=pendidikan&status=fulfilled",
+    )
+    expect(canonical("?kategori=olahraga")).toBe("")
   })
 
   test("dashboard keeps top categories, government statuses and the view", () => {

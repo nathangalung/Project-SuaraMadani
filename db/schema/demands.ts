@@ -2,6 +2,7 @@ import { desc, type SQL, sql } from "drizzle-orm"
 import {
   type AnyPgColumn,
   bigint,
+  boolean,
   check,
   date,
   foreignKey,
@@ -22,8 +23,10 @@ import {
 import {
   BRIEF_STATUSES,
   type BriefStatus,
+  DEMAND_CATEGORIES,
   DEMAND_EVENT_ACTIONS,
   DEMAND_SCOPES,
+  type DemandCategory,
   type DemandEventAction,
   type DemandScope,
   ITEM_EVENT_ACTIONS,
@@ -67,6 +70,8 @@ export const demands = pgTable(
     scope: text("scope").$type<DemandScope>().notNull(),
     provinceCode: text("province_code").references(() => regions.code),
     regencyCode: text("regency_code").references(() => regions.code),
+    // Null only before 0024
+    category: text("category").$type<DemandCategory>(),
     title: text("title").notNull(),
     // Text as written
     body: text("body").notNull(),
@@ -112,7 +117,14 @@ export const demands = pgTable(
     index("demands_province_idx")
       .on(t.orgId, t.provinceCode)
       .where(sql`${t.provinceCode} IS NOT NULL`),
+    index("demands_category_idx")
+      .on(t.orgId, t.category)
+      .where(sql`${t.category} IS NOT NULL`),
     check("demands_scope_check", oneOf(t.scope, DEMAND_SCOPES)),
+    check(
+      "demands_category_check",
+      sql`${t.category} IS NULL OR ${oneOf(t.category, DEMAND_CATEGORIES)}`,
+    ),
     check(
       "demands_region_check",
       sql`(${t.scope} = 'national' AND ${t.provinceCode} IS NULL AND ${t.regencyCode} IS NULL) OR (${t.scope} = 'regional' AND ${t.provinceCode} IS NOT NULL AND (${t.regencyCode} IS NULL OR starts_with(${t.regencyCode}, ${t.provinceCode} || '.')))`,
@@ -288,6 +300,30 @@ export const demandFollows = pgTable(
     primaryKey({ columns: [t.orgId, t.demandId, t.userId] }),
     index("demand_follows_user_idx").on(t.userId),
     demandRef("demand_follows_demand_fk", t),
+    tenantPolicy(),
+  ],
+)
+
+// Citizen importance, one per account
+export const demandRatings = pgTable(
+  "demand_ratings",
+  {
+    orgId: orgRef(),
+    demandId: uuid("demand_id").notNull(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    score: smallint("score").notNull(),
+    // Opt-in, anonymous by default
+    showName: boolean("show_name").notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.demandId, t.userId] }),
+    index("demand_ratings_user_idx").on(t.userId),
+    demandRef("demand_ratings_demand_fk", t),
+    check("demand_ratings_score_check", sql`${t.score} BETWEEN 1 AND 5`),
     tenantPolicy(),
   ],
 )

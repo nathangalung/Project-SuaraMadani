@@ -414,7 +414,7 @@ export function renderComplaintMail(mail: ComplaintMail): RenderedMail {
 
 // Plain identity, no tenant needed
 const OTP_SITE: MailSite = {
-  name: "Suara Madani",
+  name: "Sadar Bersuara",
   origin: "",
   brand: "#0f55d6",
 }

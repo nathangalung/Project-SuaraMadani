@@ -45,7 +45,7 @@ describe("messages/id.json", () => {
     ).json()
     // wf8 rule 2, campusName
     const owned =
-      /Suara Madani \{campus\}|Situs untuk \{campus\}|lingkup \{campus\}/
+      /Sadar Bersuara \{campus\}|Situs untuk \{campus\}|lingkup \{campus\}/
     const found = Object.entries(messages)
       .filter(([, text]) => owned.test(text))
       .map(([key]) => key)
@@ -136,9 +136,7 @@ describe("messages/id.json", () => {
     ]) {
       expect(messages[key]?.toLowerCase()).toContain("tanggapan pemerintah")
     }
-    for (const key of ["issue_response_title", "home_responded_title"]) {
-      expect(messages[key]).toContain("Instansi")
-    }
+    expect(messages.issue_response_title).toContain("Instansi")
   })
 
   test("page names are Title Case only as headings", async () => {

@@ -29,8 +29,11 @@ import { briefPath, defaultFilesDir } from "../../../server/files.server.ts"
 import type { PurgeDeps } from "../../../server/purge.server.ts"
 import {
   BRIEF_MAX_BYTES,
+  type DemandCategory,
   type DemandScope,
+  emptyImportance,
   formatDemandCode,
+  type Importance,
   MAX_DEMAND_ISSUES,
   MAX_DEMAND_ITEMS,
 } from "../../../shared/demands.ts"
@@ -47,6 +50,7 @@ import {
   transitionDemandItem,
 } from "../../../shared/status.ts"
 import { citedIssues, purgeDemandPages } from "./purge.server.ts"
+import { pendingRaters, readImportance } from "./rating.server.ts"
 
 export { demandProgress }
 
@@ -56,6 +60,8 @@ export type DemandFields = {
   scope: DemandScope
   provinceCode: string | null
   regencyCode: string | null
+  // Null only before 0024
+  category: DemandCategory | null
   title: string
   body: string
   summary: string
@@ -69,6 +75,8 @@ type DemandFailure =
   | "not_allowed"
   | "unchanged"
   | "no_items"
+  // Rows before 0024 lack one
+  | "no_category"
   | "too_many"
   | "issue_not_found"
   | "not_pdf"
@@ -114,6 +122,7 @@ const FIELD_COLUMNS = {
   scope: "scope",
   provinceCode: "province_code",
   regencyCode: "regency_code",
+  category: "category",
   title: "title",
   body: "body",
   summary: "summary",
@@ -136,6 +145,7 @@ async function lockDemand(tx: Tx, code: string): Promise<Locked | null> {
       scope: demands.scope,
       provinceCode: demands.provinceCode,
       regencyCode: demands.regencyCode,
+      category: demands.category,
       title: demands.title,
       body: demands.body,
       summary: demands.summary,
@@ -484,6 +494,7 @@ export function changeDemandState(
           .from(demandItems)
           .where(eq(demandItems.demandId, demand.id))
         if ((items?.n ?? 0) === 0) return fail("no_items")
+        if (!demand.fields.category) return fail("no_category")
       }
       const { next, followUps } = transitionDemand(demand.state, input.action)
       await tx
@@ -1275,6 +1286,9 @@ export type ManagedDemand = DemandFields & {
   frozen: boolean
   items: ManagedItem[]
   issues: { code: string; title: string; published: boolean }[]
+  importance: Importance
+  // Accounts too new yet
+  pendingRaters: number
 }
 
 /** Editor view, every brief. */
@@ -1294,6 +1308,7 @@ export function getManagedDemand(
           scope: demands.scope,
           provinceCode: demands.provinceCode,
           regencyCode: demands.regencyCode,
+          category: demands.category,
           title: demands.title,
           body: demands.body,
           summary: demands.summary,
@@ -1361,9 +1376,12 @@ export function getManagedDemand(
         )
         .where(eq(demandIssues.demandId, row.id))
         .orderBy(asc(issues.publicCode))
+      const ratings = await readImportance(tx, [row.id])
       return {
         ...row,
         frozen: await closedNow(tx, row),
+        importance: ratings.get(row.id) ?? emptyImportance(),
+        pendingRaters: await pendingRaters(tx, row.id),
         items: items.map((item) => ({
           ...item,
           briefs: briefs

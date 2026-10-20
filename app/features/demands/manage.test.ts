@@ -61,6 +61,7 @@ const FIELDS: DemandFields = {
   scope: "regional",
   provinceCode: "32",
   regencyCode: "32.73",
+  category: "bantuan_sosial",
   title: "Buka data penerima bantuan pangan per kelurahan",
   body: "Kami menuntut pemerintah kota membuka daftar penerima bantuan pangan per kelurahan.",
   summary: "Daftar penerima bantuan dibuka agar warga bisa mengawasi sasaran.",

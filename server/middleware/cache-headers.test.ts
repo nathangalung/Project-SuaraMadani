@@ -37,6 +37,7 @@ describe("cachePolicy", () => {
       "/isu/ISU-ITB-26-0042/laporkan",
       "/tuntutan/TUN-ITB-26-0001/laporkan",
       "/tuntutan/TUN-ITB-26-0001/berhenti",
+      "/tuntutan/TUN-ITB-26-0001/nilai",
       "/kelola/tuntutan",
       "/aduan/ADU-ITB-26-7K3QX",
       "/undangan/0199c2b0-1d2e-7000-8000-000000000001",

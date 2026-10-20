@@ -1,5 +1,5 @@
 [Unit]
-Description=Suara Madani database backup
+Description=Sadar Bersuara database backup
 RequiresMountsFor=/mnt/pgdata
 After=docker.service
 Requires=docker.service

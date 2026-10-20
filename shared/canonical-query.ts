@@ -1,4 +1,5 @@
 import { isCategoryId, isSubcategoryId } from "./categories.ts"
+import { isDemandCategory } from "./demands.ts"
 import {
   ADVOCACY_STATUSES,
   FULFILMENT_STATUSES,
@@ -52,6 +53,9 @@ const DEMAND_SCOPE_PARAMS = ["nasional", "daerah"] as const
 export const DEMAND_LIST_QUERY: QuerySpec = {
   lingkup: { normalize: oneOf(DEMAND_SCOPE_PARAMS) },
   provinsi: { normalize: (value) => (/^\d{2}$/.test(value) ? value : null) },
+  kategori: {
+    normalize: (value) => (isDemandCategory(value) ? value : null),
+  },
   status: { normalize: oneOf(FULFILMENT_STATUSES) },
   q: searchRule,
   kursor: cursorRule,

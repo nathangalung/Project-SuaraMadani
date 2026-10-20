@@ -1,4 +1,5 @@
 import {
+  DEMAND_CATEGORIES,
   DEMAND_LENGTHS,
   DEMAND_SCOPES,
   MAX_DEMAND_ITEMS,
@@ -19,6 +20,8 @@ export type DemandErrorKey =
   | "scope"
   | "province"
   | "regency"
+  | "category"
+  | "publish_category"
   | "title"
   | "body"
   | "summary"
@@ -75,6 +78,8 @@ export function parseDemandFields(
   ) {
     errors.push("regency")
   }
+  const category = oneOf(DEMAND_CATEGORIES, text(form, "category"))
+  if (!category) errors.push("category")
   const title = text(form, "title")
   const body = longText(form, "body")
   const summary = longText(form, "summary")
@@ -85,13 +90,14 @@ export function parseDemandFields(
   if (!within(summary, L.summary)) errors.push("summary")
   if (!within(target, L.target)) errors.push("target")
   if (!pastDate(raisedOn, EARLIEST, today)) errors.push("raised_on")
-  if (errors.length > 0 || !scope) return { ok: false, errors }
+  if (errors.length > 0 || !scope || !category) return { ok: false, errors }
   return {
     ok: true,
     fields: {
       scope,
       provinceCode: regional ? province : null,
       regencyCode: regional && regency ? regency : null,
+      category,
       title,
       body,
       summary,

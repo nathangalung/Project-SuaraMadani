@@ -169,6 +169,13 @@
       "when": 1792204007292,
       "tag": "0023_email_quota_lever",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792345770764,
+      "tag": "0024_tuntutan_ratings",
+      "breakpoints": true
     }
   ]
 }

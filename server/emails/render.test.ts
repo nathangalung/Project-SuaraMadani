@@ -16,7 +16,7 @@ import {
 } from "./render.ts"
 
 const site: MailSite = {
-  name: "Suara Madani · KM ITB",
+  name: "Sadar Bersuara · KM ITB",
   origin: "https://itb.suaramadani.id",
   brand: "#0f55d6",
 }
@@ -124,7 +124,7 @@ describe("reporter emails", () => {
       forwarded: { from: "ITB-26-7K3QX", campus: "Universitas Gadjah Mada" },
     })
     expect(mail.subject).toBe(
-      "Laporan ITB-26-7K3QX diteruskan ke Suara Madani di Universitas Gadjah Mada",
+      "Laporan ITB-26-7K3QX diteruskan ke Sadar Bersuara di Universitas Gadjah Mada",
     )
     expect(mail.text).toContain("UGM-26-4M2PZ")
     expect(mail.text).toContain("Nomor Laporan Sebelumnya")
@@ -188,9 +188,9 @@ describe("brand", () => {
   test("the OTP email keeps its code and warning", () => {
     const mail = renderOtpMail("123456")
     expectComplete(mail)
-    expect(mail.subject).toBe("Kode verifikasi Suara Madani")
+    expect(mail.subject).toBe("Kode verifikasi Sadar Bersuara")
     // Headings are Title Case
-    expect(mail.html).toContain(">Kode Verifikasi Suara Madani</h1>")
+    expect(mail.html).toContain(">Kode Verifikasi Sadar Bersuara</h1>")
     expect(mail.text).toContain("123456")
     expect(mail.html).toContain("123456")
     expect(mail.text).toContain("Jangan berikan kode ini")

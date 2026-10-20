@@ -5,7 +5,6 @@ import { readNational } from "~/features/data/national.server"
 import { DemandStrip } from "~/features/home/demand-strip"
 import { Hero } from "~/features/home/hero"
 import { loadHome } from "~/features/home/home.server"
-import { HowItWorks } from "~/features/home/how-it-works"
 import { IssueShowcase } from "~/features/home/issue-showcase"
 import { Rings, StarPair } from "~/features/home/ornaments"
 import { m } from "~/paraglide/messages.js"
@@ -15,7 +14,7 @@ import type { Route } from "./+types/home"
 
 export function meta({ matches }: Route.MetaArgs) {
   const site = matches[0]?.loaderData?.siteName
-  return [{ title: site ? `Suara Madani · ${site}` : "Suara Madani" }]
+  return [{ title: site ? `Sadar Bersuara · ${site}` : "Sadar Bersuara" }]
 }
 
 // Tenant hosts never load it
@@ -44,22 +43,23 @@ export default function Home({ loaderData }: Route.ComponentProps) {
       </Suspense>
     )
   }
-  return <CampusHome lists={loaderData.lists} demands={loaderData.demands} />
+  return <CampusHome issues={loaderData.issues} demands={loaderData.demands} />
 }
 
 type Tenant = Extract<Route.ComponentProps["loaderData"], { scope: "tenant" }>
 
-function CampusHome({ lists, demands }: Omit<Tenant, "scope">) {
+function CampusHome({ issues, demands }: Omit<Tenant, "scope">) {
   // Root loader owns the gate
-  const kmItb =
-    useRouteLoaderData<typeof rootLoader>("root")?.brandAssets === "km-itb"
+  const root = useRouteLoaderData<typeof rootLoader>("root")
+  const kmItb = root?.brandAssets === "km-itb"
   // Never end on empty state
-  const closing = lists.resolved.length === 0
+  const closing = issues.length === 0
   return (
     <>
       <div className="relative bg-band">
-        <Hero graphic={kmItb} />
-        <HowItWorks />
+        <Hero graphic={kmItb} signedIn={Boolean(root?.user)} />
+        {/* Tuntutan lead, PLAN §8.2 */}
+        <DemandStrip {...demands} />
       </div>
       <div className="relative isolate overflow-hidden bg-home-list">
         {kmItb && (
@@ -73,34 +73,14 @@ function CampusHome({ lists, demands }: Omit<Tenant, "scope">) {
             />
           </div>
         )}
-        <DemandStrip demands={demands} />
         <IssueShowcase
-          id="baru-ditanggapi"
-          title={m.home_responded_title()}
-          tone="brand"
-          rule={m.home_responded_rule()}
-          issues={lists.responded}
-          chip="bg-surface text-ink"
-          empty={m.home_responded_empty()}
-          emptyBody={m.home_responded_empty_body()}
-          seeAll={{
-            to: "/isu?status=responded",
-            label: m.home_see_all_responded(),
-          }}
-        />
-        <IssueShowcase
-          id="selesai-terkonfirmasi"
-          title={m.home_resolved_title()}
-          tone="ink"
-          rule={m.home_resolved_rule()}
-          issues={lists.resolved}
-          chip="bg-success-soft text-success-ink"
-          empty={m.home_resolved_empty()}
-          emptyBody={m.home_resolved_empty_body()}
-          seeAll={{
-            to: "/isu?status=confirmed_resolved",
-            label: m.home_see_all_resolved(),
-          }}
+          id="isu-terbaru"
+          title={m.home_latest_issues_title()}
+          rule={m.home_latest_issues_rule()}
+          issues={issues}
+          empty={m.home_latest_issues_empty()}
+          emptyBody={m.home_latest_issues_empty_body()}
+          seeAll={{ to: "/isu", label: m.home_see_all_issues() }}
         />
         {closing && (
           <p className="-mt-2 px-6 pb-14 text-center lg:-mt-6 lg:pb-20">

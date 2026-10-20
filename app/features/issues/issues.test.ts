@@ -27,8 +27,8 @@ import {
   getPublishedIssue,
   ISSUE_PAGE_SIZE,
   listIssueRanking,
+  listLatestIssues,
   listPublishedIssues,
-  listShowcases,
   RANKING_SIZE,
   SHOWCASE_SIZE,
 } from "./issues.server.ts"
@@ -329,41 +329,39 @@ describe("cursor", () => {
   })
 })
 
-describe("listShowcases", () => {
+describe("listLatestIssues", () => {
   const at = (minute: number) => new Date(Date.UTC(2026, 9, 2, 0, minute))
 
-  test("one status per list, published only, latest activity first", async () => {
+  test("any status, published only, newest published first", async () => {
     const older = await seedIssue({
       govStatus: "responded",
-      lastActivityAt: at(1),
+      publishedAt: at(1),
+      lastActivityAt: at(9),
     })
     const newer = await seedIssue({
-      govStatus: "responded",
-      lastActivityAt: at(5),
+      govStatus: "awaiting_response",
+      publishedAt: at(5),
+      lastActivityAt: at(6),
     })
-    const resolved = await seedIssue({ govStatus: "confirmed_resolved" })
-    await seedIssue({ govStatus: "awaiting_response" })
-    await seedIssue({ govStatus: "claimed_resolved" })
     await seedIssue({ govStatus: "responded", publishedAt: null })
-    const lists = await listShowcases(orgA)
-    expect(lists.responded.map((issue) => issue.code)).toEqual([newer, older])
-    expect(lists.resolved.map((issue) => issue.code)).toEqual([resolved])
-    expect(lists.responded[0]).toEqual({
+    const latest = await listLatestIssues(orgA)
+    expect(latest.map((issue) => issue.code)).toEqual([newer, older])
+    expect(latest[0]).toEqual({
       code: newer,
       title: "Jalan berlubang di Dago",
       regencyName: "Kota Bandung",
       districtName: null,
       reportCount: 1,
-      lastActivityAt: at(5),
+      govStatus: "awaiting_response",
     })
   })
 
-  test("caps each list and never crosses tenants", async () => {
+  test("caps the list and never crosses tenants", async () => {
     for (let i = 0; i < SHOWCASE_SIZE + 2; i++) {
       await seedIssue({ govStatus: "responded" })
     }
-    expect((await listShowcases(orgA)).responded).toHaveLength(SHOWCASE_SIZE)
-    expect(await listShowcases(orgB)).toEqual({ responded: [], resolved: [] })
+    expect(await listLatestIssues(orgA)).toHaveLength(SHOWCASE_SIZE)
+    expect(await listLatestIssues(orgB)).toEqual([])
   })
 })
 

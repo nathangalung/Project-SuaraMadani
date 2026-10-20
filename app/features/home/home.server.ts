@@ -1,11 +1,23 @@
-import { latestDemands } from "../demands/demands.server"
-import { listShowcases } from "../issues/issues.server"
+import { importantDemands, latestDemands } from "../demands/demands.server"
+import { toDigest } from "../demands/digest.server"
+import { listLatestIssues } from "../issues/issues.server"
 
-/** Showcase lists for home. */
+// Starting Values: home tuntutan
+const HOME_LATEST = 3
+const HOME_IMPORTANT = 3
+
+/** Tuntutan and issues for home. */
 export async function loadHome(tenant: { id: string }) {
-  const [lists, demands] = await Promise.all([
-    listShowcases(tenant.id),
-    latestDemands(tenant.id),
+  const [issues, latest, important] = await Promise.all([
+    listLatestIssues(tenant.id),
+    latestDemands(tenant.id, HOME_LATEST),
+    importantDemands(tenant.id, HOME_IMPORTANT),
   ])
-  return { lists, demands }
+  return {
+    issues,
+    demands: {
+      latest: latest.map(toDigest),
+      important: important.map(toDigest),
+    },
+  }
 }

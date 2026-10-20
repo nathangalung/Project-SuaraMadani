@@ -9,7 +9,6 @@ import { Container } from "./container"
 import { DateInput } from "./date-input"
 import { Dialog } from "./dialog"
 import { Checkbox, Fieldset, Radio, Textarea, TextInput } from "./field"
-import { LineGrid } from "./line-grid"
 import { Note } from "./note"
 import { Select } from "./select"
 import { Table, Td, Th } from "./table"
@@ -125,7 +124,7 @@ describe("components emit no conflicting utilities", () => {
       ),
     ],
     [
-      "cards, container, dialog, grid",
+      "cards, container, dialog",
       () => (
         <>
           <Card>a</Card>
@@ -135,7 +134,6 @@ describe("components emit no conflicting utilities", () => {
           <Dialog open={false} onClose={() => {}} title="T" actions="a">
             a
           </Dialog>
-          <LineGrid items={[{ title: "a", body: "b" }]} />
         </>
       ),
     ],

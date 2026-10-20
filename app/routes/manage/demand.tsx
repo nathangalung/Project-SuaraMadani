@@ -4,6 +4,7 @@ import { Badge } from "~/components/ui/badge"
 import { errorTitle } from "~/components/ui/error-summary"
 import { Note } from "~/components/ui/note"
 import { demandEditorAction } from "~/features/demands/actions.server"
+import { CATEGORY_TEXT } from "~/features/demands/category-labels"
 import {
   AddItemForm,
   DemandFieldsForm,
@@ -17,11 +18,13 @@ import {
   panelOf,
   StateForms,
 } from "~/features/demands/editor-forms"
+import { formatImportance } from "~/features/demands/importance-line"
 import { demandPlace, STATE_TEXT } from "~/features/demands/labels"
 import {
   demandProgress,
   getManagedDemand,
 } from "~/features/demands/manage.server"
+import { NeutralNotice } from "~/features/demands/neutral-notice"
 import { FulfilmentMark } from "~/features/demands/status-mark"
 import { requireAdmin } from "~/features/moderation/access.server"
 import { ActionPanel } from "~/features/moderation/action-panel"
@@ -29,8 +32,13 @@ import { ReviewNotices } from "~/features/moderation/review-forms"
 import { useSiteTitle } from "~/features/report/page-title"
 import { regencyGroups } from "~/features/report/regions.server"
 import { m } from "~/paraglide/messages.js"
-import { normalizeDemandCode } from "../../../shared/demands.ts"
+import {
+  IMPORTANCE_ACCOUNT_DAYS,
+  IMPORTANCE_MIN_RATERS,
+  normalizeDemandCode,
+} from "../../../shared/demands.ts"
 import { formatDate, jakartaIsoDate } from "../../../shared/format.ts"
+import { neutralFindings } from "../../../shared/neutral-language.ts"
 import type { Route } from "./+types/demand"
 
 export async function loader({ params, context }: Route.LoaderArgs) {
@@ -52,6 +60,16 @@ export async function loader({ params, context }: Route.LoaderArgs) {
     }),
     today: jakartaIsoDate(new Date()),
     progress: demandProgress(demand.items.map((item) => item.state)),
+    // Public text, staff advice
+    neutral: neutralFindings(
+      [
+        demand.title,
+        demand.summary,
+        demand.body,
+        demand.target,
+        ...demand.items.flatMap((item) => [item.body, item.briefSummary ?? ""]),
+      ].join("\n"),
+    ),
   }
 }
 
@@ -64,6 +82,7 @@ function fieldsOf(demand: Route.ComponentProps["loaderData"]["demand"]) {
     scope,
     provinceCode,
     regencyCode,
+    category: demand.category,
     title,
     body,
     summary,
@@ -195,6 +214,9 @@ export default function ManageDemand({
           {STATE_TEXT[demand.state]()}
         </Badge>
         <Badge tone="subtle">{loaderData.place}</Badge>
+        {demand.category ? (
+          <Badge tone="subtle">{CATEGORY_TEXT[demand.category]()}</Badge>
+        ) : null}
         {demand.publishedAt ? (
           <span className="font-ui text-ink-muted text-sm">
             {m.demand_published_on({ date: formatDate(demand.publishedAt) })}
@@ -211,6 +233,26 @@ export default function ManageDemand({
           })}
         </span>
       </p>
+      {demand.state !== "draft" ? (
+        <p className="mt-2 font-ui text-ink-soft text-sm">
+          {demand.importance.mean === null
+            ? m.demand_importance_admin_few({
+                raters: demand.importance.raters,
+                min: IMPORTANCE_MIN_RATERS,
+              })
+            : m.demand_importance_admin({
+                mean: formatImportance(demand.importance.mean),
+                raters: demand.importance.raters,
+              })}{" "}
+          {demand.pendingRaters > 0
+            ? m.demand_importance_admin_pending({
+                count: demand.pendingRaters,
+                days: IMPORTANCE_ACCOUNT_DAYS,
+              })
+            : null}
+        </p>
+      ) : null}
+      <NeutralNotice findings={loaderData.neutral} className="mt-5" />
       {demand.hiddenAt ? (
         <Note tone="danger" className="mt-5">
           {m.demand_hidden_note({ date: formatDate(demand.hiddenAt) })}

@@ -319,10 +319,10 @@ const userFields = {
 export function createAuth(deps: AuthDeps) {
   const twoFactorPlugin = twoFactor({
     allowPasswordless: true,
-    issuer: "Suara Madani",
+    issuer: "Sadar Bersuara",
   })
   return betterAuth({
-    appName: "Suara Madani",
+    appName: "Sadar Bersuara",
     basePath: "/api/auth",
     baseURL: {
       // Explicit hosts, never a wildcard

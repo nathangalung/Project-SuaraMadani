@@ -1,14 +1,20 @@
 import { Search } from "lucide-react"
-import { Form, Link } from "react-router"
+import { Form } from "react-router"
 import { Button, ButtonLink } from "~/components/ui/button"
-import { Card } from "~/components/ui/card"
 import { cn } from "~/components/ui/cn"
 import { controlClass } from "~/components/ui/control"
 import { m } from "~/paraglide/messages.js"
 import { HomeGraphic } from "./home-graphic"
 
 // Scroll motion only with graphic
-export function Hero({ graphic }: { graphic: boolean }) {
+export function Hero({
+  graphic,
+  signedIn = false,
+}: {
+  graphic: boolean
+  // Account exists: no Buat akun
+  signedIn?: boolean
+}) {
   return (
     <section
       aria-labelledby="beranda-judul"
@@ -46,9 +52,6 @@ export function Hero({ graphic }: { graphic: boolean }) {
                 {m.home_title_line2()}
               </span>
             </h1>
-            <p className="mt-4 max-w-xl font-medium text-base text-ink leading-snug sm:mt-6 sm:text-[clamp(1.1rem,1.9vw,1.45rem)]">
-              {m.home_lead()}
-            </p>
             {/* Hidden once scrolled, see styles */}
             <div className="hero-actions mt-5 max-w-xl sm:mt-8">
               <Form
@@ -57,15 +60,10 @@ export function Hero({ graphic }: { graphic: boolean }) {
                 role="search"
                 className="focus-light border border-line-subtle bg-surface-raised p-4 sm:p-6"
               >
+                {/* Hint lives on /isu */}
                 <label htmlFor="beranda-q" className="font-semibold">
                   {m.issues_search_label()}
                 </label>
-                <p
-                  id="beranda-q-hint"
-                  className="mt-1 font-ui text-[0.95rem] text-ink-muted"
-                >
-                  {m.issues_search_hint()}
-                </p>
                 <div className="mt-3 flex gap-3">
                   <div className="relative min-w-0 flex-1">
                     <Search
@@ -80,7 +78,6 @@ export function Hero({ graphic }: { graphic: boolean }) {
                       autoCapitalize="off"
                       autoCorrect="off"
                       spellCheck={false}
-                      aria-describedby="beranda-q-hint"
                       className={cn(controlClass, "h-13 w-full pl-11")}
                     />
                   </div>
@@ -89,26 +86,21 @@ export function Hero({ graphic }: { graphic: boolean }) {
                   </Button>
                 </div>
               </Form>
-              <Card variant="inverse" className="mt-3 p-4 sm:mt-4 sm:p-6">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
-                  {/* Ink hover needs visible edge */}
+              {/* Buttons sit on the hero */}
+              <div className="mt-4 flex flex-col gap-3 sm:mt-6 sm:flex-row sm:items-center sm:gap-4">
+                <ButtonLink to="/lapor" variant="highlight" size="lg">
+                  {m.report_start()}
+                </ButtonLink>
+                {signedIn ? null : (
                   <ButtonLink
-                    to="/lapor"
-                    variant="highlight"
+                    to="/masuk?daftar=1"
+                    variant="secondary"
                     size="lg"
-                    className="hover:border-highlight"
                   >
-                    {m.report_start()}
+                    {m.home_create_account()}
                   </ButtonLink>
-                  <p className="font-ui">{m.home_eligibility()}</p>
-                </div>
-                <Link
-                  to="/lacak"
-                  className="mt-3 inline-block font-semibold underline underline-offset-4 hover:no-underline"
-                >
-                  {m.nav_track()}
-                </Link>
-              </Card>
+                )}
+              </div>
             </div>
           </div>
           {graphic && (

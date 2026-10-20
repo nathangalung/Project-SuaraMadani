@@ -99,7 +99,7 @@ describe("hero scroll", () => {
   })
 
   // Scroll model, header 6rem
-  test("Cara Kerja arrives while the hero fades", () => {
+  test("the next section arrives while the hero fades", () => {
     const rule = css.match(/\.hero-scroll \{([^}]*)\}/)?.[1] ?? ""
     const extra = Number(rule.match(/100svh - 6rem \+ (\d+)vh/)?.[1])
     const overlap = Number(rule.match(/margin-bottom: -(\d+)vh/)?.[1])

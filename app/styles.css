@@ -143,10 +143,6 @@
   --shadow-toast:
     0 0 0 1px color-mix(in srgb, var(--theme-ink) 6%, transparent),
     0 8px 32px color-mix(in srgb, var(--theme-ink) 28%, transparent);
-  /* KM ITB About, mockup values */
-  --shadow-about-panel:
-    0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-  --shadow-about-card: 0 2px 16px rgb(0 0 0 / 0.06);
 }
 
 /* Defaults, tenant theme overrides unlayered */
@@ -352,13 +348,6 @@
     padding: 0.04em 0.24em 0.08em;
   }
 
-  /* About glow, KM ITB only */
-  .title-glow {
-    text-shadow:
-      0 0 52.6px #a500fd,
-      0 3px 4px rgb(255 255 255 / 0.89);
-  }
-
   /* JS adds these offscreen only */
   .reveal {
     opacity: 0;
@@ -448,7 +437,7 @@
     prefers-reduced-motion: no-preference
   ) {
   @supports (animation-timeline: view()) {
-    /* Cara Kerja rises under fade */
+    /* Next section rises under fade */
     .hero-scroll {
       height: calc(100svh - 6rem + 110vh);
       margin-bottom: -70vh;
@@ -600,7 +589,7 @@
   }
 }
 
-/* Fades before crossing Cara Kerja */
+/* Fades before crossing next section */
 @keyframes hero-fade-late {
   0%,
   52% {

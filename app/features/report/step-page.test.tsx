@@ -27,7 +27,7 @@ describe("StepFallback", () => {
 
 describe("siteTitle", () => {
   test("adds the site name when known", () => {
-    expect(siteTitle("Masuk", "KM ITB")).toBe("Masuk · Suara Madani · KM ITB")
+    expect(siteTitle("Masuk", "KM ITB")).toBe("Masuk · Sadar Bersuara · KM ITB")
     expect(siteTitle("Masuk", undefined)).toBe("Masuk")
   })
 })

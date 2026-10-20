@@ -46,7 +46,11 @@ const LINK =
 export default function DemandList({ loaderData }: Route.ComponentProps) {
   const { query, result, scorecard, provinces } = loaderData
   const filtered = Boolean(
-    query.lingkup || query.provinsi || query.status || query.q,
+    query.lingkup ||
+      query.provinsi ||
+      query.kategori ||
+      query.status ||
+      query.q,
   )
   const province = provinces.find((p) => p.code === query.provinsi)?.name
   return (

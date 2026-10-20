@@ -15,7 +15,6 @@ import { brandImages } from "~/components/layout/brand-assets"
 import { Footer } from "~/components/layout/footer"
 import { Header, hasPageSignIn, isAuthShell } from "~/components/layout/header"
 import { IntakeBanner } from "~/components/layout/intake-banner"
-import { Masthead } from "~/components/layout/masthead"
 import { useRouteFocus } from "~/components/layout/route-focus"
 import { ownsDescription, SiteMeta } from "~/components/layout/site-meta"
 import {
@@ -54,7 +53,7 @@ const HEADING_FONT_URL: Record<WebFont, string> = {
   barlow: barlowUrl,
 }
 
-const SITE_NAME = "Suara Madani"
+const SITE_NAME = "Sadar Bersuara"
 
 // Error markup not first-load
 const RootError = lazy(() =>
@@ -151,7 +150,6 @@ export function Layout({ children }: { children: ReactNode }) {
         <SkipLink />
         {/* Footer stays at the bottom */}
         <div className="flex min-h-svh flex-col">
-          <Masthead />
           <Header
             siteName={SITE_NAME}
             tenantName={data?.siteName}

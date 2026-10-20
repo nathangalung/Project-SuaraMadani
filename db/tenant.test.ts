@@ -77,6 +77,7 @@ const TENANT_TABLES = [
   "demand_updates",
   "demand_issues",
   "demand_follows",
+  "demand_ratings",
   "policy_briefs",
 ]
 

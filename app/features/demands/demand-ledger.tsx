@@ -4,7 +4,9 @@ import { Link } from "react-router"
 import { cn } from "~/components/ui/cn"
 import { m } from "~/paraglide/messages.js"
 import { formatIsoDate } from "../../../shared/format.ts"
+import { CATEGORY_TEXT } from "./category-labels"
 import type { ListedDemand } from "./demands.server"
+import { ImportanceLine } from "./importance-line"
 import { demandPlace, STATE_TEXT } from "./labels"
 import { FulfilmentMark } from "./status-mark"
 
@@ -83,6 +85,7 @@ export function DemandLedger({
                 <span>
                   {[
                     demandPlace(demand),
+                    demand.category ? CATEGORY_TEXT[demand.category]() : null,
                     m.demand_raised_on({
                       date: formatIsoDate(demand.raisedOn),
                     }),
@@ -96,6 +99,7 @@ export function DemandLedger({
                     .join(" · ")}
                 </span>
               </p>
+              <ImportanceLine importance={demand.importance} className="mt-2" />
             </div>
             <p className="font-ui text-sm md:pt-1">
               <CellLabel>{m.demands_col_response()}</CellLabel>

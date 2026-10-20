@@ -22,8 +22,8 @@ import {
   getIssuePage,
   getPublishedIssue,
   listIssueRanking,
+  listLatestIssues,
   listPublishedIssues,
-  listShowcases,
 } from "./issues.server.ts"
 import { runPublish } from "./publish.server.ts"
 
@@ -128,7 +128,7 @@ describe("verify first", () => {
   test("lists, search and showcases hold no unchecked text", async () => {
     const all = await listPublishedIssues(orgId, {})
     const search = await listPublishedIssues(orgId, { q: "tiang listrik" })
-    const showcases = await listShowcases(orgId)
+    const showcases = await listLatestIssues(orgId)
     const ranking = await listIssueRanking(orgId, "laporan", NOW)
     const text = JSON.stringify([all, search, showcases, ranking])
     expect(text).not.toContain(SECRET)

@@ -8,7 +8,9 @@ import { Select } from "~/components/ui/select"
 import { useUrlFields } from "~/components/ui/url-fields"
 import { m } from "~/paraglide/messages.js"
 import { SEARCH_MAX_LENGTH } from "../../../shared/canonical-query.ts"
+import { DEMAND_CATEGORIES } from "../../../shared/demands.ts"
 import { FULFILMENT_STATUSES } from "../../../shared/status.ts"
+import { CATEGORY_TEXT } from "./category-labels"
 import type { DemandListQuery } from "./demands.server"
 import { FULFILMENT_TEXT } from "./labels"
 
@@ -22,11 +24,14 @@ export function DemandFilters({
 }) {
   const form = useRef<HTMLFormElement>(null)
   // Phones: open when filtered
-  const chosen = Boolean(query.lingkup || query.provinsi || query.status)
+  const chosen = Boolean(
+    query.lingkup || query.provinsi || query.kategori || query.status,
+  )
   useUrlFields(form, {
     q: query.q ?? "",
     lingkup: query.lingkup ?? "",
     provinsi: query.provinsi ?? "",
+    kategori: query.kategori ?? "",
     status: query.status ?? "",
   })
   return (
@@ -76,7 +81,7 @@ export function DemandFilters({
               className="size-4 transition-transform group-open:rotate-180 motion-reduce:transition-none"
             />
           </summary>
-          <div className="mt-2 grid grid-cols-1 items-start gap-4 sm:mt-0 sm:grid-cols-3">
+          <div className="mt-2 grid grid-cols-1 items-start gap-4 sm:mt-0 sm:grid-cols-2 lg:grid-cols-4">
             <Select
               id="demands-scope"
               name="lingkup"
@@ -97,6 +102,19 @@ export function DemandFilters({
               {provinces.map((province) => (
                 <option key={province.code} value={province.code}>
                   {province.name}
+                </option>
+              ))}
+            </Select>
+            <Select
+              id="demands-category"
+              name="kategori"
+              label={m.demands_filter_category()}
+              defaultValue={query.kategori ?? ""}
+            >
+              <option value="">{m.demands_filter_all()}</option>
+              {DEMAND_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {CATEGORY_TEXT[category]()}
                 </option>
               ))}
             </Select>

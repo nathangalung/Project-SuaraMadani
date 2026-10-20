@@ -27,6 +27,7 @@ export default [
   route("tuntutan/:code/dokumen/:file", "routes/demands/brief.ts"),
   route("tuntutan/:code/berhenti", "routes/demands/unfollow.tsx"),
   route("tuntutan/:code/laporkan", "routes/demands/complaint.tsx"),
+  route("tuntutan/:code/nilai", "routes/demands/rate.tsx"),
   route("aduan/:code", "routes/account/complaint.tsx"),
   route("masuk", "routes/account/sign-in.tsx"),
   route("masuk/dua-langkah", "routes/manage/two-factor.tsx"),

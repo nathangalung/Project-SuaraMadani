@@ -286,20 +286,20 @@ describe("public issue pages", () => {
     expectNotFound(await get(`${UGM}/isu/${PUBLISHED}`))
   })
 
-  test("pages carry the masthead, navigation and footer", async () => {
+  test("pages carry navigation and footer, no masthead", async () => {
     const html = await (await get(`${ITB}/isu`)).text()
-    expect(html).toContain("bukan situs pemerintah")
+    expect(html).not.toContain("Bagaimana mengenalinya?")
     expect(html).toContain('href="/lapor"')
     expect(html).toContain('href="/masuk"')
     expect(html).toContain("Dikelola KM itbpub, organisasi mahasiswa di itbpub")
     const missing = await (await get(`${ITB}/isu/${DRAFT}`)).text()
-    expect(missing).toContain("bukan situs pemerintah")
+    expect(missing).toContain("Dikelola KM itbpub")
   })
 
   test("the list is a card grid with a site title", async () => {
     const html = await (await get(`${ITB}/isu`)).text()
     expect(html).toContain(
-      "<title>Jelajahi Isu · Suara Madani · KM itbpub</title>",
+      "<title>Jelajahi Isu · Sadar Bersuara · KM itbpub</title>",
     )
     expect(html).toMatch(/<ul class="mt-5 grid[^"]*"><li class="flex"><article/)
     expect(html).toContain('href="/isu?kategori=bencana"')
@@ -388,7 +388,7 @@ describe("public issue pages", () => {
     expectNotFound(res)
     const html = await res.text()
     expect(html).toContain("Isu Tidak Ditemukan")
-    expect(html).toContain("<title>Isu Tidak Ditemukan · Suara Madani")
+    expect(html).toContain("<title>Isu Tidak Ditemukan · Sadar Bersuara")
     expect(html).not.toContain("Draf belum terbit")
     // Static import keeps it inline
     expect(html).not.toMatch(/\$RC|<template/)
@@ -418,7 +418,7 @@ describe("public issue pages", () => {
     expect(res.status).toBe(403)
     const html = await res.text()
     expect(html).toContain(
-      "<title>Akses Ditolak · Suara Madani · KM itbpub</title>",
+      "<title>Akses Ditolak · Sadar Bersuara · KM itbpub</title>",
     )
     expect(html).toContain("<footer")
     expect(html).toContain("Dikelola KM itbpub, organisasi mahasiswa di itbpub")
@@ -515,14 +515,18 @@ describe("home", () => {
     })
   }
 
-  test("is cacheable and shows honest empty lists", async () => {
+  test("is cacheable and shows an honest empty list", async () => {
     const res = await get(`${ITB}/`)
     expect(res.status).toBe(200)
     expectPublic(res)
     const html = await res.text()
-    expect(html).toContain("Belum ada isu yang ditanggapi instansi.")
-    expect(html).toContain("Belum ada isu yang selesai terkonfirmasi.")
-    expect(html).not.toContain("Lihat semua isu yang")
+    expect(html).toContain(`href="/isu/${PUBLISHED}"`)
+    // UGM has nothing published
+    expect(await (await get(`${UGM}/`)).text()).toContain(
+      "Belum ada isu yang terbit.",
+    )
+    expect(html).not.toContain("Baru Ditanggapi Instansi")
+    expect(html).not.toContain("Selesai Terkonfirmasi")
     expect(html).not.toContain("/km-itb/")
   })
 
@@ -530,52 +534,34 @@ describe("home", () => {
     const closing = /<a [^>]*href="\/isu"[^>]*>Jelajahi Isu<\/a>/
     const main = (html: string) =>
       html.slice(html.indexOf("<main"), html.indexOf("</main>"))
-    expect(main(await (await get(`${ITB}/`)).text())).toMatch(closing)
-    try {
-      // Last list empty: still closes
-      await showcase("responded", 310)
-      const responded = main(await (await get(`${ITB}/`)).text())
-      expect(responded.match(new RegExp(closing, "g"))?.length).toBe(1)
-      expect(responded.indexOf("Belum ada isu yang selesai")).toBeLessThan(
-        responded.search(closing),
-      )
-      await su.query("DELETE FROM issues WHERE number >= 300")
-      // Its own link closes it
-      await showcase("confirmed_resolved", 311)
-      expect(main(await (await get(`${ITB}/`)).text())).not.toMatch(closing)
-    } finally {
-      await su.query("DELETE FROM issues WHERE number >= 300")
-    }
+    // Empty list: one closing button
+    expect(main(await (await get(`${UGM}/`)).text())).toMatch(closing)
+    // Its own link closes it
+    const html = main(await (await get(`${ITB}/`)).text())
+    expect(html).not.toMatch(closing)
+    expect(html).toMatch(/href="\/isu"[^>]*>Lihat semua isu</)
   })
 
-  test("lists only their own status, dated, on their own tenant", async () => {
+  test("latest published issues, any status, own tenant", async () => {
     await showcase("responded", 300)
     await showcase("confirmed_resolved", 301)
     await showcase("awaiting_response", 302)
     await showcase("responded", 303, false)
     try {
       const html = await (await get(`${ITB}/`)).text()
-      const responded = html.slice(
-        html.indexOf('id="baru-ditanggapi"'),
-        html.indexOf('id="selesai-terkonfirmasi"'),
-      )
-      const resolved = html.slice(
-        html.indexOf('id="selesai-terkonfirmasi"'),
+      const list = html.slice(
+        html.indexOf('id="isu-terbaru"'),
         html.indexOf("</main>"),
       )
-      expect(responded).toContain('href="/isu/ISU-ITBPUB-26-300"')
-      expect(responded).not.toContain("ISU-ITBPUB-26-301")
-      expect(resolved).toContain('href="/isu/ISU-ITBPUB-26-301"')
-      expect(resolved).not.toContain("ISU-ITBPUB-26-300")
-      expect(html).not.toContain("ISU-ITBPUB-26-302")
+      for (const number of [300, 301, 302]) {
+        expect(list).toContain(`href="/isu/ISU-ITBPUB-26-${number}"`)
+      }
       expect(html).not.toContain("ISU-ITBPUB-26-303")
-      expect(html).toContain("Aktivitas terakhir 5 Oktober 2026")
+      expect(list).toContain(">Selesai terkonfirmasi<")
       expect(html).toContain("Kota Bandung · 3 laporan")
-      expect(html).toContain('href="/isu?status=responded"')
-      expect(html).toContain('href="/isu?status=confirmed_resolved"')
       const other = await (await get(`${UGM}/`)).text()
       expect(other).not.toContain("ISU-ITBPUB-26-30")
-      expect(other).toContain("Belum ada isu yang ditanggapi instansi.")
+      expect(other).toContain("Belum ada isu yang terbit.")
     } finally {
       await su.query("DELETE FROM issues WHERE number >= 300")
     }
@@ -589,7 +575,7 @@ describe("home", () => {
     expect(html).toContain('name="q"')
     expect(html).not.toContain("minLength")
     expect(html).toContain("Laporkan Masalah Publik.</span> <br/><span")
-    expect(html).toContain("Siapa pun di Indonesia, usia 18+.")
+    expect(html).toContain('href="/masuk?daftar=1"')
     expect(html).not.toMatch(/laporan masuk|isu aktif|Pantauan/)
   })
 })
@@ -630,16 +616,23 @@ describe("KM ITB tenant assets", () => {
         const html = await (await get(`${host}${path}`)).text()
         expect(html).toContain("<footer")
         expect(html).not.toContain("/km-itb/")
-        expect(html).not.toContain("title-glow")
       }
     }
   })
 
-  test("About art and glow only on KM ITB", async () => {
+  test("About wears the home look, KM ornaments only", async () => {
     const html = await (await get(`${KM}/tentang`)).text()
-    expect(html).toContain("/km-itb/about/hero-720.avif")
-    expect(html).toContain("/km-itb/about/card.webp")
-    expect(html).toContain("title-glow")
+    expect(html).not.toContain("/km-itb/about/")
+    expect(html).toContain("/km-itb/rings-45.svg")
+    expect(html).toContain('<div class="relative mt-8 bg-band">')
+    expect(html).toMatch(
+      /<h2[^>]*id="prinsip"[^>]*><span class="highlight-box bg-highlight text-ink">/,
+    )
+    expect(html).toContain("bg-home-list")
+    // Same header as /lapor
+    expect(html).toMatch(
+      /header-bg[\s\S]*<h1 class="mt-2 font-bold font-heading/,
+    )
   })
 })
 
@@ -674,11 +667,10 @@ describe("content pages", () => {
     // Menu label visible in H1
     const h1 = main.match(/<h1[^>]*>([\s\S]*?)<\/h1>/)?.[1] ?? ""
     expect(h1).not.toContain("sr-only")
-    expect(h1.replace(/<[^>]+>/g, "")).toBe("Tentang Suara Madani")
-    expect(main).toContain(
-      "KM itbpub, organisasi mahasiswa di itbpub, mengelola Suara Madani secara mandiri.",
-    )
-    expect(main).toContain("statusnya ada di halaman Laporan saya")
+    expect(h1.replace(/<[^>]+>/g, "")).toBe("Tentang Sadar Bersuara")
+    // Operator lives in the footer
+    expect(main).not.toContain("mengelola Sadar Bersuara secara mandiri")
+    expect(main).toContain("Pantau di halaman Laporan saya")
     // Same k as merge
     expect(main).toContain("minimal 5 laporan di kecamatan itu")
     // Detail never links to summary
@@ -1137,6 +1129,7 @@ describe("tuntutan on the dashboard, home and apex", () => {
     scope: "regional",
     provinceCode: "32",
     regencyCode: null,
+    category: "infrastruktur_transportasi",
     title: "Standar layanan air bersih di Jawa Barat",
     body: "Kami menuntut standar waktu pemulihan suplai air bersih saat gangguan.",
     summary: "Waktu pemulihan suplai air dan kewajiban tangki air bantuan.",
@@ -1325,7 +1318,7 @@ describe("tuntutan on the dashboard, home and apex", () => {
     const html = await (await get(`${ITB}/`)).text()
     const at = html.indexOf('id="tuntutan-terbaru"')
     expect(at).toBeGreaterThan(0)
-    expect(at).toBeLessThan(html.indexOf('id="baru-ditanggapi"'))
+    expect(at).toBeLessThan(html.indexOf('id="isu-terbaru"'))
     expect(html).toContain(NATIONAL_TITLE)
     expect(html).toMatch(/href="\/tuntutan"[^>]*>Lihat semua tuntutan</)
     expect(html).not.toContain(DRAFT_TITLE)
@@ -1457,17 +1450,16 @@ describe("apex national view", () => {
     expect(html).toContain('href="/tentang#lisensi"')
     const about = await (await get(`${ITB}/tentang`)).text()
     expect(about).toContain('id="lisensi"')
-    expect(about).toContain(m.about_corrections_title())
-    expect(about).toContain(m.about_conflict_title())
+    expect(about).toContain("OpenStreetMap contributors")
+    expect(about).not.toContain('id="akuntabilitas"')
   })
 
   test("apex policy pages never print an empty campus", async () => {
     const about = await (await get(`${APEX}/tentang`)).text()
-    expect(about).toContain(m.about_operator_body_national())
-    expect(about).not.toMatch(/Suara Madani di \./)
+    expect(about).not.toMatch(/Sadar Bersuara di \./)
     const privacy = await (await get(`${APEX}/privasi`)).text()
     expect(privacy).toContain(m.privacy_controller_body_national())
-    expect(privacy).not.toMatch(/Suara Madani di\s+dikelola/)
+    expect(privacy).not.toMatch(/Sadar Bersuara di\s+dikelola/)
   })
 
   test("unknown query 301s to the canonical URL", async () => {

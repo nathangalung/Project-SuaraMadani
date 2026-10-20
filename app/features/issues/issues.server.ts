@@ -203,37 +203,30 @@ export type ShowcaseIssue = Pick<
   | "regencyName"
   | "districtName"
   | "reportCount"
-  | "lastActivityAt"
+  | "govStatus"
 >
 
 export const SHOWCASE_SIZE = 6
 
-/** Home lists, latest activity first. */
-export function listShowcases(
-  orgId: string,
-): Promise<Record<"responded" | "resolved", ShowcaseIssue[]>> {
-  return withTenant(orgId, async (tx) => {
-    const read = (status: GovernmentStatus) =>
-      tx
-        .select({
-          code: issues.publicCode,
-          title: issues.title,
-          regencyName: regency.name,
-          districtName: district.name,
-          reportCount: issues.reportCount,
-          lastActivityAt: issues.lastActivityAt,
-        })
-        .from(issues)
-        .innerJoin(regency, eq(regency.code, issues.regencyCode))
-        .leftJoin(district, eq(district.code, issues.districtCode))
-        .where(and(isNotNull(issues.publishedAt), eq(issues.govStatus, status)))
-        .orderBy(desc(issues.lastActivityAt), desc(issues.id))
-        .limit(SHOWCASE_SIZE)
-    return {
-      responded: await read("responded"),
-      resolved: await read("confirmed_resolved"),
-    }
-  })
+/** Home list, newest published first. */
+export function listLatestIssues(orgId: string): Promise<ShowcaseIssue[]> {
+  return withTenant(orgId, (tx) =>
+    tx
+      .select({
+        code: issues.publicCode,
+        title: issues.title,
+        regencyName: regency.name,
+        districtName: district.name,
+        reportCount: issues.reportCount,
+        govStatus: issues.govStatus,
+      })
+      .from(issues)
+      .innerJoin(regency, eq(regency.code, issues.regencyCode))
+      .leftJoin(district, eq(district.code, issues.districtCode))
+      .where(isNotNull(issues.publishedAt))
+      .orderBy(desc(issues.publishedAt), desc(issues.id))
+      .limit(SHOWCASE_SIZE),
+  )
 }
 
 export const RANKING_SIZE = 5

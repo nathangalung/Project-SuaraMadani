@@ -1,4 +1,4 @@
-import type { DemandScope } from "../../shared/demands.ts"
+import type { DemandCategory, DemandScope } from "../../shared/demands.ts"
 import type { DemandItemState } from "../../shared/status.ts"
 
 // Sample tuntutan, admin authored
@@ -19,6 +19,7 @@ export type PlannedDemand = {
   scope: DemandScope
   provinceCode: string | null
   regencyCode: string | null
+  category: DemandCategory
   title: string
   body: string
   summary: string
@@ -43,6 +44,7 @@ const ITB: PlannedDemand[] = [
     scope: "national",
     provinceCode: null,
     regencyCode: null,
+    category: "bantuan_sosial",
     title: "Buka data penerima bantuan pangan per desa",
     body: `${SAMPLE_MARK} Kami menuntut daftar penerima bantuan pangan dibuka per desa dan kelurahan dalam bentuk tersamarkan, beserta jadwal penyaluran setiap bulan, agar warga bisa ikut mengawasi ketepatan sasaran.`,
     summary:
@@ -99,6 +101,7 @@ const ITB: PlannedDemand[] = [
     scope: "regional",
     provinceCode: "32",
     regencyCode: "32.73",
+    category: "infrastruktur_transportasi",
     title: "Standar layanan minimum air bersih di Kota Bandung",
     body: `${SAMPLE_MARK} Kami menuntut standar waktu pemulihan suplai air bersih saat gangguan, kewajiban tangki air bantuan bila gangguan lebih dari 24 jam, dan laporan gangguan yang terbuka untuk warga.`,
     summary:
@@ -162,6 +165,7 @@ const ITB: PlannedDemand[] = [
     scope: "regional",
     provinceCode: "32",
     regencyCode: "32.05",
+    category: "kebencanaan",
     title: "Percepatan dana stimulan rumah rusak pascagempa di Garut",
     body: `${SAMPLE_MARK} Kami menuntut batas waktu pencairan dana stimulan untuk rumah rusak pascagempa dan publikasi progres verifikasi kerusakan per desa.`,
     summary:
@@ -183,6 +187,7 @@ const ITB: PlannedDemand[] = [
     scope: "national",
     provinceCode: null,
     regencyCode: null,
+    category: "kesehatan",
     title: "Posko kesehatan dan masker gratis saat kabut asap",
     body: `${SAMPLE_MARK} Kami menuntut posko kesehatan dan pembagian masker standar di daerah dengan kualitas udara berbahaya selama musim kabut asap.`,
     summary:
@@ -229,6 +234,7 @@ const ITB: PlannedDemand[] = [
     scope: "regional",
     provinceCode: "32",
     regencyCode: "32.04",
+    category: "infrastruktur_transportasi",
     title: "Perbaikan jembatan gantung penghubung sekolah di Kabupaten Bandung",
     body: `${SAMPLE_MARK} Draf: tuntutan perbaikan jembatan gantung yang dipakai siswa menuju sekolah.`,
     summary: "Draf tuntutan perbaikan jembatan gantung menuju sekolah.",
@@ -249,6 +255,7 @@ const ITB: PlannedDemand[] = [
     scope: "regional",
     provinceCode: "31",
     regencyCode: "31.74",
+    category: "infrastruktur_transportasi",
     title: "Trotoar dan penyeberangan ramah difabel di sekitar Stasiun Tebet",
     body: `${SAMPLE_MARK} Kami menuntut trotoar tanpa penghalang, ubin pemandu yang tersambung, dan penyeberangan dengan lampu suara di sekitar Stasiun Tebet.`,
     summary:
@@ -285,6 +292,7 @@ const ITB: PlannedDemand[] = [
     scope: "regional",
     provinceCode: "32",
     regencyCode: "32.01",
+    category: "lingkungan_hidup",
     title: "Jadwal angkut sampah yang tetap di permukiman Kabupaten Bogor",
     body: `${SAMPLE_MARK} Kami menuntut jadwal angkut sampah yang tetap dan diumumkan, tempat penampungan sementara yang tertutup, dan kanal aduan bila jadwal terlewat.`,
     summary:
@@ -316,6 +324,7 @@ const UGM: PlannedDemand[] = [
     scope: "regional",
     provinceCode: "34",
     regencyCode: "34.03",
+    category: "kebencanaan",
     title: "Air bersih saat kemarau di Gunungkidul",
     body: `${SAMPLE_MARK} Kami menuntut jadwal distribusi air bersih yang pasti selama kemarau, prioritas dusun tanpa sumber air, dan rencana jaringan pipa jangka panjang.`,
     summary:
@@ -366,6 +375,7 @@ const UGM: PlannedDemand[] = [
     scope: "regional",
     provinceCode: "34",
     regencyCode: "34.02",
+    category: "kebencanaan",
     title: "Perbaikan tanggul sungai sebelum musim hujan di Bantul",
     body: `${SAMPLE_MARK} Kami menuntut perbaikan tanggul sungai yang jebol tahun lalu sebelum musim hujan dan jalur evakuasi yang ditandai jelas.`,
     summary:
@@ -394,6 +404,7 @@ const UGM: PlannedDemand[] = [
     scope: "national",
     provinceCode: null,
     regencyCode: null,
+    category: "pendidikan",
     title: "Transparansi kuota dan kriteria bantuan biaya kuliah",
     body: `${SAMPLE_MARK} Kami menuntut kuota bantuan biaya kuliah per kampus diumumkan sebelum pendaftaran dan kriteria seleksinya dibuka.`,
     summary:
@@ -429,6 +440,7 @@ const UGM: PlannedDemand[] = [
     scope: "regional",
     provinceCode: "33",
     regencyCode: "33.74",
+    category: "lingkungan_hidup",
     title: "Penanganan banjir rob di pesisir Kota Semarang",
     body: `${SAMPLE_MARK} Kami menuntut pompa air tambahan di kawasan pesisir, perbaikan tanggul laut, dan bantuan perbaikan rumah warga yang terdampak rob berulang.`,
     summary:
@@ -458,6 +470,7 @@ const UGM: PlannedDemand[] = [
     scope: "regional",
     provinceCode: "35",
     regencyCode: null,
+    category: "kebencanaan",
     title: "Pasokan air bersih saat kemarau panjang di Jawa Timur",
     body: `${SAMPLE_MARK} Kami menuntut jadwal distribusi air bersih yang diumumkan untuk desa terdampak kemarau dan data desa rawan kekeringan yang diperbarui setiap musim.`,
     summary:

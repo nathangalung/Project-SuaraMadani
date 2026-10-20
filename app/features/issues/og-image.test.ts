@@ -12,7 +12,7 @@ const card: OgCard = {
   title: "Atap ruang kelas SDN 3 Coblong runtuh dan siswa belajar di halaman",
   place: "Kota Bandung",
   label: "Terverifikasi",
-  siteName: "Suara Madani · KM ITB",
+  siteName: "Sadar Bersuara · KM ITB",
 }
 
 describe("wrapTitle", () => {

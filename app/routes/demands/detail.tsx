@@ -4,6 +4,7 @@ import { data, isRouteErrorResponse, Link, redirect } from "react-router"
 import { Badge } from "~/components/ui/badge"
 import { ButtonLink } from "~/components/ui/button"
 import { Container } from "~/components/ui/container"
+import { CATEGORY_TEXT } from "~/features/demands/category-labels"
 import { demandHistory } from "~/features/demands/demand-history"
 import { demandUrls, getDemandPage } from "~/features/demands/demands.server"
 import {
@@ -11,8 +12,11 @@ import {
   isFollowingDemand,
   unfollowDemand,
 } from "~/features/demands/follow.server"
+import { ImportancePanel } from "~/features/demands/importance"
+import { ImportanceLine } from "~/features/demands/importance-line"
 import { ItemUpdates } from "~/features/demands/item-updates"
 import { demandPlace, STATE_TEXT } from "~/features/demands/labels"
+import { ownRating } from "~/features/demands/rating.server"
 import {
   FulfilmentMark,
   ProgressSquares,
@@ -48,6 +52,8 @@ export async function loader({ params, context }: Route.LoaderArgs) {
           emailReady: session.user.emailVerified,
         }
       : null,
+    own: session ? await ownRating(tenant.id, code, session.user.id) : null,
+    signedIn: session !== null,
     organization: tenant.name,
     siteName: m.og_site_name({ name: tenant.name }),
     ...demandUrls(tenant.host, code, demand.version),
@@ -82,6 +88,7 @@ const H2 = "font-bold text-2xl"
 const ANCHORS = [
   { id: "teks", label: m.demand_text_title },
   { id: "sub-tuntutan", label: m.demand_items_title },
+  { id: "kepentingan", label: m.demand_importance_title },
   { id: "riwayat", label: m.issue_history_title },
   { id: "isu-terkait", label: m.demand_issues_title },
 ] as const
@@ -89,6 +96,7 @@ const ANCHORS = [
 // PLAN §6.1 order, no JS
 export default function DemandDetail({ loaderData }: Route.ComponentProps) {
   const { demand, siteName, url, image, follow, organization } = loaderData
+  const { own, signedIn } = loaderData
   const actor = m.demand_actor({ organization })
   const description = demand.summary.slice(0, 200)
   // Reopened: old reason is history
@@ -123,6 +131,9 @@ export default function DemandDetail({ loaderData }: Route.ComponentProps) {
           <p className="mt-5 flex flex-wrap gap-2">
             <Badge className="tabular-nums">{demand.code}</Badge>
             <Badge tone="subtle">{demandPlace(demand)}</Badge>
+            {demand.category ? (
+              <Badge tone="subtle">{CATEGORY_TEXT[demand.category]()}</Badge>
+            ) : null}
             {demand.state === "closed" ? (
               <Badge tone="ink">{STATE_TEXT.closed()}</Badge>
             ) : null}
@@ -148,6 +159,7 @@ export default function DemandDetail({ loaderData }: Route.ComponentProps) {
                 total: demand.progress.total,
               })}
             </span>
+            <ImportanceLine importance={demand.importance} />
           </div>
           <p className="mt-5 flex items-start gap-1.5 text-ink-soft">
             <MapPin
@@ -274,6 +286,15 @@ export default function DemandDetail({ loaderData }: Route.ComponentProps) {
                 ))}
               </ol>
             </section>
+
+            <ImportancePanel
+              code={demand.code}
+              importance={demand.importance}
+              named={demand.named}
+              open={demand.state === "published"}
+              own={own}
+              signedIn={signedIn}
+            />
 
             <section
               id="riwayat"

@@ -17,7 +17,7 @@ import Queue from "./queue"
 import ManageReport from "./report"
 import Settings from "./settings"
 
-const SITE = "Suara Madani · KM ITB"
+const SITE = "Sadar Bersuara · KM ITB"
 
 // Root data supplies site name
 function render(page: () => ReactNode) {

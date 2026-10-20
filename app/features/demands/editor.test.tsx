@@ -3,6 +3,7 @@ import type { ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { createRoutesStub } from "react-router"
 import { m } from "~/paraglide/messages.js"
+import { emptyImportance } from "../../../shared/demands.ts"
 import { outcome } from "./actions.server"
 import {
   DraftPreview,
@@ -34,6 +35,7 @@ const demand: ManagedDemand = {
   scope: "national",
   provinceCode: null,
   regencyCode: null,
+  category: "pendidikan",
   title: "Judul",
   body: "Teks",
   summary: "Ringkasan",
@@ -46,9 +48,24 @@ const demand: ManagedDemand = {
   frozen: false,
   items: [item],
   issues: [],
+  importance: emptyImportance(),
+  pendingRaters: 0,
 }
 
 describe("editor errors", () => {
+  test("publish without a category points at the publish step", () => {
+    expect(outcome("publish", { ok: false, reason: "no_category" })).toEqual({
+      errors: ["publish_category"],
+      intent: "publish",
+    })
+    expect(demandErrors(["publish_category"])).toEqual([
+      {
+        fieldId: "demand-publish",
+        message: m.demand_publish_needs_category(),
+      },
+    ])
+  })
+
   test("publish without sub-tuntutan names the publish step", () => {
     expect(outcome("publish", { ok: false, reason: "no_items" })).toEqual({
       errors: ["publish_items"],

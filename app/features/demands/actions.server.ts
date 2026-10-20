@@ -113,6 +113,7 @@ const FORM_KEYS = [
   "scope",
   "provinceCode",
   "regencyCode",
+  "category",
   "title",
   "body",
   "summary",
@@ -197,6 +198,8 @@ export function outcome(
       return { errors: ["demand_closed"], intent }
     case "no_items":
       return { errors: ["publish_items"], intent }
+    case "no_category":
+      return { errors: ["publish_category"], intent }
     case "too_many":
       return intent === "link_issue"
         ? { errors: ["issues_too_many"], intent }

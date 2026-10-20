@@ -6,7 +6,6 @@ import { errorText } from "./error-page"
 import { Footer } from "./footer"
 import { Header, hasPageSignIn, isAuthShell, syncMenuTop } from "./header"
 import { IntakeBanner } from "./intake-banner"
-import { Masthead } from "./masthead"
 import { PageHeader } from "./page-header"
 import { SectionHeading } from "./section-heading"
 import { ownsDescription, SiteMeta } from "./site-meta"
@@ -23,21 +22,6 @@ function renderAt(path: string, node: React.ReactNode): string {
     <MemoryRouter initialEntries={[path]}>{node}</MemoryRouter>,
   )
 }
-
-describe("Masthead", () => {
-  test("states it is not a government site and explains without JS", () => {
-    const html = renderToStaticMarkup(<Masthead />)
-    expect(html).toContain("bukan situs pemerintah")
-    expect(html).toContain("<details")
-    expect(html).toContain("Bagaimana mengenalinya?")
-    expect(html).toContain(".go.id")
-  })
-
-  test("is a labelled landmark", () => {
-    const html = renderToStaticMarkup(<Masthead />)
-    expect(html).toMatch(/^<section aria-label="Keterangan situs"/)
-  })
-})
 
 describe("IntakeBanner", () => {
   test("names the pause and keeps reading open", () => {
@@ -61,7 +45,7 @@ describe("Header", () => {
     const html = renderAt(
       "/isu",
       <Header
-        siteName="Suara Madani"
+        siteName="Sadar Bersuara"
         tenantName="KM ITB"
         nav={nav}
         user={null}
@@ -69,14 +53,14 @@ describe("Header", () => {
     )
     expect(html).not.toMatch(/<a[^>]*aria-label/)
     expect(html).toMatch(
-      /<a[^>]*href="\/"[^>]*><img[^>]*alt=""[^>]*\/><span[^>]*><span[^>]*>Suara Madani<\/span><span[^>]*>KM ITB<\/span>/,
+      /<a[^>]*href="\/"[^>]*><img[^>]*alt=""[^>]*\/><span[^>]*><span[^>]*>Sadar Bersuara<\/span><span[^>]*>KM ITB<\/span>/,
     )
   })
 
   test("sticks to the top, static on short screens", () => {
     const html = renderAt(
       "/",
-      <Header siteName="Suara Madani" nav={nav} user={null} />,
+      <Header siteName="Sadar Bersuara" nav={nav} user={null} />,
     )
     expect(html).toContain('<header class="header-bg sticky top-0 z-[1000]')
     expect(html).toContain("[@media(max-height:30rem)]:static")
@@ -85,7 +69,7 @@ describe("Header", () => {
   test("signed out offers only Masuk", () => {
     const html = renderAt(
       "/",
-      <Header siteName="Suara Madani" nav={nav} user={null} />,
+      <Header siteName="Sadar Bersuara" nav={nav} user={null} />,
     )
     expect(html.match(/href="\/masuk"/g)).toHaveLength(2)
     expect(html).not.toMatch(/Daftar|Buat akun|href="\/lacak"/)
@@ -95,7 +79,7 @@ describe("Header", () => {
     const html = renderAt(
       "/lacak",
       <Header
-        siteName="Suara Madani"
+        siteName="Sadar Bersuara"
         nav={nav}
         user={null}
         showSignIn={false}
@@ -113,7 +97,7 @@ describe("Header", () => {
   test("menu toggle is named and swaps icons", () => {
     const html = renderAt(
       "/",
-      <Header siteName="Suara Madani" nav={nav} user={null} />,
+      <Header siteName="Sadar Bersuara" nav={nav} user={null} />,
     )
     const summary = html.match(/<summary[^>]*>(.*?)<\/summary>/)?.[1] ?? ""
     expect(summary).toContain('<span class="sr-only">Menu</span>')
@@ -125,7 +109,7 @@ describe("Header", () => {
     const html = renderAt(
       "/masuk",
       <Header
-        siteName="Suara Madani"
+        siteName="Sadar Bersuara"
         tenantName="KM ITB"
         nav={nav}
         user={null}
@@ -142,7 +126,7 @@ describe("Header", () => {
   test("marks the current page and works without JS", () => {
     const html = renderAt(
       "/isu",
-      <Header siteName="Suara Madani" nav={nav} user={null} />,
+      <Header siteName="Sadar Bersuara" nav={nav} user={null} />,
     )
     expect(html).toMatch(
       /<a[^>]*aria-current="page"[^>]*href="\/isu"|<a[^>]*href="\/isu"[^>]*aria-current="page"/,
@@ -155,7 +139,7 @@ describe("Header", () => {
     const html = renderAt(
       "/",
       <Header
-        siteName="Suara Madani"
+        siteName="Sadar Bersuara"
         nav={nav}
         user={{ email: "warga@contoh.com" }}
         draftHref="/lapor/periksa"
@@ -176,7 +160,7 @@ describe("Header", () => {
     const html = renderAt(
       "/",
       <Header
-        siteName="Suara Madani"
+        siteName="Sadar Bersuara"
         nav={nav}
         user={{ email: "warga@contoh.com" }}
       />,
@@ -196,7 +180,7 @@ describe("Header", () => {
   test("desktop nav is centred, state never moves it", () => {
     const html = renderAt(
       "/",
-      <Header siteName="Suara Madani" nav={nav} user={null} />,
+      <Header siteName="Sadar Bersuara" nav={nav} user={null} />,
     )
     expect(html).toContain("xl:grid xl:grid-cols-[1fr_auto_1fr]")
     expect(html).toMatch(
@@ -210,7 +194,7 @@ describe("Header", () => {
     const km = brandImages("km-itb")
     const html = renderAt(
       "/isu",
-      <Header siteName="Suara Madani" nav={nav} user={null} {...km} />,
+      <Header siteName="Sadar Bersuara" nav={nav} user={null} {...km} />,
     )
     expect(html.match(/navlink-star/g)).toHaveLength(1)
     const active = html.match(
@@ -233,7 +217,7 @@ describe("Header", () => {
     const html = renderAt(
       "/isu",
       <Header
-        siteName="Suara Madani"
+        siteName="Sadar Bersuara"
         nav={nav}
         user={null}
         {...brandImages(null)}
@@ -249,7 +233,7 @@ describe("Header", () => {
   test("mobile panel height starts at its own top", () => {
     const html = renderAt(
       "/",
-      <Header siteName="Suara Madani" nav={nav} user={null} />,
+      <Header siteName="Sadar Bersuara" nav={nav} user={null} />,
     )
     expect(html).toContain("max-h-[calc(100svh-var(--menu-top,5rem))]")
     expect(html).toContain("lg:max-h-[calc(100svh-var(--menu-top,6rem))]")
@@ -273,10 +257,10 @@ describe("Footer", () => {
     const html = renderAt(
       "/",
       <Footer
-        siteName="Suara Madani"
+        siteName="Sadar Bersuara"
         year={2026}
         contactEmail="kontak@contoh.id"
-        operator="Perkumpulan Suara Madani"
+        operator="Perkumpulan Sadar Bersuara"
         campus="KM ITB"
         alliance="Aliansi Kampus"
         legalNumber="AHU-0000000.AH.01.07.TAHUN 2026"
@@ -285,14 +269,14 @@ describe("Footer", () => {
       />,
     )
     expect(html).toContain(
-      "Dikelola Perkumpulan Suara Madani, organisasi mahasiswa di KM ITB",
+      "Dikelola Perkumpulan Sadar Bersuara, organisasi mahasiswa di KM ITB",
     )
     expect(html).toContain("Anggota aliansi Aliansi Kampus")
     expect(html).toContain("Nomor badan hukum: AHU-0000000.AH.01.07.TAHUN 2026")
     expect(html).toContain('href="/privasi"')
     expect(html).toContain('href="https://status.contoh.id"')
     expect(html).toContain('href="mailto:kontak@contoh.id"')
-    expect(html).toContain("© 2026 Perkumpulan Suara Madani")
+    expect(html).toContain("© 2026 Perkumpulan Sadar Bersuara")
     expect(html).toContain('<nav aria-label="Tautan situs">')
     // Emblem centred beside the text
     expect(html).toContain('class="flex items-center gap-4"><img')
@@ -302,7 +286,7 @@ describe("Footer", () => {
     const html = renderAt(
       "/",
       <Footer
-        siteName="Suara Madani"
+        siteName="Sadar Bersuara"
         year={2026}
         operator="KM ITB"
         campus="ITB"
@@ -312,7 +296,7 @@ describe("Footer", () => {
     expect(html).toMatch(/^<footer class="bg-footer text-ink">/)
     expect(html).toContain('src="/logo.svg"')
     expect(html).not.toContain("mailto:")
-    expect(html).toContain("Suara Madani")
+    expect(html).toContain("Sadar Bersuara")
   })
 
   test("KM ITB logo loads lazily", () => {
@@ -320,7 +304,7 @@ describe("Footer", () => {
     const html = renderAt(
       "/",
       <Footer
-        siteName="Suara Madani"
+        siteName="Sadar Bersuara"
         year={2026}
         operator="KM ITB"
         campus="ITB"
@@ -338,7 +322,7 @@ describe("Footer", () => {
     const html = renderAt(
       "/",
       <Footer
-        siteName="Suara Madani"
+        siteName="Sadar Bersuara"
         year={2026}
         operator="KM ITB"
         campus="ITB"
@@ -356,7 +340,7 @@ describe("Footer", () => {
     const html = renderAt(
       "/",
       <Footer
-        siteName="Suara Madani"
+        siteName="Sadar Bersuara"
         year={2026}
         operator="KM ITB"
         campus="Institut Teknologi Bandung"

@@ -29,10 +29,13 @@ export function headers() {
 
 export function loader({ request, context }: Route.LoaderArgs) {
   const session = context.get(sessionContext)
+  const params = new URL(request.url).searchParams
   return {
     siteKey: process.env.TURNSTILE_SITE_KEY ?? "",
     signedInAs: signedInLabel(session),
-    next: returnPath(new URL(request.url).searchParams.get("kembali")),
+    next: returnPath(params.get("kembali")),
+    // Home "Buat akun" opens Daftar
+    signUp: params.get("daftar") === "1",
     // Number released to its prover
     needsPhone: session ? !session.user.phoneNumber : false,
   }
@@ -168,6 +171,7 @@ export default function SignInPage({
               next ? void navigate(next) : void revalidator.revalidate()
             }
             primary
+            initialMode={loaderData.signUp ? "sign-up" : "sign-in"}
             intro={m.signin_page_intro()}
             heading={{
               start: <h1 className={AUTH_TITLE}>{m.signin_page_heading()}</h1>,

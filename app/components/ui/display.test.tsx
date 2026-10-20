@@ -7,7 +7,6 @@ import { Button } from "./button"
 import { Card } from "./card"
 import { Container } from "./container"
 import { backdropClose, Dialog } from "./dialog"
-import { LineGrid } from "./line-grid"
 import { Skeleton } from "./skeleton"
 import { Table, Td, Th } from "./table"
 
@@ -187,22 +186,5 @@ describe("Skeleton", () => {
     expect(renderToStaticMarkup(<Skeleton className="h-4 w-32" />)).toBe(
       '<div aria-hidden="true" class="animate-pulse bg-ink/8 noscript:hidden h-4 w-32"></div>',
     )
-  })
-})
-
-describe("LineGrid", () => {
-  test("numbered list with item headings", () => {
-    const html = renderToStaticMarkup(
-      <LineGrid
-        items={[
-          { title: "Laporkan", body: "Isi formulir." },
-          { title: "Diperiksa", body: "Moderator memeriksa." },
-        ]}
-      />,
-    )
-    expect(html).toMatch(/^<ol/)
-    expect(html.match(/<h3/g)?.length).toBe(2)
-    expect(html).toContain('aria-hidden="true"')
-    expect(html).toContain(">02<")
   })
 })

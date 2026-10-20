@@ -53,20 +53,6 @@ export function siteIdentity(
   }
 }
 
-const OFFICERS_MAX = 20
-
-/** Named officers, untrusted jsonb. */
-export function officerLines(
-  tenant: Pick<TenantContext, "settings">,
-): string[] {
-  const value: unknown = tenant.settings.officers
-  if (!Array.isArray(value)) return []
-  return value
-    .map(text)
-    .filter((line): line is string => Boolean(line))
-    .slice(0, OFFICERS_MAX)
-}
-
 /** About page only, not shell. */
 export function creditLine(
   tenant: Pick<TenantContext, "settings">,

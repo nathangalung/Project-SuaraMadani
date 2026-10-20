@@ -162,7 +162,7 @@ export async function deliverInvitation(
   const origin = deps.origin(tenant.host)
   const mail = renderInvitationMail({
     site: {
-      name: `Suara Madani · ${tenant.name}`,
+      name: `Sadar Bersuara · ${tenant.name}`,
       origin,
       brand: brandColor(tenant.theme.brand),
     },

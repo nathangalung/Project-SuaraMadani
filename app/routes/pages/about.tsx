@@ -1,25 +1,14 @@
+import type { CSSProperties } from "react"
 import { Link, useRouteLoaderData } from "react-router"
+import { BoxedHeading } from "~/components/layout/boxed-heading"
+import { PageHeader } from "~/components/layout/page-header"
+import { useStagger } from "~/components/layout/use-reveal"
 import { cn } from "~/components/ui/cn"
-import { LineGrid } from "~/components/ui/line-grid"
 import { aboutFacts } from "~/features/content/about.server"
-import {
-  Arc,
-  HeroBackdrop,
-  InfoCard,
-  Panel,
-} from "~/features/content/about-parts"
-import {
-  BandTitle,
-  displayWeight,
-  MixedLetters,
-  StripTitle,
-} from "~/features/content/display-title"
-import {
-  ContactLine,
-  ReportButton,
-  useNational,
-} from "~/features/content/policy-page"
+import { InfoCard, SubTitle } from "~/features/content/about-parts"
+import { ReportButton, useNational } from "~/features/content/policy-page"
 import { PROSE_LINK, updatedOn } from "~/features/content/prose"
+import { Rings, StarPair } from "~/features/home/ornaments"
 import { useSiteTitle } from "~/features/report/page-title"
 import { m } from "~/paraglide/messages.js"
 import type { loader as rootLoader } from "~/root"
@@ -68,9 +57,18 @@ const NEVER = [
   m.about_never_5,
 ]
 
-const BODY = "relative px-4 pb-16 sm:px-6 lg:px-8 lg:pb-24"
-const GRID = "relative z-10 mx-auto grid max-w-[1080px] gap-4 lg:gap-6"
-const LIST = "mt-1 list-disc space-y-1.5 pl-5 marker:text-brand"
+// Same rhythm as home
+const BAND =
+  "relative px-6 pt-[clamp(1rem,4vw,3rem)] pb-[clamp(4rem,9vw,7rem)] sm:px-10"
+// Hard edge, no hero fade
+const BAND_FIRST =
+  "relative px-6 pt-14 pb-[clamp(4rem,9vw,7rem)] sm:px-10 lg:pt-20"
+const LIST_SECTION = "px-6 py-14 sm:px-10 lg:py-20"
+const LEAD = "mx-auto mt-4 max-w-2xl text-center text-lg leading-relaxed"
+const BAND_LINK =
+  "font-semibold text-on-accent underline underline-offset-4 hover:no-underline"
+const BULLETS = "list-disc space-y-1.5 pl-5"
+const ORNAMENT = "pointer-events-none absolute -z-10 select-none"
 
 function principles() {
   return [
@@ -101,237 +99,141 @@ function principles() {
   ]
 }
 
-// Mockup TentangPage, PLAN §6.1 facts
+// Home look, PLAN §6.1 facts
 export default function About({ loaderData }: Route.ComponentProps) {
   const root = useRouteLoaderData<typeof rootLoader>("root")
-  const art = root?.brandAssets === "km-itb"
-  const identity = root?.identity
+  const kmItb = root?.brandAssets === "km-itb"
   const national = useNational()
+  const steps = useStagger<HTMLOListElement>()
+  const methods = useStagger<HTMLUListElement>()
   return (
     <>
       <title>{useSiteTitle(m.nav_about())}</title>
-      <section
-        aria-labelledby="tentang-judul"
-        className="relative isolate overflow-hidden"
-      >
-        <HeroBackdrop art={art} />
-        <div className="flex flex-col items-center px-4 pt-10 pb-20 text-center lg:pt-16 lg:pb-28">
-          {/* Menu label as visible eyebrow */}
-          <h1
-            id="tentang-judul"
-            className="flex flex-col items-center text-on-accent uppercase"
-          >
-            <span className="bg-brand px-4 py-1 text-[clamp(1rem,4vw,1.75rem)] leading-[1.4] sm:px-8 sm:py-1.5">
-              {m.nav_about()}
-            </span>{" "}
-            <span
-              className={cn(
-                "relative isolate mt-4 px-2 text-[clamp(2rem,9.4vw,6rem)] leading-[1.1] [font-synthesis:none] lg:mt-6",
-                displayWeight(art),
-                art && "title-glow",
-              )}
-            >
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "absolute inset-x-0 -z-10 bg-brand",
-                  art ? "top-[35%] bottom-[10%]" : "inset-y-0",
-                )}
-              />
-              <MixedLetters text="Suara Madani" />
-            </span>
-          </h1>
-          <p className="mt-8 max-w-2xl text-pretty font-medium text-[clamp(1.05rem,1.8vw,1.35rem)] text-ink leading-snug">
-            {m.about_lead()}
-          </p>
-        </div>
-      </section>
-
-      <section aria-labelledby="pengelola" className="relative bg-page">
-        <BandTitle id="pengelola" text={m.about_band_who()} glow={art} />
-        <div className={BODY}>
-          {art && <Arc tone="pink" className="top-[10%] left-[5%] rotate-12" />}
-          <Panel title={m.about_meaning_title()} art={art}>
-            <p>{m.about_meaning_body()}</p>
-          </Panel>
-          {identity && (
-            <>
-              <StripTitle
-                text={m.about_operator_title()}
-                glow={art}
-                className="my-8 lg:my-12"
-              />
-              <div className="relative z-10 mx-auto max-w-2xl text-center text-ink">
-                <p className="text-lg leading-relaxed">
-                  {national
-                    ? m.about_operator_body_national()
-                    : m.about_operator_body({
-                        operator: identity.operator,
-                        campus: identity.campus,
-                      })}
-                </p>
-              </div>
-            </>
-          )}
-          <StripTitle
-            text={m.about_principles_title()}
-            glow={art}
-            className="my-8 lg:my-12"
-          />
-          <LineGrid
-            items={principles()}
-            columnCount={3}
-            numbered={false}
-            titleAs="h4"
-            className="relative z-10"
-          />
-        </div>
-      </section>
-
-      <section aria-labelledby="cara-kerja" className="relative bg-page">
-        <BandTitle id="cara-kerja" text={m.about_band_how()} glow={art} />
-        <div className={BODY}>
-          {art && <Arc tone="red" className="top-[40%] right-[6%]" />}
-          <StripTitle
-            text={m.home_how_title()}
-            glow={art}
-            className="mt-10 mb-4 lg:mt-14"
-          />
-          <p className="relative z-10 mx-auto mb-8 max-w-2xl text-center text-ink leading-[1.7] lg:mb-12">
-            {m.about_how_lead()}
-          </p>
-          <ol className={cn(GRID, "sm:grid-cols-2 lg:grid-cols-4")}>
-            {STEPS.map(([title, body], index) => (
-              <InfoCard
-                key={title()}
-                number={index + 1}
-                title={title()}
-                art={art}
+      {/* Same header as /lapor */}
+      <PageHeader title={m.about_title()} description={m.about_lead()} />
+      <div className="relative mt-8 bg-band">
+        <section aria-labelledby="prinsip" className={BAND_FIRST}>
+          {/* Yellow box, team request */}
+          <BoxedHeading id="prinsip" tone="highlight">
+            {m.about_principles_title()}
+          </BoxedHeading>
+          <ul className="mx-auto mt-10 grid max-w-6xl gap-x-8 text-on-accent sm:grid-cols-2 lg:grid-cols-3">
+            {principles().map((item) => (
+              <li
+                key={item.title}
+                className="border-on-accent/30 border-t py-5"
               >
-                {body()}
-              </InfoCard>
+                <h3 className="font-bold font-ui text-lg leading-snug">
+                  {item.title}
+                </h3>
+                <p className="mt-1 text-on-accent/80 leading-relaxed">
+                  {item.body}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section aria-labelledby="cara-kerja" className={BAND}>
+          <BoxedHeading id="cara-kerja" tone="ink">
+            {m.about_band_how()}
+          </BoxedHeading>
+          <SubTitle className="mt-10">{m.home_how_title()}</SubTitle>
+          {/* Home Cara Kerja numbers */}
+          <ol
+            ref={steps}
+            className="mx-auto mt-10 grid max-w-6xl gap-x-8 gap-y-10 text-center text-on-accent sm:grid-cols-2 lg:grid-cols-4"
+          >
+            {STEPS.map(([title, body], index) => (
+              <li
+                key={title()}
+                style={{ "--i": index } as CSSProperties}
+                className="flex flex-col items-center"
+              >
+                <span
+                  aria-hidden="true"
+                  className="font-bold text-[clamp(2.2rem,4vw,3.4rem)] tabular-nums leading-none"
+                >
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <h4 className="mt-3 font-bold font-ui text-lg leading-snug">
+                  {title()}
+                </h4>
+                <p className="mt-1 text-on-accent/80 leading-relaxed">
+                  {body()}
+                </p>
+              </li>
             ))}
           </ol>
-          <p className="relative z-10 mx-auto mt-8 max-w-2xl text-center text-ink leading-[1.7] lg:mt-12">
+          <p className={cn(LEAD, "mt-12 text-on-accent")}>
             {m.about_demands_body()}
             {/* Apex has no tuntutan list */}
             {national ? null : (
               <>
                 {" "}
-                <Link to="/tuntutan" className={PROSE_LINK}>
+                <Link to="/tuntutan" className={BAND_LINK}>
                   {m.about_demands_link()}
                 </Link>
               </>
             )}
           </p>
-          <StripTitle
-            id="metode"
-            text={m.about_method_title()}
-            glow={art}
-            className="mt-12 mb-4 lg:mt-16"
-          />
-          <p className="relative z-10 mx-auto mb-8 max-w-2xl text-balance text-center text-ink leading-[1.7] lg:mb-12">
+          <SubTitle id="metode" className="mt-14">
+            {m.about_method_title()}
+          </SubTitle>
+          <p className={cn(LEAD, "text-balance text-on-accent")}>
             {m.about_method_lead()}{" "}
-            <Link to="/pedoman#pemeriksaan" className={PROSE_LINK}>
+            <Link to="/pedoman#pemeriksaan" className={BAND_LINK}>
               {m.about_method_link()}
             </Link>
           </p>
-          <ul className={cn(GRID, "md:grid-cols-3")}>
-            {METHODS.map(([title, body]) => (
-              <InfoCard key={title()} title={title()} art={art}>
+          <ul
+            ref={methods}
+            className="mx-auto mt-8 grid max-w-6xl gap-4 md:grid-cols-3"
+          >
+            {METHODS.map(([title, body], index) => (
+              <InfoCard key={title()} title={title()} tone="band" index={index}>
                 {body()}
               </InfoCard>
             ))}
           </ul>
-        </div>
-      </section>
+        </section>
+      </div>
 
-      <section aria-labelledby="akuntabilitas" className="relative bg-page">
-        <BandTitle
-          id="akuntabilitas"
-          text={m.about_band_accountability()}
-          glow={art}
-        />
-        <div className={cn(BODY, "pt-10 lg:pt-14")}>
-          <p className="relative z-10 mx-auto mb-8 max-w-2xl text-center text-ink text-lg leading-[1.7] lg:mb-12">
-            {m.about_accountability_lead()}
-          </p>
-          <ul className={cn(GRID, "md:grid-cols-2")}>
-            <InfoCard title={m.about_entity_title()} titleAs="h3" art={art}>
-              <p>
-                {identity?.legalNumber
-                  ? m.footer_legal_number({ number: identity.legalNumber })
-                  : m.about_entity_pending()}
-              </p>
-              {identity?.alliance ? (
-                <p className="mt-2">
-                  {m.footer_alliance_member({ alliance: identity.alliance })}
-                </p>
-              ) : null}
-              {loaderData.officers.length > 0 ? (
-                <ul className={cn(LIST, "mt-2")}>
-                  {loaderData.officers.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="mt-2">{m.about_officers_pending()}</p>
-              )}
-            </InfoCard>
-            <InfoCard title={m.about_funding_title()} titleAs="h3" art={art}>
-              <p>{m.about_funding_body()}</p>
-              <p className="mt-2">{m.about_funding_list()}</p>
-            </InfoCard>
-            <InfoCard title={m.about_conflict_title()} titleAs="h3" art={art}>
-              <p>{m.about_conflict_body()}</p>
-            </InfoCard>
-            <InfoCard
-              title={m.about_corrections_title()}
-              titleAs="h3"
-              art={art}
-            >
-              <p id="koreksi">{m.about_corrections_body()}</p>
-              <ContactLine />
-            </InfoCard>
-            <InfoCard
-              title={m.about_license_title()}
-              titleAs="h3"
-              art={art}
-              className="md:col-span-2"
-            >
-              <p id="lisensi">{m.about_license_map()}</p>
-              <p className="mt-2">{m.about_license_code()}</p>
-            </InfoCard>
-          </ul>
-        </div>
-      </section>
-
-      <section aria-labelledby="privasi" className="relative bg-page">
-        <BandTitle id="privasi" text={m.about_band_privacy()} glow={art} />
-        <div className={cn(BODY, "pt-10 lg:pt-14")}>
-          {art && (
-            <Arc tone="pink" className="top-[20%] left-[8%] -rotate-45" />
-          )}
-          <p className="relative z-10 mx-auto mb-8 max-w-2xl text-center text-ink text-lg leading-[1.7] lg:mb-12">
-            {m.about_privacy_lead()}
-          </p>
-          <ul className={cn(GRID, "md:grid-cols-2")}>
-            <InfoCard title={m.about_public_title()} titleAs="h3" art={art}>
-              <ul className={LIST}>
+      <div className="relative isolate overflow-hidden bg-home-list">
+        {kmItb && (
+          <div aria-hidden="true">
+            <StarPair
+              sizes="48vw"
+              className={`${ORNAMENT} top-[8%] -left-[18%] hidden h-auto w-[48%] opacity-90 lg:block`}
+            />
+            <Rings
+              className={`${ORNAMENT} -right-[10%] bottom-[6%] h-auto w-[40%] opacity-80`}
+            />
+          </div>
+        )}
+        <section aria-labelledby="privasi" className={LIST_SECTION}>
+          <BoxedHeading id="privasi" tone="brand">
+            {m.about_band_privacy()}
+          </BoxedHeading>
+          <p className={cn(LEAD, "text-ink")}>{m.about_privacy_lead()}</p>
+          {/* Shown brand, never ink */}
+          <ul className="mx-auto mt-12 grid max-w-6xl gap-4 md:grid-cols-2">
+            <InfoCard title={m.about_public_title()} titleAs="h3" tone="brand">
+              <ul className={BULLETS}>
                 {shown(loaderData.districtMin).map((item) => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>
             </InfoCard>
-            <InfoCard title={m.about_never_title()} titleAs="h3" art={art}>
-              <ul className={LIST}>
+            <InfoCard title={m.about_never_title()} titleAs="h3" tone="ink">
+              <ul className={BULLETS}>
                 {NEVER.map((item) => (
                   <li key={item()}>{item()}</li>
                 ))}
               </ul>
             </InfoCard>
           </ul>
-          <p className="relative z-10 mx-auto mt-10 flex max-w-3xl flex-wrap justify-center gap-x-6 gap-y-2 text-center text-ink leading-relaxed">
+          <p className="mx-auto mt-10 flex max-w-3xl flex-wrap justify-center gap-x-6 gap-y-2 text-center text-ink leading-relaxed">
             <span>{m.about_privacy_more()}</span>
             <Link to="/privasi#publik" className={PROSE_LINK}>
               {m.privacy_link()}
@@ -340,17 +242,21 @@ export default function About({ loaderData }: Route.ComponentProps) {
               {m.guidelines_link()}
             </Link>
           </p>
-          <div className="relative z-10 mt-16 flex flex-col items-center gap-6 border-ink/15 border-t pt-12 text-center">
-            <div className="font-ui text-ink-muted text-sm">
+          <div className="mx-auto mt-16 flex max-w-6xl flex-col items-center gap-6 border-ink/15 border-t pt-12 text-center">
+            <div className="font-ui text-ink text-sm">
               {loaderData.credit && (
                 <p>{m.about_credit({ credit: loaderData.credit })}</p>
               )}
               <p>{m.about_reviewed({ date: updatedOn(REVIEWED) })}</p>
+              {/* Footer links here */}
+              <p id="lisensi" className="mt-2">
+                {m.about_license_map()}
+              </p>
             </div>
             <ReportButton national={national} variant="highlight" />
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
     </>
   )
 }

@@ -28,8 +28,12 @@ import {
 import { originFor } from "../../../server/origin.server.ts"
 import {
   DEMAND_PAGE_SIZE,
+  type DemandCategory,
   type DemandEventAction,
   type DemandScope,
+  emptyImportance,
+  type Importance,
+  isDemandCategory,
   isFulfilmentStatus,
 } from "../../../shared/demands.ts"
 import {
@@ -41,6 +45,12 @@ import {
   type ResponseStatus,
 } from "../../../shared/status.ts"
 import { briefUrl } from "./demand-href.ts"
+import {
+  type NamedRaters,
+  readImportance,
+  readNamedRaters,
+  readTopImportant,
+} from "./rating.server.ts"
 
 const MAX_PAGES = 50
 const SEARCH_MIN_LENGTH = 3
@@ -69,6 +79,7 @@ type DemandHead = {
   title: string
   summary: string
   scope: DemandScope
+  category: DemandCategory | null
   provinceName: string | null
   regencyName: string | null
   target: string
@@ -79,6 +90,7 @@ type DemandHead = {
 
 export type ListedDemand = DemandHead & {
   progress: DemandProgress
+  importance: Importance
   briefs: number
   // First item with a brief
   firstBrief: number | null
@@ -86,7 +98,10 @@ export type ListedDemand = DemandHead & {
 }
 
 export type DemandListQuery = Partial<
-  Record<"lingkup" | "provinsi" | "status" | "q" | "kursor", string>
+  Record<
+    "lingkup" | "provinsi" | "kategori" | "status" | "q" | "kursor",
+    string
+  >
 >
 
 export type DemandListResult =
@@ -105,6 +120,7 @@ const headColumns = {
   title: demands.title,
   summary: demands.summary,
   scope: demands.scope,
+  category: demands.category,
   provinceName: province.name,
   regencyName: regency.name,
   target: demands.target,
@@ -159,6 +175,9 @@ function filters(query: DemandListQuery, search: string | null): SQL[] {
   if (query.lingkup === "nasional") where.push(eq(demands.scope, "national"))
   if (query.lingkup === "daerah") where.push(eq(demands.scope, "regional"))
   if (query.provinsi) where.push(eq(demands.provinceCode, query.provinsi))
+  if (query.kategori && isDemandCategory(query.kategori)) {
+    where.push(eq(demands.category, query.kategori))
+  }
   if (query.status && isFulfilmentStatus(query.status)) {
     where.push(eq(demands.progress, query.status))
   }
@@ -265,6 +284,10 @@ export async function listPublishedDemands(
       tx,
       items.map((item) => item.id),
     )
+    const ratings = await readImportance(
+      tx,
+      shown.map((row) => row.id),
+    )
     const last = shown.at(-1)
     const capped = more && page >= MAX_PAGES
     return {
@@ -276,6 +299,7 @@ export async function listPublishedDemands(
         return {
           ...demand,
           progress: demandProgress(own),
+          importance: ratings.get(row.id) ?? emptyImportance(),
           briefs: own.filter((item) => briefs.has(item.id)).length,
           firstBrief: first === -1 ? null : first + 1,
           issueCount,
@@ -336,11 +360,20 @@ export type DemandCounts = {
 
 export type LatestDemand = Pick<
   DemandHead,
-  "code" | "title" | "scope" | "provinceName" | "regencyName" | "state"
+  | "code"
+  | "title"
+  | "scope"
+  | "category"
+  | "provinceName"
+  | "regencyName"
+  | "state"
 > & {
   progress: DemandProgress
+  importance: Importance
   // Fulfilment per item, in order
   marks: FulfilmentStatus[]
+  // Item text, same order
+  subs: string[]
   briefs: number
 }
 
@@ -387,18 +420,26 @@ async function readLatest(
     tx,
     items.map((item) => item.id),
   )
+  const ratings = await readImportance(
+    tx,
+    rows.map((row) => row.id),
+  )
   return rows.map((row) => {
     const own = items.filter((item) => item.demandId === row.id)
-    const { code, title, scope, provinceName, regencyName, state } = head(row)
+    const { code, title, scope, category, provinceName, regencyName, state } =
+      head(row)
     return {
       code,
       title,
       scope,
+      category,
       provinceName,
       regencyName,
       state,
       progress: demandProgress(own),
+      importance: ratings.get(row.id) ?? emptyImportance(),
       marks: own.map((item) => item.fulfilment),
+      subs: own.map((item) => item.body),
       briefs: own.filter((item) => briefs.has(item.id)).length,
     }
   })
@@ -410,6 +451,26 @@ export function latestDemands(
   limit = OVERVIEW_LATEST,
 ): Promise<LatestDemand[]> {
   return withTenant(orgId, (tx) => readLatest(tx, limit))
+}
+
+/** Citizen order, enough raters only. */
+export function importantDemands(
+  orgId: string,
+  limit: number,
+): Promise<LatestDemand[]> {
+  return withTenant(orgId, async (tx) => {
+    const ids = await readTopImportant(tx, limit)
+    if (ids.length === 0) return []
+    const rows = await readLatest(tx, limit, inArray(demands.id, ids))
+    const codes = await tx
+      .select({ id: demands.id, code: demands.publicCode })
+      .from(demands)
+      .where(inArray(demands.id, ids))
+    const rank = new Map(codes.map((row) => [row.code, ids.indexOf(row.id)]))
+    return rows.toSorted(
+      (a, b) => (rank.get(a.code) ?? 0) - (rank.get(b.code) ?? 0),
+    )
+  })
 }
 
 /** Public tuntutan citing an issue. */
@@ -535,6 +596,8 @@ export type DemandPage = DemandHead & {
   version: number
   closedAt: Date | null
   progress: DemandProgress
+  importance: Importance
+  named: NamedRaters
   items: PublicItem[]
   events: DemandEvent[]
   issues: { code: string; title: string }[]
@@ -612,9 +675,12 @@ export function getDemandPage(
       )
       .where(and(eq(demandIssues.demandId, id), isNotNull(issues.publishedAt)))
       .orderBy(asc(issues.publicCode))
+    const ratings = await readImportance(tx, [id])
     return {
       ...demand,
       progress: demandProgress(items),
+      importance: ratings.get(id) ?? emptyImportance(),
+      named: await readNamedRaters(tx, id),
       items: items.map((item, index) => {
         const brief = briefs.get(item.id)
         return {

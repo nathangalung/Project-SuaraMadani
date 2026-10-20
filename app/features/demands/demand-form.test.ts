@@ -17,6 +17,7 @@ const VALID = {
   scope: "regional",
   provinceCode: "32",
   regencyCode: "32.73",
+  category: "bantuan_sosial" as const,
   title: "Buka data penerima bantuan pangan",
   body: "Kami menuntut daftar penerima bantuan pangan dibuka per kelurahan.",
   summary: "Daftar penerima dibuka agar warga bisa mengawasi.",
@@ -25,6 +26,14 @@ const VALID = {
 }
 
 describe("parseDemandFields", () => {
+  test("a category from the list is required", () => {
+    for (const category of ["", "olahraga", "bansos"]) {
+      expect(
+        parseDemandFields(form({ ...VALID, category }), TODAY),
+      ).toMatchObject({ ok: false, errors: ["category"] })
+    }
+  })
+
   test("a regional demand keeps its region", () => {
     expect(parseDemandFields(form(VALID), TODAY)).toEqual({
       ok: true,
