@@ -5,7 +5,7 @@ import type { ReviewReport } from "./queue.server"
 import { ReportDetails } from "./report-details"
 
 const report = {
-  code: "ITB-26-7K3QX",
+  code: "LPR-2026-10-0001",
   relation: "self",
   otherConsent: null,
   title: "Banjir di Jalan Ganesha",
@@ -31,7 +31,20 @@ describe("report details", () => {
   test("category row names both levels, like step 7", () => {
     const html = renderToStaticMarkup(<ReportDetails report={report} />)
     expect(html).toContain(
-      `<dt class="font-semibold">${m.review_category()}</dt><dd class="whitespace-pre-line">Kebencanaan: Banjir</dd>`,
+      `<dt class="font-semibold">${m.review_category()}</dt><dd class="min-w-0 whitespace-pre-line">Kebencanaan: Banjir</dd>`,
     )
+  })
+
+  test("device point shows only when stored", () => {
+    const html = renderToStaticMarkup(
+      <ReportDetails
+        report={{ ...report, point: { lat: -6.8932, lng: 107.6107 } }}
+      />,
+    )
+    expect(html).toContain(
+      `<dt class="font-semibold">${m.review_point()}</dt><dd class="min-w-0 whitespace-pre-line">-6.89320, 107.61070</dd>`,
+    )
+    const none = renderToStaticMarkup(<ReportDetails report={report} />)
+    expect(none).not.toContain(m.review_point())
   })
 })

@@ -4,8 +4,6 @@ import { useReveal } from "./use-reveal"
 const tones = {
   brand: "bg-brand",
   ink: "bg-ink",
-  // Yellow box, ink text
-  highlight: "bg-highlight text-ink",
 } as const
 
 // Mockup JudulKotak, centred box

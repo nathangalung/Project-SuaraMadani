@@ -326,12 +326,12 @@ describe("getDemandPage", () => {
     await fulfilFirst(code)
     await su.query(
       `INSERT INTO issues (org_id, year, number, public_code, title, summary, category_id, subcategory_id, province_code, regency_code, report_count, published_at)
-       VALUES ($1, 2026, 1, 'ISU-ITB-26-0001', 'Air bersih mati dua minggu', 'Suplai air bersih tidak mengalir di tiga kelurahan.', 'program', 'program.air', '32', '32.73', 1, now())`,
+       VALUES ($1, 2026, 1, 'ISU-2026-10-0001', 'Air bersih mati dua minggu', 'Suplai air bersih tidak mengalir di tiga kelurahan.', 'program', 'program.air', '32', '32.73', 1, now())`,
       [itb.id],
     )
     await linkIssue(itb, {
       code,
-      issueCode: "ISU-ITB-26-0001",
+      issueCode: "ISU-2026-10-0001",
       actorId: admin,
     })
     const item = (await getManagedDemand(itb.id, code))?.items[1]
@@ -369,7 +369,7 @@ describe("getDemandPage", () => {
       ["brief", 2],
     ])
     expect(page?.issues).toEqual([
-      { code: "ISU-ITB-26-0001", title: "Air bersih mati dua minggu" },
+      { code: "ISU-2026-10-0001", title: "Air bersih mati dua minggu" },
     ])
     expect(await publicBrief(itb.id, code, briefId)).toEqual({
       id: briefId,

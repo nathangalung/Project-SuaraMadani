@@ -113,7 +113,7 @@ export default function ManageHome({ loaderData }: Route.ComponentProps) {
             <li key={status}>
               <Link
                 to={`/kelola/antrean?status=${status}`}
-                className="flex h-full flex-col-reverse justify-end border border-line-subtle border-l-4 border-l-brand bg-surface-raised p-4 transition-colors hover:border-ink hover:border-l-brand"
+                className="flex h-full flex-col-reverse justify-end rounded-lg border border-line-subtle bg-surface-raised p-4 transition-colors hover:border-ink"
               >
                 <span className="mt-2 text-sm">
                   <span className="block font-semibold text-ink">

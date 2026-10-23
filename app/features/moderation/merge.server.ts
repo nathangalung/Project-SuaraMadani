@@ -4,7 +4,7 @@ import { auditLog } from "../../../db/schema/audit.ts"
 import { issueReports, issues } from "../../../db/schema/issues.ts"
 import { reports } from "../../../db/schema/reports.ts"
 import { nextCounter, type Tx, withTenant } from "../../../db/tenant.server.ts"
-import { jakartaYear } from "../../../shared/format.ts"
+import { jakartaMonth, jakartaYear } from "../../../shared/format.ts"
 import { DISTRICT_MIN_REPORTS } from "../../../shared/report-fields.ts"
 import { isTerminalIssue, REPORT_TRANSITIONS } from "../../../shared/status.ts"
 import { formatIssueCode } from "../issues/issue-code.ts"
@@ -73,7 +73,8 @@ async function createIssue(
 ): Promise<LockedIssue> {
   // Number first: fixed lock order
   const year = jakartaYear(input.now)
-  const number = await nextCounter(tx, orgId, year, "issue")
+  const month = jakartaMonth(input.now)
+  const number = await nextCounter(tx, orgId, { year, month }, "issue")
   const [source] = await tx
     .select({
       categoryId: reports.categoryId,
@@ -86,12 +87,13 @@ async function createIssue(
     .orderBy(asc(reports.createdAt))
     .limit(1)
   if (!source) throw new MergeRefused("changed")
-  const code = formatIssueCode(input.campusCode, year, number)
+  const code = formatIssueCode(year, month, number)
   const [row] = await tx
     .insert(issues)
     .values({
       orgId,
       year,
+      month,
       number,
       publicCode: code,
       title: input.target.title,

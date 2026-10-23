@@ -14,7 +14,7 @@ export function SelectControl({
       <select
         className={cn(
           controlClass,
-          "h-12 w-full cursor-pointer appearance-none pr-11 disabled:cursor-not-allowed disabled:border-line-subtle disabled:bg-line-subtle disabled:text-ink-muted",
+          "select-ui select-chevron peer h-12 w-full cursor-pointer pr-11 disabled:cursor-not-allowed disabled:border-line-subtle disabled:bg-line-subtle disabled:text-ink-muted",
           className,
         )}
         {...rest}
@@ -23,7 +23,7 @@ export function SelectControl({
       </select>
       <ChevronDown
         aria-hidden="true"
-        className="pointer-events-none absolute top-1/2 right-3.5 size-5 -translate-y-1/2 text-ink"
+        className="pointer-events-none absolute top-1/2 right-3.5 size-5 -translate-y-1/2 text-ink transition-[rotate] peer-open:rotate-180"
       />
     </div>
   )

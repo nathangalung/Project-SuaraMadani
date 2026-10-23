@@ -47,9 +47,7 @@ export function ChartCard({
         <div>
           <h3 className="font-bold text-xl">{title}</h3>
           {description && (
-            <p className="mt-0.5 font-ui text-ink-muted text-sm">
-              {description}
-            </p>
+            <p className="mt-0.5 text-ink-muted text-sm">{description}</p>
           )}
         </div>
         {/* Needs JS, bars stay readable */}
@@ -57,7 +55,7 @@ export function ChartCard({
           type="button"
           onClick={() => setShowTable((value) => !value)}
           aria-pressed={showTable}
-          className="flex shrink-0 items-center gap-1.5 border-2 border-ink px-3 py-1.5 font-semibold font-ui text-ink text-xs transition-colors hover:bg-surface aria-pressed:bg-ink aria-pressed:text-surface-raised noscript:hidden"
+          className="flex shrink-0 items-center gap-1.5 rounded-full border-2 border-ink px-3 py-1.5 font-semibold text-ink text-xs transition-colors hover:bg-surface aria-pressed:bg-ink aria-pressed:text-surface-raised noscript:hidden"
         >
           {/* Fixed label, pressed state speaks */}
           <Table2 aria-hidden="true" className="size-3.5" />
@@ -78,7 +76,7 @@ export function ChartCard({
           </>
         )}
       </div>
-      <p className="mt-4 border-line-subtle border-t pt-3 font-ui text-ink-muted text-xs">
+      <p className="mt-4 border-line-subtle border-t pt-3 text-ink-muted text-xs">
         {meta}
         {changed ? (
           <>
@@ -113,11 +111,7 @@ export function DataTable({
   rows: Cell[][]
 }) {
   return (
-    <Table
-      caption={caption}
-      captionHidden={captionHidden}
-      className="font-ui text-sm"
-    >
+    <Table caption={caption} captionHidden={captionHidden} className=" text-sm">
       <thead>
         <tr>
           {columns.map((column, i) => (

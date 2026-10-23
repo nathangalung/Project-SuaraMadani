@@ -29,12 +29,8 @@ export const handle: ReportHandle = { reportStep: null }
 export async function loader({ params, context }: Route.LoaderArgs) {
   const code = normalizeReportCode(params.code)
   const tenant = context.get(tenantContext)
-  // Other campus codes stay hidden
-  if (!code?.startsWith(`${tenant.campusCode}-`)) {
-    throw data(null, { status: 404 })
-  }
-  // Never confirm unsent codes
-  if (!(await reportCodeExists(tenant.id, code))) {
+  // Tenant lookup: other campuses 404
+  if (!code || !(await reportCodeExists(tenant.id, code))) {
     throw data(null, { status: 404 })
   }
   return {

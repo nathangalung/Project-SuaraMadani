@@ -15,8 +15,10 @@ import { briefPath, cleanBriefPath } from "../../server/files.server.ts"
 import { jakartaIsoDate } from "../../shared/format.ts"
 import { createBriefScanHandler } from "../../worker/evidence-brief.ts"
 import type { Db } from "../client.server.ts"
+import { users } from "../schema/auth.ts"
 import {
   demandItems,
+  demandRankings,
   demands,
   demandUpdates,
   policyBriefs,
@@ -364,8 +366,56 @@ export async function seedSampleDemands(
       (a, b) => b.raisedDaysAgo - a.raisedDaysAgo,
     )
     for (const plan of plans) await seedDemand(org, plan, deps)
+    await seedRankings(org, deps)
   }
   return state
+}
+
+// Starting Values: sample rankers
+const SAMPLE_RANKERS = 24
+
+/** Aged sample accounts, varied lists. */
+async function seedRankings(org: Org, deps: DemandSeedDeps): Promise<void> {
+  await withTenant(
+    org.id,
+    async (tx) => {
+      const open = await tx
+        .select({ id: demands.id })
+        .from(demands)
+        .where(eq(demands.state, "published"))
+        .orderBy(asc(demands.publicCode))
+      const people = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          and(
+            like(users.email, `sampel.${org.slug}.%`),
+            sql`${users.createdAt} <= ${daysAgo(deps.now, 8)}`,
+          ),
+        )
+        .orderBy(asc(users.email))
+        .limit(SAMPLE_RANKERS)
+      if (open.length === 0) return
+      // Earlier codes lean popular
+      const rows = people.flatMap((person, i) =>
+        open
+          .map((demand, j) => ({
+            demand,
+            weight: (open.length - j) * 3 + ((i * 7 + j * 5) % 11),
+          }))
+          .toSorted((a, b) => b.weight - a.weight)
+          .slice(0, Math.min(5, open.length))
+          .map(({ demand }, index) => ({
+            orgId: org.id,
+            userId: person.id,
+            demandId: demand.id,
+            position: index + 1,
+          })),
+      )
+      if (rows.length > 0) await tx.insert(demandRankings).values(rows)
+    },
+    { db: deps.migrator },
+  )
 }
 
 /** Sample tuntutan only, audit stays. */

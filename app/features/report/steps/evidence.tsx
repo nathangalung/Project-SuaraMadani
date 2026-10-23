@@ -42,6 +42,7 @@ export function EvidenceStep({ draft }: { draft: Draft }) {
       requiredNote={false}
       title={m.step_evidence_title()}
       errors={errors}
+      setErrors={setErrors}
       onContinue={onContinue}
     >
       <Note>

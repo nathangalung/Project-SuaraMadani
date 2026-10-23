@@ -46,7 +46,7 @@ export function StepList({
                 : `-ml-px border-transparent border-l-2 py-2.5 pl-4 ${isDone ? "text-ink" : "text-ink-muted"}`
             }
           >
-            <span className="block">
+            <span className="block font-semibold font-ui">
               {index + 1}. {STEP_TITLE_TEXT[step]()}
               {!isCurrent && (
                 <span className="sr-only">
@@ -55,7 +55,7 @@ export function StepList({
                 </span>
               )}
             </span>
-            <span className="block font-normal font-ui text-ink-muted text-sm">
+            <span className="block font-normal text-ink-muted text-sm">
               {STEP_DESC_TEXT[step]()}
             </span>
           </li>

@@ -21,8 +21,8 @@ import {
 import { action as formAction, loader as formLoader } from "./complaint"
 
 const su = superuserPool()
-const CODE = "ISU-CRT-26-0001"
-const DRAFT = "ISU-CRT-26-0002"
+const CODE = "ISU-2026-10-0001"
+const DRAFT = "ISU-2026-10-0002"
 const COMPLAINT = "ADU-CRT-26-7K3QX"
 const orgs = { a: "", b: "" }
 const users = { owner: "", other: "" }

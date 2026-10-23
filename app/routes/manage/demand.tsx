@@ -18,7 +18,6 @@ import {
   panelOf,
   StateForms,
 } from "~/features/demands/editor-forms"
-import { formatImportance } from "~/features/demands/importance-line"
 import { demandPlace, STATE_TEXT } from "~/features/demands/labels"
 import {
   demandProgress,
@@ -33,9 +32,9 @@ import { useSiteTitle } from "~/features/report/page-title"
 import { regencyGroups } from "~/features/report/regions.server"
 import { m } from "~/paraglide/messages.js"
 import {
-  IMPORTANCE_ACCOUNT_DAYS,
-  IMPORTANCE_MIN_RATERS,
   normalizeDemandCode,
+  RANKING_ACCOUNT_DAYS,
+  RANKING_MIN_RANKERS,
 } from "../../../shared/demands.ts"
 import { formatDate, jakartaIsoDate } from "../../../shared/format.ts"
 import { neutralFindings } from "../../../shared/neutral-language.ts"
@@ -235,19 +234,20 @@ export default function ManageDemand({
       </p>
       {demand.state !== "draft" ? (
         <p className="mt-2 font-ui text-ink-soft text-sm">
-          {demand.importance.mean === null
-            ? m.demand_importance_admin_few({
-                raters: demand.importance.raters,
-                min: IMPORTANCE_MIN_RATERS,
+          {!demand.ranking.shown
+            ? m.demand_rank_admin_few({
+                total: demand.ranking.rankers,
+                min: RANKING_MIN_RANKERS,
               })
-            : m.demand_importance_admin({
-                mean: formatImportance(demand.importance.mean),
-                raters: demand.importance.raters,
+            : m.demand_rank_admin({
+                place: demand.rank.place ?? "–",
+                rankers: demand.rank.rankers,
+                total: demand.ranking.rankers,
               })}{" "}
-          {demand.pendingRaters > 0
-            ? m.demand_importance_admin_pending({
-                count: demand.pendingRaters,
-                days: IMPORTANCE_ACCOUNT_DAYS,
+          {demand.pendingRankers > 0
+            ? m.demand_rank_admin_pending({
+                count: demand.pendingRankers,
+                days: RANKING_ACCOUNT_DAYS,
               })
             : null}
         </p>

@@ -77,14 +77,14 @@ export function CategoryBreakdown({ summary }: { summary: Summary }) {
       <ul className="flex flex-col gap-4">
         {rows.map((row) => (
           <li key={row.id}>
-            <div className="flex items-baseline justify-between gap-2 font-ui text-sm">
+            <div className="flex items-baseline justify-between gap-2 text-sm">
               <span>{row.label}</span>
               <span className="text-ink-muted tabular-nums">
                 {share(row.count)}
               </span>
             </div>
             <div className="mt-1.5 grid grid-cols-[1fr_3.5rem] items-center gap-2">
-              <span className="block h-3">
+              <span className="block h-3 overflow-hidden rounded-full">
                 <span
                   className="block h-full"
                   style={{
@@ -93,7 +93,7 @@ export function CategoryBreakdown({ summary }: { summary: Summary }) {
                   }}
                 />
               </span>
-              <span className="whitespace-nowrap text-right font-semibold font-ui text-sm tabular-nums">
+              <span className="whitespace-nowrap text-right font-semibold text-sm tabular-nums">
                 {countText(row.count)}
               </span>
             </div>
@@ -137,7 +137,7 @@ function StatusBars({
       {statuses.map((status, i) => (
         <li
           key={status}
-          className="grid grid-cols-[minmax(0,10.75rem)_1fr] items-center gap-3 font-ui text-sm"
+          className="grid grid-cols-[minmax(0,10.75rem)_1fr] items-center gap-3 text-sm"
         >
           <span className="truncate">
             <span className="mr-1.5 text-ink-muted tabular-nums">
@@ -146,7 +146,7 @@ function StatusBars({
             {GOVERNMENT_TEXT[status]()}
           </span>
           <span className="grid grid-cols-[1fr_2.75rem] items-center gap-2">
-            <span className="block h-3">
+            <span className="block h-3 overflow-hidden rounded-full">
               <span
                 className="block h-full"
                 style={{
@@ -201,7 +201,7 @@ export function StatusFlow({
           color={(i) => STATUS_RAMP[i] ?? STATUS_RAMP[0]}
         />
         <div>
-          <p className="mt-5 mb-3 border-line-subtle border-t pt-3 font-semibold font-ui text-ink-muted text-xs lg:mt-0">
+          <p className="mt-5 mb-3 border-line-subtle border-t pt-3 font-semibold text-ink-muted text-xs lg:mt-0">
             {m.data_status_other()}
           </p>
           <StatusBars

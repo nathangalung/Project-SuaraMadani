@@ -62,7 +62,7 @@ describe("sample plan", () => {
     expect(top?.[0]).toBe("32")
   })
 
-  test("ITB issues cover every status axis and label", () => {
+  test("ITB issues cover every status axis, all verified", () => {
     const published = itb.issues.filter((i) => i.publishedAt)
     expect(published.length).toBeGreaterThanOrEqual(38)
     const gov = new Set(published.map((i) => i.state.government))
@@ -70,7 +70,7 @@ describe("sample plan", () => {
     expect([...gov].sort()).toEqual([...GOVERNMENT_STATUSES].sort())
     expect([...advocacy].sort()).toEqual([...ADVOCACY_STATUSES].sort())
     const labels = new Set(published.map((i) => i.verified))
-    expect([...labels].sort()).toEqual([false, true])
+    expect([...labels]).toEqual([true])
     expect(published.some((i) => i.reports.length >= 5)).toBe(true)
     expect(itb.issues.some((i) => !i.publishedAt)).toBe(true)
   })

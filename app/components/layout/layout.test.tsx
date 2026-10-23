@@ -14,7 +14,7 @@ import { SkipLink } from "./skip-link"
 const nav = [
   { to: "/", label: "Beranda" },
   { to: "/lapor", label: "Lapor" },
-  { to: "/isu", label: "Jelajahi Isu" },
+  { to: "/isu", label: "Jelajah" },
 ]
 
 function renderAt(path: string, node: React.ReactNode): string {
@@ -44,16 +44,40 @@ describe("Header", () => {
   test("home link name contains the visible site name", () => {
     const html = renderAt(
       "/isu",
-      <Header
-        siteName="Sadar Bersuara"
-        tenantName="KM ITB"
-        nav={nav}
-        user={null}
-      />,
+      <Header siteName="Sadar Bersuara" nav={nav} user={null} />,
     )
     expect(html).not.toMatch(/<a[^>]*aria-label/)
+    // Tenant line dropped 21 Oct
     expect(html).toMatch(
-      /<a[^>]*href="\/"[^>]*><img[^>]*alt=""[^>]*\/><span[^>]*><span[^>]*>Sadar Bersuara<\/span><span[^>]*>KM ITB<\/span>/,
+      /<a[^>]*href="\/"[^>]*><span[^>]*><img[^>]*alt=""[^>]*\/><\/span><span[^>]*>Sadar Bersuara<\/span><\/a>/,
+    )
+  })
+
+  test("KM ITB logo morphs from the plain hand", () => {
+    const km = brandImages("km-itb")
+    const html = renderAt(
+      "/",
+      <Header siteName="Sadar Bersuara" nav={nav} user={null} {...km} />,
+    )
+    expect(html).toMatch(
+      /<img src="\/km-itb\/logo-tangan.webp"[^>]*\/><img src="\/km-itb\/logo-tangan-polos.webp" alt=""[^>]*class="logo-intro absolute inset-0/,
+    )
+    const plain = renderAt(
+      "/",
+      <Header siteName="Sadar Bersuara" nav={nav} user={null} />,
+    )
+    expect(plain).not.toContain("logo-intro")
+  })
+
+  test("KM ITB emblem sits after the hand", () => {
+    const km = brandImages("km-itb")
+    const html = renderAt(
+      "/",
+      <Header siteName="Sadar Bersuara" nav={nav} user={null} {...km} />,
+    )
+    // Link name stays visible text
+    expect(html).toMatch(
+      /<\/span><img src="\/km-itb\/logo-km.webp" alt=""[^>]*srcSet="\/km-itb\/logo-km.webp 2x, \/km-itb\/logo-km-168.webp 3x"[^>]*max-\[359px\]:hidden"\/><span[^>]*>Sadar Bersuara<\/span><\/a>/,
     )
   })
 
@@ -108,15 +132,9 @@ describe("Header", () => {
   test("auth shell shows the logo only", () => {
     const html = renderAt(
       "/masuk",
-      <Header
-        siteName="Sadar Bersuara"
-        tenantName="KM ITB"
-        nav={nav}
-        user={null}
-        variant="auth"
-      />,
+      <Header siteName="Sadar Bersuara" nav={nav} user={null} variant="auth" />,
     )
-    expect(html).toContain("KM ITB")
+    expect(html).toContain("Sadar Bersuara")
     expect(html).not.toMatch(/<nav|<details|sticky|href="\/masuk"/)
     expect(isAuthShell({ shell: "auth" })).toBe(true)
     expect(isAuthShell({})).toBe(false)
@@ -206,10 +224,10 @@ describe("Header", () => {
     expect(active).toContain("bg-highlight right-4")
     expect(active).toContain("relative -mt-2 w-[11px]")
     expect(active).toContain("select-none")
-    expect(html).toMatch(/<img src="\/km-itb\/logo-km.webp" alt=""/)
+    expect(html).toMatch(/<img src="\/km-itb\/logo-tangan.webp" alt=""/)
     // 3x phones get 168px
     expect(html).toContain(
-      'srcSet="/km-itb/logo-km.webp 2x, /km-itb/logo-km-168.webp 3x"',
+      'srcSet="/km-itb/logo-tangan.webp 2x, /km-itb/logo-tangan-168.webp 3x"',
     )
   })
 
@@ -261,16 +279,14 @@ describe("Footer", () => {
         year={2026}
         contactEmail="kontak@contoh.id"
         operator="Perkumpulan Sadar Bersuara"
-        campus="KM ITB"
         alliance="Aliansi Kampus"
         legalNumber="AHU-0000000.AH.01.07.TAHUN 2026"
         links={[{ to: "/privasi", label: "Privasi" }]}
         statusHref="https://status.contoh.id"
       />,
     )
-    expect(html).toContain(
-      "Dikelola Perkumpulan Sadar Bersuara, organisasi mahasiswa di KM ITB",
-    )
+    // Managed-by line dropped 21 Oct
+    expect(html).not.toContain("Dikelola")
     expect(html).toContain("Anggota aliansi Aliansi Kampus")
     expect(html).toContain("Nomor badan hukum: AHU-0000000.AH.01.07.TAHUN 2026")
     expect(html).toContain('href="/privasi"')
@@ -289,7 +305,6 @@ describe("Footer", () => {
         siteName="Sadar Bersuara"
         year={2026}
         operator="KM ITB"
-        campus="ITB"
         links={[]}
       />,
     )
@@ -307,14 +322,15 @@ describe("Footer", () => {
         siteName="Sadar Bersuara"
         year={2026}
         operator="KM ITB"
-        campus="ITB"
         links={[]}
         logoSrc={km.logoSrc}
         logoSrcSet={km.logoSrcSet}
+        emblemSrc={km.emblemSrc}
+        emblemSrcSet={km.emblemSrcSet}
       />,
     )
     expect(html).toMatch(
-      /<img src="\/km-itb\/logo-km.webp" alt="" width="56" height="56" srcSet="[^"]*logo-km-168.webp 3x" loading="lazy"/,
+      /<img src="\/km-itb\/logo-tangan.webp" alt="" width="56" height="56" srcSet="[^"]*logo-tangan-168.webp 3x" loading="lazy"[^>]*\/><img src="\/km-itb\/logo-km.webp" alt="" width="56" height="56" srcSet="[^"]*logo-km-168.webp 3x" loading="lazy"/,
     )
   })
 
@@ -325,7 +341,6 @@ describe("Footer", () => {
         siteName="Sadar Bersuara"
         year={2026}
         operator="KM ITB"
-        campus="ITB"
         links={[]}
         policyLinks={[{ to: "/privasi", label: "Kebijakan privasi" }]}
       />,
@@ -343,11 +358,10 @@ describe("Footer", () => {
         siteName="Sadar Bersuara"
         year={2026}
         operator="KM ITB"
-        campus="Institut Teknologi Bandung"
         links={[]}
       />,
     )
-    expect(html).toContain("Dikelola KM ITB")
+    expect(html).toContain("© 2026 KM ITB")
     expect(html).not.toContain("<nav")
   })
 })

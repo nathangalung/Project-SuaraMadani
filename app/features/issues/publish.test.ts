@@ -98,21 +98,21 @@ describe("issuePurgeUrls", () => {
   test("lists the issue, every OG version, lists and their data URLs", () => {
     expect(
       issuePurgeUrls("itb.suaramadani.id", {
-        code: "ISU-ITB-26-0001",
+        code: "ISU-2026-10-0001",
         version: 3,
       }),
     ).toEqual([
-      "https://itb.suaramadani.id/isu/ISU-ITB-26-0001",
-      "https://itb.suaramadani.id/isu/ISU-ITB-26-0001.data",
+      "https://itb.suaramadani.id/isu/ISU-2026-10-0001",
+      "https://itb.suaramadani.id/isu/ISU-2026-10-0001.data",
       "https://itb.suaramadani.id/isu",
       "https://itb.suaramadani.id/isu.data",
       "https://itb.suaramadani.id/",
       "https://itb.suaramadani.id/_root.data",
       "https://itb.suaramadani.id/data",
       "https://itb.suaramadani.id/data.data",
-      "https://itb.suaramadani.id/isu/ISU-ITB-26-0001/og.png?v=1",
-      "https://itb.suaramadani.id/isu/ISU-ITB-26-0001/og.png?v=2",
-      "https://itb.suaramadani.id/isu/ISU-ITB-26-0001/og.png?v=3",
+      "https://itb.suaramadani.id/isu/ISU-2026-10-0001/og.png?v=1",
+      "https://itb.suaramadani.id/isu/ISU-2026-10-0001/og.png?v=2",
+      "https://itb.suaramadani.id/isu/ISU-2026-10-0001/og.png?v=3",
     ])
   })
 })
@@ -194,7 +194,7 @@ describe("purgeIssuePages", () => {
     const lines: Record<string, unknown>[] = []
     await purgeIssuePages(
       "itb.localhost",
-      { code: "ISU-ITB-26-0001", version: 1 },
+      { code: "ISU-2026-10-0001", version: 1 },
       {
         purge: {
           purgeUrls: async () => {
@@ -209,7 +209,7 @@ describe("purgeIssuePages", () => {
       {
         msg: "purge failed",
         host: "itb.localhost",
-        issue: "ISU-ITB-26-0001",
+        issue: "ISU-2026-10-0001",
         error: "purge failed: 429",
       },
     ])

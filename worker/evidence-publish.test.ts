@@ -53,7 +53,7 @@ async function addIssue(orgId: string, isPublished: boolean) {
     [
       orgId,
       issueNumber,
-      `ISU-WPA-26-${String(issueNumber).padStart(4, "0")}`,
+      `ISU-2026-10-${String(issueNumber).padStart(4, "0")}`,
       isPublished ? new Date() : null,
     ],
   )

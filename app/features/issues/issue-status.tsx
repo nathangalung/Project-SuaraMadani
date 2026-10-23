@@ -1,13 +1,22 @@
 import { Badge, type BadgeTone } from "~/components/ui/badge"
+import { cn } from "~/components/ui/cn"
 import { m } from "~/paraglide/messages.js"
 import { type CategoryId, isCategoryId } from "../../../shared/categories.ts"
-import type {
-  AdvocacyStatus,
-  GovernmentStatus,
-  VerificationLabel,
+import {
+  type AdvocacyStatus,
+  type GovernmentStatus,
+  type IssueState,
+  type PublicStage,
+  publicStage,
+  type VerificationLabel,
 } from "../../../shared/status.ts"
 import { CATEGORY_SHORT_TEXT } from "../report/category-labels"
-import { ADVOCACY_TEXT, GOVERNMENT_TEXT, VERIFICATION_TEXT } from "./labels"
+import {
+  ADVOCACY_TEXT,
+  GOVERNMENT_TEXT,
+  STAGE_TEXT,
+  VERIFICATION_TEXT,
+} from "./labels"
 
 // Port-spec 6.1, one map
 const VERIFICATION_TONE: Record<VerificationLabel, BadgeTone> = {
@@ -94,5 +103,43 @@ export function IssueStatus({
         <GovernmentBadge status={govStatus} />
       </li>
     </ul>
+  )
+}
+
+export function CategoryMark({ categoryId }: { categoryId: string }) {
+  if (!isCategoryId(categoryId)) return null
+  return (
+    <span className="font-bold text-ink">
+      {CATEGORY_SHORT_TEXT[categoryId]()}
+    </span>
+  )
+}
+
+// Colour per stage, checked pairs
+const STAGE_PILL: Record<PublicStage, string> = {
+  verified: "bg-chip text-ink",
+  referred: "bg-accent-soft text-ink",
+  responded: "bg-highlight text-ink",
+  in_progress: "bg-brand text-on-accent",
+  done: "bg-success text-on-accent",
+}
+
+/** Public stage as a pill. */
+export function StageMark({
+  advocacy,
+  government,
+  className,
+}: IssueState & { className?: string }) {
+  const stage = publicStage({ advocacy, government })
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-3 py-1 font-semibold font-ui text-sm",
+        STAGE_PILL[stage],
+        className,
+      )}
+    >
+      {STAGE_TEXT[stage]()}
+    </span>
   )
 }

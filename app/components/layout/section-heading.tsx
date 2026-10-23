@@ -2,6 +2,10 @@ import type { ReactNode } from "react"
 import { cn } from "../ui/cn"
 import { useReveal } from "./use-reveal"
 
+// Detail and policy section H2
+export const SECTION_TITLE =
+  "font-bold font-heading text-2xl text-ink leading-tight [font-synthesis-weight:none] sm:text-3xl"
+
 type SectionHeadingProps = {
   title: string
   id?: string

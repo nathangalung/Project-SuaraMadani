@@ -176,6 +176,20 @@
       "when": 1792345770764,
       "tag": "0024_tuntutan_ratings",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792612555122,
+      "tag": "0025_monthly_codes_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792614172660,
+      "tag": "0026_tuntutan_rankings",
+      "breakpoints": true
     }
   ]
 }

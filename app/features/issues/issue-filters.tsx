@@ -19,15 +19,12 @@ import {
   categoryOf,
   isCategoryId,
 } from "../../../shared/categories.ts"
-import {
-  ADVOCACY_STATUSES,
-  GOVERNMENT_STATUSES,
-} from "../../../shared/status.ts"
+import { PUBLIC_STAGES } from "../../../shared/status.ts"
 import { CATEGORY_SHORT_TEXT } from "../report/category-labels"
 import { CATEGORY_TEXT, SUBCATEGORY_TEXT } from "../report/public-labels"
 import type { RegionOption } from "../report/regions.server"
 import type { IssueListQuery } from "./issues.server"
-import { ADVOCACY_TEXT, GOVERNMENT_TEXT } from "./labels"
+import { STAGE_TEXT } from "./labels"
 
 const SORT_TEXT = {
   terbaru: m.issues_sort_terbaru,
@@ -50,8 +47,9 @@ export function activeCategory(kategori?: string): CategoryId | undefined {
   return isCategoryId(kategori) ? kategori : categoryOf(kategori)
 }
 
+// Rounded pills, text only
 const CHIP =
-  "inline-flex items-center gap-1.5 border-2 px-4 py-1.5 font-semibold text-sm transition-colors"
+  "inline-flex min-h-9 items-center gap-2 rounded-full border px-4 font-semibold font-ui text-sm transition-colors"
 
 // Server links, no JS
 function CategoryChips({ query }: { query: IssueListQuery }) {
@@ -64,35 +62,40 @@ function CategoryChips({ query }: { query: IssueListQuery }) {
     })),
   ]
   return (
-    <ul
-      aria-label={m.issues_filter_category()}
-      className="mt-4 flex flex-wrap gap-2"
-    >
-      {chips.map((chip) => {
-        const selected = chip.id === active
-        return (
-          <li key={chip.id ?? "all"}>
-            <Link
-              to={issuesHref({
-                ...query,
-                kategori: chip.id,
-                kursor: undefined,
-              })}
-              aria-current={selected ? "true" : undefined}
-              className={cn(
-                CHIP,
-                selected
-                  ? "border-brand bg-brand text-on-accent"
-                  : "border-ink/15 bg-surface-raised text-ink hover:border-ink/40",
-              )}
-            >
-              {selected && <Check aria-hidden="true" className="size-4" />}
-              {chip.label}
-            </Link>
-          </li>
-        )
-      })}
-    </ul>
+    <div className="mb-5">
+      <p id="issues-category" className="font-semibold">
+        {m.issues_filter_category()}
+      </p>
+      <ul
+        aria-labelledby="issues-category"
+        className="mt-2 flex flex-wrap gap-2"
+      >
+        {chips.map((chip) => {
+          const selected = chip.id === active
+          return (
+            <li key={chip.id ?? "all"}>
+              <Link
+                to={issuesHref({
+                  ...query,
+                  kategori: chip.id,
+                  kursor: undefined,
+                })}
+                aria-current={selected ? "true" : undefined}
+                className={cn(
+                  CHIP,
+                  selected
+                    ? "border-ink bg-ink text-surface-raised"
+                    : "border-line-subtle bg-surface text-ink hover:border-ink/40",
+                )}
+              >
+                {chip.label}
+                {selected && <Check aria-hidden="true" className="size-4" />}
+              </Link>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
   )
 }
 
@@ -157,7 +160,6 @@ function RegionSelect({
         name="wilayah"
         label={m.issues_filter_region()}
         defaultValue={current}
-        aria-describedby="issues-region-hint"
       >
         <option value="">{m.issues_filter_region_all()}</option>
         {regions.provinces.map((p) => (
@@ -181,12 +183,6 @@ function RegionSelect({
           </optgroup>
         ) : null}
       </Select>
-      <p
-        id="issues-region-hint"
-        className="font-ui text-[0.95rem] text-ink-muted"
-      >
-        {m.issues_filter_region_hint()}
-      </p>
     </div>
   )
 }
@@ -220,9 +216,11 @@ export function IssueFilters({
       ref={form}
       method="get"
       action="/isu"
-      className="border-ink border-y-2 bg-surface-raised/60 p-4 sm:p-5"
+      className="rounded-2xl border border-line-subtle bg-surface-raised p-5 sm:p-6"
     >
       <h2 className="sr-only">{m.issues_filter_title()}</h2>
+      {/* Links act at once */}
+      <CategoryChips query={query} />
       {/* lg: search, button, then selects */}
       <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
         <div className="flex min-w-0 flex-col gap-1.5">
@@ -277,20 +275,11 @@ export function IssueFilters({
               defaultValue={query.status ?? ""}
             >
               <option value="">{m.issues_filter_all()}</option>
-              <optgroup label={m.issues_filter_advocacy()}>
-                {ADVOCACY_STATUSES.map((status) => (
-                  <option key={status} value={status}>
-                    {ADVOCACY_TEXT[status]()}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label={m.issue_government_label()}>
-                {GOVERNMENT_STATUSES.map((status) => (
-                  <option key={status} value={status}>
-                    {GOVERNMENT_TEXT[status]()}
-                  </option>
-                ))}
-              </optgroup>
+              {PUBLIC_STAGES.map((stage) => (
+                <option key={stage} value={stage}>
+                  {STAGE_TEXT[stage]()}
+                </option>
+              ))}
             </Select>
             <Select
               id="issues-sort"
@@ -312,7 +301,6 @@ export function IssueFilters({
           </Button>
         </div>
       </div>
-      <CategoryChips query={query} />
       {query.wilayah && regionName ? (
         <p className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 font-ui text-[0.95rem]">
           <span className="flex items-center gap-1.5">

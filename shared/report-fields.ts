@@ -101,6 +101,20 @@ export const CONTACT_METHODS = ["whatsapp", "phone"] as const
 export const TITLE_LENGTH = { min: 10, max: 120 } as const
 export const STORY_LENGTH = { min: 40, max: 5000 } as const
 export const AGENCY_MAX_LENGTH = 200
+
+// Rough Indonesia bounding box
+export const INDONESIA_BOUNDS = {
+  south: -11.5,
+  north: 6.5,
+  west: 94,
+  east: 141.5,
+} as const
+export type LatLng = { lat: number; lng: number }
+
+export function inIndonesia({ lat, lng }: LatLng): boolean {
+  const { south, north, west, east } = INDONESIA_BOUNDS
+  return lat >= south && lat <= north && lng >= west && lng <= east
+}
 // Catches mistyped years
 export const OCCURRED_ON_MIN_YEAR = 1900
 

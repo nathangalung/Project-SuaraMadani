@@ -12,6 +12,8 @@ export default [
     route("periksa", "routes/report/review.tsx"),
     route("sukses/:code", "routes/report/success.tsx"),
   ]),
+  // Static, ranks above :file
+  route("wilayah/titik", "routes/region-point.ts"),
   route("wilayah/:file", "routes/regions.ts"),
   // Dev stand-in for Caddy
   route("media/:file", "routes/media.ts"),
@@ -22,6 +24,8 @@ export default [
   route("isu/:code/berhenti", "routes/issues/unfollow.tsx"),
   route("isu/:code/laporkan", "routes/issues/complaint.tsx"),
   route("tuntutan", "routes/demands/list.tsx"),
+  // Static, ranks above :code
+  route("tuntutan/peringkat", "routes/demands/rank.tsx"),
   route("tuntutan/:code", "routes/demands/detail.tsx"),
   route("tuntutan/:code/og.png", "routes/demands/og-image.ts"),
   route("tuntutan/:code/dokumen/:file", "routes/demands/brief.ts"),

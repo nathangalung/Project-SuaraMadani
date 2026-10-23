@@ -111,7 +111,7 @@ export function TrendLines({
   }
   return (
     <div
-      className="grid h-full grid-cols-[2.5rem_1fr_3.25rem] grid-rows-[1fr_1.75rem] pt-3 font-ui text-xs"
+      className="grid h-full grid-cols-[2.5rem_1fr_3.25rem] grid-rows-[1fr_1.75rem] pt-3 text-xs"
       style={{ color: CHART_INK.muted }}
     >
       <div aria-hidden="true" className="relative col-start-1 row-start-1">

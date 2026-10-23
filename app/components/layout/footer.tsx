@@ -6,8 +6,7 @@ import type { NavItem } from "./header"
 type FooterProps = {
   siteName: string
   operator: string
-  campus: string
-  // Replaces the managed-by line
+  // Line under the site name
   note?: string
   alliance?: string
   legalNumber?: string
@@ -17,6 +16,9 @@ type FooterProps = {
   statusHref?: string
   logoSrc?: string
   logoSrcSet?: string
+  // KM emblem, after logo
+  emblemSrc?: string
+  emblemSrcSet?: string
   year: number
 }
 
@@ -26,7 +28,6 @@ const LINK = "underline-offset-4 hover:underline"
 export function Footer({
   siteName,
   operator,
-  campus,
   note,
   alliance,
   legalNumber,
@@ -36,6 +37,8 @@ export function Footer({
   statusHref,
   logoSrc = "/logo.svg",
   logoSrcSet,
+  emblemSrc,
+  emblemSrcSet,
   year,
 }: FooterProps) {
   // Empty landmark helps nobody
@@ -57,11 +60,21 @@ export function Footer({
             decoding="async"
             className="size-14 shrink-0 object-contain"
           />
+          {emblemSrc && (
+            <img
+              src={emblemSrc}
+              alt=""
+              width={56}
+              height={56}
+              srcSet={emblemSrcSet}
+              loading="lazy"
+              decoding="async"
+              className="size-14 shrink-0 object-contain"
+            />
+          )}
           <div className="flex flex-col gap-0.5">
             <p className="font-bold text-xl">{siteName}</p>
-            <p className="text-sm">
-              {note ?? m.footer_managed_by({ operator, campus })}
-            </p>
+            {note && <p className="text-sm">{note}</p>}
             {alliance && (
               <p className="text-sm">
                 {m.footer_alliance_member({ alliance })}

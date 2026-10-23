@@ -35,7 +35,7 @@ export function ResolutionTile({ summary }: { summary: Summary }) {
     { label: m.data_resolution_pending(), value: summary.resolution.pending },
   ]
   return (
-    <div className="flex h-full flex-col bg-brand p-6 text-on-accent">
+    <div className="flex h-full flex-col rounded-2xl bg-brand p-6 text-on-accent">
       <h3 className="pr-8 font-semibold">{m.data_resolution_title()}</h3>
       <div className="mt-6">
         {confirmedShare === null ? (
@@ -75,7 +75,10 @@ export function ResolutionTile({ summary }: { summary: Summary }) {
         )}
       </div>
       {confirmedShare !== null && (
-        <div aria-hidden="true" className="mt-6 h-2.5 bg-ink/40 lg:mt-auto">
+        <div
+          aria-hidden="true"
+          className="mt-6 h-2.5 overflow-hidden rounded-full bg-ink/40 lg:mt-auto"
+        >
           <div
             className="h-full bg-surface-raised"
             style={{ width: `${Math.min(100, confirmedShare * 100)}%` }}
@@ -91,7 +94,7 @@ export function ModerationCard({ summary }: { summary: Summary }) {
   return (
     <Card className="flex h-full flex-col p-6">
       <h3 className="font-bold text-2xl">{m.data_moderation_title()}</h3>
-      <p className="mt-1 font-ui text-ink-muted text-sm">
+      <p className="mt-1 text-ink-muted text-sm">
         {m.data_moderation_lead({ days: VERIFY_WINDOW_DAYS })}
       </p>
       {medianHours === null || p90Hours === null ? (
@@ -102,7 +105,7 @@ export function ModerationCard({ summary }: { summary: Summary }) {
         <>
           <dl className="mt-6 grid grid-cols-2 gap-4 border-ink border-t-2 pt-4">
             <div className="flex flex-col justify-between">
-              <dt className="mb-1 font-ui text-ink-muted text-sm">
+              <dt className="mb-1 text-ink-muted text-sm">
                 {m.data_median_label()}
               </dt>
               <dd className="font-bold text-4xl leading-none">
@@ -110,7 +113,7 @@ export function ModerationCard({ summary }: { summary: Summary }) {
               </dd>
             </div>
             <div className="flex flex-col justify-between">
-              <dt className="mb-1 font-ui text-ink-muted text-sm">
+              <dt className="mb-1 text-ink-muted text-sm">
                 {m.data_p90_label()}
               </dt>
               <dd className="font-bold text-4xl leading-none">
@@ -118,7 +121,7 @@ export function ModerationCard({ summary }: { summary: Summary }) {
               </dd>
             </div>
           </dl>
-          <p className="mt-3 font-ui text-ink-muted text-xs">
+          <p className="mt-3 text-ink-muted text-xs">
             {m.data_verify_n({ n: formatNumber(n) })}
           </p>
         </>
@@ -212,7 +215,10 @@ export function KeyNumbers({
       className="bg-ink text-surface-raised"
     >
       <Container className="py-12">
-        <h2 id="angka-utama" className="font-bold text-3xl sm:text-4xl">
+        <h2
+          id="angka-utama"
+          className="font-bold font-heading text-[clamp(2rem,4.4vw,3rem)] leading-[1.1] [font-synthesis-weight:none]"
+        >
           {m.data_key_title()}
         </h2>
         <dl
@@ -223,11 +229,11 @@ export function KeyNumbers({
             <div
               key={tile.label}
               style={{ "--i": index } as CSSProperties}
-              className="flex flex-col-reverse justify-end border-brand border-l-4 pl-4"
+              className="flex flex-col-reverse justify-end"
             >
               <dt className="mt-2 text-sm text-surface-raised/80">
                 {tile.label}
-                <span className="block font-ui text-surface-raised/70 text-xs">
+                <span className="block text-surface-raised/70 text-xs">
                   {tile.note}
                 </span>
               </dt>

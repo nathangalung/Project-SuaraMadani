@@ -10,8 +10,8 @@ import { evidence, reports } from "../../../db/schema/reports.ts"
 import { type Tx, withTenant } from "../../../db/tenant.server.ts"
 import { defaultFilesDir, originalPath } from "../../../server/files.server.ts"
 import { evidenceQueue } from "../../../shared/evidence.ts"
-import { generateReportCode } from "../../../shared/report-id.ts"
 import { REPORT_TRANSITIONS } from "../../../shared/status.ts"
+import { nextReportCode } from "./report-code.server.ts"
 
 const FORWARDABLE = REPORT_TRANSITIONS.forward.from
 // Rows that have an original
@@ -128,10 +128,7 @@ async function createCopy(
     .values({
       orgId: target.id,
       userId: report.userId,
-      publicCode: generateReportCode(
-        target.campusCode,
-        input.now ?? new Date(),
-      ),
+      publicCode: await nextReportCode(tx, target.id, input.now ?? new Date()),
       submissionId: crypto.randomUUID(),
       status: "in_review",
       relation: report.relation,

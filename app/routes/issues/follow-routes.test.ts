@@ -30,8 +30,8 @@ import { action as unfollowAction, loader as unfollowLoader } from "./unfollow"
 process.env.LACAK_LINK_KEYS ||= `1:${Buffer.alloc(32, 9).toString("base64")}`
 
 const su = superuserPool()
-const CODE = "ISU-FRT-26-0001"
-const OTHER = "ISU-FRT-26-0002"
+const CODE = "ISU-2026-10-0001"
+const OTHER = "ISU-2026-10-0002"
 const orgs = { a: "", b: "" }
 let user = ""
 let issueId = ""

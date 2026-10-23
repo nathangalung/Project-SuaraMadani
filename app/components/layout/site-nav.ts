@@ -23,7 +23,6 @@ export function policyNav(): NavItem[] {
     { to: "/privasi", label: m.footer_privacy() },
     { to: "/pedoman", label: m.footer_guidelines() },
     { to: "/aksesibilitas", label: m.footer_accessibility() },
-    { to: "/tentang#lisensi", label: m.footer_license() },
   ]
 }
 

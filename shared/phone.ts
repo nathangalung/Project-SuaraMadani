@@ -1,7 +1,7 @@
 // Zod-free for small client chunks.
 
-// Mobile 08x, never 0800-0809
-const MOBILE = /^(?:\+62|62|0)(8[1-9]\d{7,10})$/
+// Mobile 8x, never 0800-0809
+const MOBILE = /^(?:\+62|62|0)?(8[1-9]\d{7,10})$/
 const SEPARATORS = /[\s\-().]/g
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const HIDDEN = "•"

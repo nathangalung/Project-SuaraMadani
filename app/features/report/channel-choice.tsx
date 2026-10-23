@@ -8,7 +8,7 @@ import type { OtpChannel } from "../../../shared/whatsapp.ts"
 export const CHANNEL_GROUP_ID = "signin-channel"
 
 const CARD =
-  "group flex cursor-pointer items-center gap-4 rounded-[10px] border-2 border-line bg-surface-raised p-4 transition-[border-color,background-color] duration-150 hover:border-ink has-[:checked]:border-brand has-[:checked]:bg-brand-soft has-[:disabled]:cursor-not-allowed has-[:disabled]:hover:border-line motion-reduce:transition-none"
+  "group flex cursor-pointer items-center gap-4 rounded-2xl border-2 border-line bg-surface-raised p-4 transition-[border-color,background-color] duration-150 hover:border-ink has-[:checked]:border-brand has-[:checked]:bg-brand-soft has-[:disabled]:cursor-not-allowed has-[:disabled]:hover:border-line motion-reduce:transition-none"
 // Note stays full contrast
 const DIM = "group-has-[:disabled]:opacity-70"
 

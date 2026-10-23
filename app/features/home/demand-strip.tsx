@@ -51,8 +51,8 @@ function DemandCard({
           })}
         </p>
         {/* Server text, see toDigest */}
-        {scored && demand.importanceText ? (
-          <p className="mt-1 font-semibold">{demand.importanceText}</p>
+        {scored && demand.rankText ? (
+          <p className="mt-1 font-semibold">{demand.rankText}</p>
         ) : null}
       </div>
     </li>

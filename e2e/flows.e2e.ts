@@ -4,7 +4,7 @@ test("a reader finds an issue and is asked to sign in to follow", async ({
   page,
 }) => {
   await page.goto("/")
-  await page.getByRole("link", { name: "Jelajahi Isu" }).first().click()
+  await page.getByRole("link", { name: "Jelajah" }).first().click()
   await expect(page).toHaveURL(/\/isu$/)
   await page.locator('main a[href^="/isu/ISU-"]').first().click()
   const follow = page.locator('a[href^="/masuk?kembali=%2Fisu%2F"]').first()

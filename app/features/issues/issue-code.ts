@@ -1,17 +1,18 @@
-// PLAN §5.4: ISU-ITB-26-0042
-const ISSUE_CODE = /^ISU-[A-Z][A-Z0-9]{1,9}-\d{2}-\d{4,6}$/
+import {
+  formatSequenceCode,
+  normalizeSequenceCode,
+} from "../../../shared/report-id.ts"
 
+// PLAN §5.4: ISU-2026-10-0042
 export function formatIssueCode(
-  campusCode: string,
   year: number,
+  month: number,
   number: number,
 ): string {
-  const yy = String(year % 100).padStart(2, "0")
-  return `ISU-${campusCode}-${yy}-${String(number).padStart(4, "0")}`
+  return formatSequenceCode("ISU", year, month, number)
 }
 
 /** Canonical code or null. */
 export function normalizeIssueCode(input: string): string | null {
-  const code = input.trim().toUpperCase()
-  return ISSUE_CODE.test(code) ? code : null
+  return normalizeSequenceCode(input, "ISU")
 }

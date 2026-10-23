@@ -29,6 +29,7 @@ export function ContactStep({ draft }: { draft: Draft }) {
       title={m.step_contact_title()}
       titleInForm
       errors={errors}
+      setErrors={setErrors}
       onContinue={onContinue}
     >
       <RadioGroup
@@ -44,7 +45,7 @@ export function ContactStep({ draft }: { draft: Draft }) {
         onChange={setContactable}
         conditional={{
           yes: (
-            <div className="mt-1 flex flex-col gap-5 border-brand border-l-4 bg-surface p-4 sm:p-5">
+            <div className="mt-4 ml-8 flex flex-col gap-5">
               <RadioGroup
                 name="method"
                 legend={m.contact_method_legend()}

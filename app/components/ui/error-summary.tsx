@@ -1,5 +1,4 @@
-import { CircleAlert } from "lucide-react"
-import { useEffect, useId, useRef } from "react"
+import { useEffect, useRef } from "react"
 import { m } from "~/paraglide/messages.js"
 
 export type FieldError = { fieldId: string; message: string }
@@ -14,45 +13,73 @@ type ErrorSummaryProps = {
   attempt?: unknown
 }
 
-// Focused on mount, above H1
+/** Errors the edit left alone. */
+export function untouched<E>(
+  errors: E[],
+  idOf: (error: E) => string,
+  target: EventTarget | null,
+): E[] {
+  if (!(target instanceof Node)) return errors
+  const left = errors.filter(
+    (error) => !document.getElementById(idOf(error))?.contains(target),
+  )
+  return left.length === errors.length ? errors : left
+}
+
+const FOCUSABLE =
+  "input:not([type=hidden]), select, textarea, button, a[href], [tabindex]"
+
+/** Field, or its first control. */
+export function focusField(id: string): void {
+  const field = document.getElementById(id)
+  if (!field) return
+  const target = field.matches(FOCUSABLE)
+    ? field
+    : field.querySelector<HTMLElement>(FOCUSABLE)
+  if (target) {
+    target.focus()
+    return
+  }
+  // Groups without a control
+  field.setAttribute("tabindex", "-1")
+  field.focus()
+}
+
+// No box, field errors show
 export function ErrorSummary({ errors, attempt }: ErrorSummaryProps) {
-  const ref = useRef<HTMLDivElement>(null)
-  const titleId = useId()
   // Errors or submit changed
   const errorKey = errors.map((e) => `${e.fieldId}:${e.message}`).join("|")
+  const first = errors[0]?.fieldId
+
+  const last = useRef<{ attempt: unknown; keys: string[] } | null>(null)
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt is the trigger
   useEffect(() => {
-    if (errorKey) ref.current?.focus()
+    const keys = errorKey ? errorKey.split("|") : []
+    const before = last.current
+    last.current = { attempt, keys }
+    // Only new submits move focus
+    const submitted =
+      attempt === undefined ? true : !before || before.attempt !== attempt
+    if (!submitted || !first) return
+    // Edits only shrink the list
+    const shrank =
+      before !== null &&
+      keys.length < before.keys.length &&
+      keys.every((key) => before.keys.includes(key))
+    if (!shrank) focusField(first)
   }, [errorKey, attempt])
 
   if (errors.length === 0) return null
+  // Read after the focused field
   return (
-    <div
-      ref={ref}
-      tabIndex={-1}
-      role="alert"
-      aria-labelledby={titleId}
-      className="mb-8 flex gap-3 border-danger border-l-4 bg-danger-soft p-5 text-danger-ink focus-visible:outline-ink"
-    >
-      <CircleAlert aria-hidden="true" className="mt-0.5 size-6 shrink-0" />
-      <div>
-        <h2 id={titleId} className="font-bold text-xl leading-snug">
-          {m.error_summary_title()}
-        </h2>
-        <ul className="mt-3 flex flex-col gap-2">
-          {errors.map((e) => (
-            <li key={e.fieldId}>
-              <a
-                href={`#${e.fieldId}`}
-                className="font-semibold underline underline-offset-4"
-              >
-                {e.message}
-              </a>
-            </li>
-          ))}
-        </ul>
-      </div>
+    <div role="status" className="sr-only">
+      <p>{m.error_summary_title()}</p>
+      <ul>
+        {errors.map((e) => (
+          <li key={e.fieldId}>{e.message}</li>
+        ))}
+      </ul>
     </div>
   )
 }

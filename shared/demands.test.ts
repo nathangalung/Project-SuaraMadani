@@ -2,11 +2,12 @@ import { describe, expect, test } from "bun:test"
 import {
   BRIEF_MAX_BYTES,
   briefTooLarge,
+  citizenRanking,
   formatDemandCode,
-  IMPORTANCE_MIN_RATERS,
-  importanceOf,
   isDemandCategory,
   normalizeDemandCode,
+  RANKING_MIN_RANKERS,
+  rankingPoints,
   sharePercent,
 } from "./demands.ts"
 
@@ -17,7 +18,7 @@ describe("demand codes", () => {
 
   test("normalise accepts case, refuses others", () => {
     expect(normalizeDemandCode(" tun-itb-26-0007 ")).toBe("TUN-ITB-26-0007")
-    expect(normalizeDemandCode("ISU-ITB-26-0007")).toBeNull()
+    expect(normalizeDemandCode("ISU-2026-10-0007")).toBeNull()
     expect(normalizeDemandCode("TUN-ITB-26-7")).toBeNull()
   })
 })
@@ -47,32 +48,51 @@ describe("briefTooLarge", () => {
   })
 })
 
-describe("importance summary", () => {
-  test("no mean until enough raters", () => {
-    const few = importanceOf([{ score: 5, n: IMPORTANCE_MIN_RATERS - 1 }])
-    expect(few.raters).toBe(IMPORTANCE_MIN_RATERS - 1)
-    expect(few.mean).toBeNull()
+describe("citizen ranking", () => {
+  const row = (
+    demandId: string,
+    points: number,
+    rankers: number,
+    raisedOn = "2026-09-01",
+  ) => ({
+    demandId,
+    points,
+    rankers,
+    raisedOn,
   })
 
-  test("mean rounds to one decimal, as shown", () => {
-    const summary = importanceOf([
-      { score: 5, n: 7 },
-      { score: 4, n: 2 },
-      { score: 1, n: 3 },
-    ])
-    expect(summary.counts).toEqual({ 1: 3, 2: 0, 3: 0, 4: 2, 5: 7 })
-    expect(summary.raters).toBe(12)
-    // 46 / 12 = 3.83
-    expect(summary.mean).toBe(3.8)
+  test("Borda: first place gets five points", () => {
+    expect([1, 2, 3, 4, 5].map(rankingPoints)).toEqual([5, 4, 3, 2, 1])
   })
 
-  test("rows outside the scale are ignored", () => {
-    const summary = importanceOf([
-      { score: 0, n: 4 },
-      { score: 6, n: 4 },
-      { score: 3, n: 0 },
+  test("orders by points, then rankers, then age", () => {
+    const ranking = citizenRanking(
+      [
+        row("b", 20, 6),
+        row("a", 30, 7),
+        row("c", 20, 8),
+        row("d", 20, 8, "2026-08-01"),
+        row("z", 0, 0),
+      ],
+      RANKING_MIN_RANKERS,
+    )
+    expect(ranking.shown).toBe(true)
+    expect(
+      [...ranking.places.entries()].map(([id, rank]) => [id, rank.place]),
+    ).toEqual([
+      ["a", 1],
+      ["d", 2],
+      ["c", 3],
+      ["b", 4],
     ])
-    expect(summary.raters).toBe(0)
+    // No points, no place
+    expect(ranking.places.has("z")).toBe(false)
+  })
+
+  test("below the threshold nothing has a place", () => {
+    const ranking = citizenRanking([row("a", 30, 7)], RANKING_MIN_RANKERS - 1)
+    expect(ranking.shown).toBe(false)
+    expect(ranking.places.get("a")).toEqual({ place: null, rankers: 7 })
   })
 })
 

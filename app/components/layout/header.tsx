@@ -1,5 +1,5 @@
 import { ChevronDown, Menu, X } from "lucide-react"
-import { type MouseEvent, useRef } from "react"
+import { type MouseEvent, type PointerEvent, useRef } from "react"
 import { Link, NavLink, useLocation } from "react-router"
 import { m } from "~/paraglide/messages.js"
 import { Button, ButtonLink } from "../ui/button"
@@ -26,11 +26,16 @@ type User = { email: string }
 
 type HeaderProps = {
   siteName: string
-  tenantName?: string
   nav: NavItem[]
   user: User | null
   logoSrc?: string
   logoSrcSet?: string
+  // Frame the logo morphs from
+  logoIntroSrc?: string
+  logoIntroSrcSet?: string
+  // KM emblem, after logo
+  emblemSrc?: string
+  emblemSrcSet?: string
   // Active item ornament, tenant set
   navStarSrc?: string
   // Set when a draft exists
@@ -82,25 +87,102 @@ export function syncMenuTop(panel: Panel | null): void {
   panel.style.setProperty("--menu-top", `${top}px`)
 }
 
+// Two CSS passes, curl first
+const MORPH_HOVER: Keyframe[] = [
+  { opacity: 0, offset: 0 },
+  { opacity: 0, offset: 0.125 },
+  { opacity: 1, offset: 0.375 },
+  { opacity: 1, offset: 0.625 },
+  { opacity: 0, offset: 0.875 },
+  { opacity: 0, offset: 1 },
+]
+
+/** Mouse hover loops the morph. */
+function useMorphHover() {
+  const frame = useRef<HTMLImageElement>(null)
+  const run = useRef<Animation | null>(null)
+  const start = (event: PointerEvent) => {
+    const el = frame.current
+    if (!el || event.pointerType !== "mouse") return
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
+    run.current?.cancel()
+    run.current = el.animate(MORPH_HOVER, {
+      duration: 2800,
+      easing: "ease-in-out",
+      iterations: Number.POSITIVE_INFINITY,
+    })
+  }
+  const stop = () => {
+    const effect = run.current?.effect
+    if (!effect) return
+    // Finish on the curl
+    const at = effect.getComputedTiming().currentIteration ?? 0
+    effect.updateTiming({ iterations: at + 1 })
+  }
+  return { frame, start, stop }
+}
+
 function Logo({
   siteName,
-  tenantName,
   logoSrc,
   logoSrcSet,
-}: Pick<HeaderProps, "siteName" | "tenantName" | "logoSrc" | "logoSrcSet">) {
+  logoIntroSrc,
+  logoIntroSrcSet,
+  emblemSrc,
+  emblemSrcSet,
+}: Pick<
+  HeaderProps,
+  | "siteName"
+  | "logoSrc"
+  | "logoSrcSet"
+  | "logoIntroSrc"
+  | "logoIntroSrcSet"
+  | "emblemSrc"
+  | "emblemSrcSet"
+>) {
+  const morph = useMorphHover()
   return (
-    <Link to="/" className="flex items-center gap-3 justify-self-start">
-      <img
-        src={logoSrc}
-        alt=""
-        width={44}
-        height={44}
-        srcSet={logoSrcSet}
-        className="size-11 shrink-0 object-contain"
-      />
-      <span className="flex flex-col whitespace-nowrap leading-tight">
-        <span className="font-bold text-xl">{siteName}</span>
-        {tenantName && <span className="text-xs">{tenantName}</span>}
+    <Link
+      to="/"
+      className="flex items-center gap-3 justify-self-start"
+      onPointerEnter={logoIntroSrc ? morph.start : undefined}
+      onPointerLeave={logoIntroSrc ? morph.stop : undefined}
+    >
+      <span className="relative size-11 shrink-0">
+        <img
+          src={logoSrc}
+          alt=""
+          width={44}
+          height={44}
+          srcSet={logoSrcSet}
+          className="size-11 object-contain"
+        />
+        {/* Fades out, CSS logo-intro */}
+        {logoIntroSrc && (
+          <img
+            ref={morph.frame}
+            src={logoIntroSrc}
+            alt=""
+            width={44}
+            height={44}
+            srcSet={logoIntroSrcSet}
+            className="logo-intro absolute inset-0 size-11 object-contain"
+          />
+        )}
+      </span>
+      {/* Off below 360px, menu fits */}
+      {emblemSrc && (
+        <img
+          src={emblemSrc}
+          alt=""
+          width={44}
+          height={44}
+          srcSet={emblemSrcSet}
+          className="size-11 shrink-0 object-contain max-[359px]:hidden"
+        />
+      )}
+      <span className="whitespace-nowrap font-bold text-xl leading-tight">
+        {siteName}
       </span>
     </Link>
   )
@@ -366,11 +448,14 @@ function MobileMenu({ nav, ...account }: AccountProps & { nav: NavItem[] }) {
 
 export function Header({
   siteName,
-  tenantName,
   nav,
   user,
   logoSrc = "/logo.svg",
   logoSrcSet,
+  logoIntroSrc,
+  logoIntroSrcSet,
+  emblemSrc,
+  emblemSrcSet,
   navStarSrc,
   draftHref,
   signInHref = "/masuk",
@@ -382,7 +467,15 @@ export function Header({
 }: HeaderProps) {
   const ref = useRef<HTMLElement>(null)
   useDismiss(ref)
-  const logo = { siteName, tenantName, logoSrc, logoSrcSet }
+  const logo = {
+    siteName,
+    logoSrc,
+    logoSrcSet,
+    logoIntroSrc,
+    logoIntroSrcSet,
+    emblemSrc,
+    emblemSrcSet,
+  }
   if (variant === "auth") {
     return (
       <header className="header-bg text-ink">

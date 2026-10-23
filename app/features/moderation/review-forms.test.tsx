@@ -77,23 +77,28 @@ describe("merge form", () => {
     expect(html).toContain(m.manage_issue_summary_hint(ISSUE_SUMMARY_LENGTH))
   })
 
-  test("issue select keeps the red error bar", () => {
+  test("issue select is marked invalid, no red bar", () => {
     const html = render(() => (
       <MergeForm
         defaultTitle="Jalan rusak"
         targets={[
-          { id: "1", code: "ITB-26-ISU01", title: "Jalan", sameRegency: false },
+          {
+            id: "1",
+            code: "ISU-2026-10-0001",
+            title: "Jalan",
+            sameRegency: false,
+          },
         ]}
         search=""
         errors={reviewErrors(["merge_issue"])}
       />
     ))
-    const classes = [...html.matchAll(/class="([^"]*)"/g)].map((m) =>
-      (m[1] ?? "").split(" "),
+    expect(html).toMatch(/<select[^>]*aria-invalid="true"/)
+    // Only the select's own border
+    const bars = [...html.matchAll(/class="([^"]*)"/g)].filter((m) =>
+      (m[1] ?? "").split(" ").includes("border-danger"),
     )
-    const errorBar = classes.filter((c) => c.includes("border-danger"))
-    expect(errorBar.length).toBe(1)
-    expect(errorBar[0]).not.toContain("border-line-subtle")
+    expect(bars).toEqual([])
   })
 
   test("targets can be searched, same regency is marked", () => {
@@ -103,7 +108,7 @@ describe("merge form", () => {
         targets={[
           {
             id: "1",
-            code: "ISU-ITB-26-0001",
+            code: "ISU-2026-10-0001",
             title: "Jalan",
             sameRegency: true,
           },
@@ -114,7 +119,7 @@ describe("merge form", () => {
     ))
     expect(html).toMatch(/<form[^>]*method="get"[^>]*>[\s\S]*?name="cari"/)
     expect(html).toContain('value="jalan"')
-    expect(html).toContain("ISU-ITB-26-0001 · Jalan · kab/kota sama")
+    expect(html).toContain("ISU-2026-10-0001 · Jalan · kab/kota sama")
     // Search picks the existing radio
     expect(html).toMatch(/id="merge-target-existing"[^>]*checked=""/)
   })
@@ -126,7 +131,7 @@ describe("merge form", () => {
         targets={[
           {
             id: "i1",
-            code: "ISU-ITB-26-0001",
+            code: "ISU-2026-10-0001",
             title: "Jalan",
             sameRegency: false,
           },

@@ -2,29 +2,25 @@ import { Check } from "lucide-react"
 import { cn } from "~/components/ui/cn"
 import { Note } from "~/components/ui/note"
 import { m } from "~/paraglide/messages.js"
-import type { GovernmentStatus } from "../../../shared/status.ts"
-import { GOVERNMENT_TEXT } from "./labels"
+import {
+  type GovernmentStatus,
+  type IssueState,
+  PUBLIC_STAGES,
+  publicStage,
+} from "../../../shared/status.ts"
+import { GOVERNMENT_TEXT, STAGE_TEXT } from "./labels"
 
-// Government axis main path
-export const TRACKER_STEPS = [
-  "awaiting_response",
-  "responded",
-  "in_progress",
-  "claimed_resolved",
-  "confirmed_resolved",
-] as const satisfies readonly GovernmentStatus[]
+// Public path, team 22 Oct
+export const TRACKER_STEPS = PUBLIC_STAGES
 
-type OffPath = Exclude<GovernmentStatus, (typeof TRACKER_STEPS)[number]>
+// Statuses the stage hides
+type Noted = Exclude<
+  GovernmentStatus,
+  "awaiting_response" | "responded" | "in_progress" | "confirmed_resolved"
+>
 
-// Last step surely reached
-const LAST_REACHED: Record<OffPath, number> = {
-  reopened: 3,
-  not_competent: 1,
-  not_followed_up: 0,
-  closed: 0,
-}
-
-const OFF_PATH_NOTE: Record<OffPath, () => string> = {
+const NOTE: Record<Noted, () => string> = {
+  claimed_resolved: m.tracker_note_claimed,
   reopened: m.tracker_note_reopened,
   not_competent: m.tracker_note_not_competent,
   not_followed_up: m.tracker_note_not_followed_up,
@@ -32,25 +28,25 @@ const OFF_PATH_NOTE: Record<OffPath, () => string> = {
 }
 
 export type TrackerState = {
-  // Last step reached
+  // Current stage index
   reached: number
-  current: boolean
-  offPath: OffPath | null
+  note: Noted | null
 }
 
-/** Main path position, PLAN §5.4. */
-export function trackerState(status: GovernmentStatus): TrackerState {
-  const index = (TRACKER_STEPS as readonly string[]).indexOf(status)
-  if (index >= 0) return { reached: index, current: true, offPath: null }
-  const offPath = status as OffPath
-  return { reached: LAST_REACHED[offPath], current: false, offPath }
+/** Stage position, PLAN §5.4. */
+export function trackerState(state: IssueState): TrackerState {
+  const reached = PUBLIC_STAGES.indexOf(publicStage(state))
+  const note = Object.hasOwn(NOTE, state.government)
+    ? (state.government as Noted)
+    : null
+  return { reached, note }
 }
 
 export function StatusTracker({
   status,
   labelledBy,
 }: {
-  status: GovernmentStatus
+  status: IssueState
   labelledBy: string
 }) {
   const state = trackerState(status)
@@ -61,7 +57,7 @@ export function StatusTracker({
         className="mt-6 grid gap-3 sm:grid-cols-5 sm:gap-0"
       >
         {TRACKER_STEPS.map((step, i) => {
-          const current = state.current && i === state.reached
+          const current = i === state.reached
           const done = !current && i <= state.reached
           return (
             <li
@@ -81,7 +77,7 @@ export function StatusTracker({
               <span
                 aria-hidden="true"
                 className={cn(
-                  "relative grid size-10 shrink-0 place-items-center font-semibold text-base",
+                  "relative grid size-10 shrink-0 place-items-center rounded-full font-semibold text-base",
                   current
                     ? "bg-brand text-on-accent shadow-[0_0_0_4px_color-mix(in_srgb,var(--theme-brand)_20%,transparent)]"
                     : done
@@ -101,7 +97,7 @@ export function StatusTracker({
                       : "text-ink-muted",
                 )}
               >
-                {GOVERNMENT_TEXT[step]()}
+                {STAGE_TEXT[step]()}
                 {current ? (
                   <span className="sr-only"> {m.tracker_step_current()}</span>
                 ) : done ? (
@@ -112,14 +108,14 @@ export function StatusTracker({
           )
         })}
       </ol>
-      {state.offPath ? (
+      {state.note ? (
         <Note className="mt-6">
           <strong className="font-semibold">
             {m.tracker_note_label({
-              status: GOVERNMENT_TEXT[state.offPath](),
+              status: GOVERNMENT_TEXT[state.note](),
             })}
           </strong>{" "}
-          {OFF_PATH_NOTE[state.offPath]()}
+          {NOTE[state.note]()}
         </Note>
       ) : null}
     </>

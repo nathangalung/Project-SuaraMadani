@@ -50,8 +50,8 @@ beforeAll(async () => {
   orgA = await insertOrg(su, "fla")
   orgB = await insertOrg(su, "flb")
   user = await insertUser(su, "pengikut@contoh.id")
-  published = await issue("ISU-FLA-26-0001", new Date())
-  draft = await issue("ISU-FLA-26-0002", null)
+  published = await issue("ISU-2026-10-0001", new Date())
+  draft = await issue("ISU-2026-10-0002", null)
 })
 
 beforeEach(async () => {
@@ -66,10 +66,10 @@ afterAll(async () => {
 
 describe("follow", () => {
   test("following a published issue adds membership once", async () => {
-    expect(await followIssue(orgA, "ISU-FLA-26-0001", user)).toBe(true)
-    expect(await followIssue(orgA, "ISU-FLA-26-0001", user)).toBe(true)
+    expect(await followIssue(orgA, "ISU-2026-10-0001", user)).toBe(true)
+    expect(await followIssue(orgA, "ISU-2026-10-0001", user)).toBe(true)
     expect(await followRows()).toEqual([{ org_id: orgA, issue_id: published }])
-    expect(await isFollowing(orgA, "ISU-FLA-26-0001", user)).toBe(true)
+    expect(await isFollowing(orgA, "ISU-2026-10-0001", user)).toBe(true)
     const { rows } = await su.query(
       "SELECT role FROM members WHERE organization_id = $1 AND user_id = $2",
       [orgA, user],
@@ -82,7 +82,7 @@ describe("follow", () => {
       "INSERT INTO members (organization_id, user_id, role) VALUES ($1, $2, 'admin')",
       [orgA, user],
     )
-    await followIssue(orgA, "ISU-FLA-26-0001", user)
+    await followIssue(orgA, "ISU-2026-10-0001", user)
     const { rows } = await su.query(
       "SELECT role FROM members WHERE user_id = $1",
       [user],
@@ -91,23 +91,23 @@ describe("follow", () => {
   })
 
   test("drafts and other tenants cannot be followed", async () => {
-    expect(await followIssue(orgA, "ISU-FLA-26-0002", user)).toBe(false)
-    expect(await followIssue(orgB, "ISU-FLA-26-0001", user)).toBe(false)
+    expect(await followIssue(orgA, "ISU-2026-10-0002", user)).toBe(false)
+    expect(await followIssue(orgB, "ISU-2026-10-0001", user)).toBe(false)
     expect(await followRows()).toEqual([])
     expect(draft).not.toBe("")
   })
 
   test("unfollow removes the row, twice is fine", async () => {
-    await followIssue(orgA, "ISU-FLA-26-0001", user)
-    await unfollowIssue(orgA, "ISU-FLA-26-0001", user)
-    await unfollowIssue(orgA, "ISU-FLA-26-0001", user)
+    await followIssue(orgA, "ISU-2026-10-0001", user)
+    await unfollowIssue(orgA, "ISU-2026-10-0001", user)
+    await unfollowIssue(orgA, "ISU-2026-10-0001", user)
     expect(await followRows()).toEqual([])
-    expect(await isFollowing(orgA, "ISU-FLA-26-0001", user)).toBe(false)
+    expect(await isFollowing(orgA, "ISU-2026-10-0001", user)).toBe(false)
   })
 
   test("another tenant cannot unfollow", async () => {
-    await followIssue(orgA, "ISU-FLA-26-0001", user)
-    await unfollowIssue(orgB, "ISU-FLA-26-0001", user)
+    await followIssue(orgA, "ISU-2026-10-0001", user)
+    await unfollowIssue(orgB, "ISU-2026-10-0001", user)
     expect(await followRows()).toHaveLength(1)
   })
 })

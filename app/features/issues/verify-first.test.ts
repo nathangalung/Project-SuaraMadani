@@ -138,9 +138,9 @@ describe("verify first", () => {
   })
 
   test("detail and OG reads exist only for published issues", async () => {
-    expect(await getIssuePage(orgId, "ISU-VFA-26-0002")).toBeNull()
-    expect(await getPublishedIssue(orgId, "ISU-VFA-26-0002")).toBeNull()
-    const page = await getIssuePage(orgId, "ISU-VFA-26-0001")
+    expect(await getIssuePage(orgId, "ISU-2026-10-0002")).toBeNull()
+    expect(await getPublishedIssue(orgId, "ISU-2026-10-0002")).toBeNull()
+    const page = await getIssuePage(orgId, "ISU-2026-10-0001")
     expect(JSON.stringify(page)).not.toContain(SECRET)
   })
 

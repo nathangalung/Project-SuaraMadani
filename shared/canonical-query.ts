@@ -1,9 +1,9 @@
 import { isCategoryId, isSubcategoryId } from "./categories.ts"
 import { isDemandCategory } from "./demands.ts"
 import {
-  ADVOCACY_STATUSES,
   FULFILMENT_STATUSES,
   GOVERNMENT_STATUSES,
+  PUBLIC_STAGES,
 } from "./status.ts"
 
 // Returns canonical value or null.
@@ -38,7 +38,7 @@ export const ISSUE_LIST_QUERY: QuerySpec = {
     normalize: (value) =>
       isCategoryId(value) || isSubcategoryId(value) ? value : null,
   },
-  status: { normalize: oneOf([...ADVOCACY_STATUSES, ...GOVERNMENT_STATUSES]) },
+  status: { normalize: oneOf(PUBLIC_STAGES) },
   wilayah: {
     normalize: (value) => (PUBLIC_REGION.test(value) ? value : null),
   },
@@ -48,6 +48,8 @@ export const ISSUE_LIST_QUERY: QuerySpec = {
 }
 
 const DEMAND_SCOPE_PARAMS = ["nasional", "daerah"] as const
+// Citizen order, 22 Oct
+export const DEMAND_SORTS = ["terbaru", "peringkat"] as const
 
 // /tuntutan filters, readable URLs
 export const DEMAND_LIST_QUERY: QuerySpec = {
@@ -58,6 +60,7 @@ export const DEMAND_LIST_QUERY: QuerySpec = {
   },
   status: { normalize: oneOf(FULFILMENT_STATUSES) },
   q: searchRule,
+  urut: { normalize: oneOf(DEMAND_SORTS), default: "terbaru" },
   kursor: cursorRule,
 }
 

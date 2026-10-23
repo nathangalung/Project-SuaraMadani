@@ -30,9 +30,9 @@ import {
   DEMAND_PAGE_SIZE,
   type DemandCategory,
   type DemandEventAction,
+  type DemandRank,
   type DemandScope,
-  emptyImportance,
-  type Importance,
+  emptyRank,
   isDemandCategory,
   isFulfilmentStatus,
 } from "../../../shared/demands.ts"
@@ -45,12 +45,7 @@ import {
   type ResponseStatus,
 } from "../../../shared/status.ts"
 import { briefUrl } from "./demand-href.ts"
-import {
-  type NamedRaters,
-  readImportance,
-  readNamedRaters,
-  readTopImportant,
-} from "./rating.server.ts"
+import { readCitizenRanking, readTopRanked } from "./ranking.server.ts"
 
 const MAX_PAGES = 50
 const SEARCH_MIN_LENGTH = 3
@@ -90,7 +85,7 @@ type DemandHead = {
 
 export type ListedDemand = DemandHead & {
   progress: DemandProgress
-  importance: Importance
+  rank: DemandRank
   briefs: number
   // First item with a brief
   firstBrief: number | null
@@ -99,7 +94,7 @@ export type ListedDemand = DemandHead & {
 
 export type DemandListQuery = Partial<
   Record<
-    "lingkup" | "provinsi" | "kategori" | "status" | "q" | "kursor",
+    "lingkup" | "provinsi" | "kategori" | "status" | "q" | "kursor" | "urut",
     string
   >
 >
@@ -257,6 +252,21 @@ export async function listPublishedDemands(
     )
   }
   return withTenant(orgId, async (tx) => {
+    const ranking = await readCitizenRanking(tx)
+    const placed = [...ranking.places.entries()]
+      .filter(([, rank]) => rank.place !== null)
+      .toSorted(([, a], [, b]) => (a.place ?? 0) - (b.place ?? 0))
+      .map(([id]) => id)
+    // Below threshold: newest first
+    const byRank = query.urut === "peringkat" && placed.length > 0
+    const rankOrder = byRank
+      ? [
+          sql`array_position(ARRAY[${sql.join(
+            placed.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )}], ${demands.id}) ASC NULLS LAST`,
+        ]
+      : []
     const rows = await tx
       .select({
         ...headColumns,
@@ -272,7 +282,7 @@ export async function listPublishedDemands(
       .leftJoin(province, eq(province.code, demands.provinceCode))
       .leftJoin(regency, eq(regency.code, demands.regencyCode))
       .where(and(...where))
-      .orderBy(desc(demands.publishedAt), desc(demands.id))
+      .orderBy(...rankOrder, desc(demands.publishedAt), desc(demands.id))
       .limit(DEMAND_PAGE_SIZE + 1)
     const more = rows.length > DEMAND_PAGE_SIZE
     const shown = rows.slice(0, DEMAND_PAGE_SIZE)
@@ -284,12 +294,9 @@ export async function listPublishedDemands(
       tx,
       items.map((item) => item.id),
     )
-    const ratings = await readImportance(
-      tx,
-      shown.map((row) => row.id),
-    )
     const last = shown.at(-1)
-    const capped = more && page >= MAX_PAGES
+    // Citizen order: one page
+    const capped = more && (byRank || page >= MAX_PAGES)
     return {
       kind: "results",
       demands: shown.map(({ key: _key, issueCount, ...row }) => {
@@ -299,7 +306,7 @@ export async function listPublishedDemands(
         return {
           ...demand,
           progress: demandProgress(own),
-          importance: ratings.get(row.id) ?? emptyImportance(),
+          rank: ranking.places.get(row.id) ?? emptyRank(),
           briefs: own.filter((item) => briefs.has(item.id)).length,
           firstBrief: first === -1 ? null : first + 1,
           issueCount,
@@ -307,7 +314,7 @@ export async function listPublishedDemands(
       }),
       page,
       nextCursor:
-        more && !capped && last
+        more && !capped && !byRank && last
           ? encodeCursor({ page: page + 1, key: last.key, id: last.id })
           : null,
       capped,
@@ -369,7 +376,7 @@ export type LatestDemand = Pick<
   | "state"
 > & {
   progress: DemandProgress
-  importance: Importance
+  rank: DemandRank
   // Fulfilment per item, in order
   marks: FulfilmentStatus[]
   // Item text, same order
@@ -420,10 +427,7 @@ async function readLatest(
     tx,
     items.map((item) => item.id),
   )
-  const ratings = await readImportance(
-    tx,
-    rows.map((row) => row.id),
-  )
+  const ranking = await readCitizenRanking(tx)
   return rows.map((row) => {
     const own = items.filter((item) => item.demandId === row.id)
     const { code, title, scope, category, provinceName, regencyName, state } =
@@ -437,7 +441,7 @@ async function readLatest(
       regencyName,
       state,
       progress: demandProgress(own),
-      importance: ratings.get(row.id) ?? emptyImportance(),
+      rank: ranking.places.get(row.id) ?? emptyRank(),
       marks: own.map((item) => item.fulfilment),
       subs: own.map((item) => item.body),
       briefs: own.filter((item) => briefs.has(item.id)).length,
@@ -453,13 +457,13 @@ export function latestDemands(
   return withTenant(orgId, (tx) => readLatest(tx, limit))
 }
 
-/** Citizen order, enough raters only. */
+/** Citizen order, enough rankers only. */
 export function importantDemands(
   orgId: string,
   limit: number,
 ): Promise<LatestDemand[]> {
   return withTenant(orgId, async (tx) => {
-    const ids = await readTopImportant(tx, limit)
+    const ids = await readTopRanked(tx, limit)
     if (ids.length === 0) return []
     const rows = await readLatest(tx, limit, inArray(demands.id, ids))
     const codes = await tx
@@ -596,8 +600,9 @@ export type DemandPage = DemandHead & {
   version: number
   closedAt: Date | null
   progress: DemandProgress
-  importance: Importance
-  named: NamedRaters
+  rank: DemandRank
+  // Accounts counted, places given
+  ranking: { rankers: number; ranked: number; shown: boolean }
   items: PublicItem[]
   events: DemandEvent[]
   issues: { code: string; title: string }[]
@@ -675,12 +680,16 @@ export function getDemandPage(
       )
       .where(and(eq(demandIssues.demandId, id), isNotNull(issues.publishedAt)))
       .orderBy(asc(issues.publicCode))
-    const ratings = await readImportance(tx, [id])
+    const ranking = await readCitizenRanking(tx)
     return {
       ...demand,
       progress: demandProgress(items),
-      importance: ratings.get(id) ?? emptyImportance(),
-      named: await readNamedRaters(tx, id),
+      rank: ranking.places.get(id) ?? emptyRank(),
+      ranking: {
+        rankers: ranking.rankers,
+        ranked: ranking.places.size,
+        shown: ranking.shown,
+      },
       items: items.map((item, index) => {
         const brief = briefs.get(item.id)
         return {

@@ -1,5 +1,4 @@
-import { Lock, MailCheck, MessageCircle } from "lucide-react"
-import { data, Form, Link, useNavigate, useRevalidator } from "react-router"
+import { data, Form, useNavigate, useRevalidator } from "react-router"
 import { AUTH_TITLE, AuthCard } from "~/components/layout/auth-card"
 import { focusPageHeading } from "~/components/layout/route-focus"
 import { Button, ButtonLink } from "~/components/ui/button"
@@ -76,7 +75,7 @@ function AddPhone({ error }: { error?: AddPhoneError }) {
   return (
     <section
       aria-labelledby="add-phone-title"
-      className="mt-6 flex flex-col gap-5 border-brand border-l-4 bg-surface p-4 sm:p-5"
+      className="mt-8 flex flex-col gap-5"
     >
       {message ? (
         <ErrorSummary errors={[{ fieldId: PHONE_ID, message }]} />
@@ -91,6 +90,7 @@ function AddPhone({ error }: { error?: AddPhoneError }) {
           id={PHONE_ID}
           name="phone"
           type="tel"
+          prefix="+62"
           inputMode="tel"
           autoComplete="tel"
           label={m.signin_phone_label()}
@@ -180,17 +180,7 @@ export default function SignInPage({
               ),
               code: (channel) => (
                 <div>
-                  <span
-                    aria-hidden="true"
-                    className="grid size-12 place-items-center bg-brand"
-                  >
-                    {channel === "whatsapp" ? (
-                      <MessageCircle className="size-6 text-on-accent" />
-                    ) : (
-                      <MailCheck className="size-6 text-on-accent" />
-                    )}
-                  </span>
-                  <h1 className={`mt-4 ${AUTH_TITLE}`}>
+                  <h1 className={AUTH_TITLE}>
                     {channel === "whatsapp"
                       ? m.signin_check_whatsapp_title()
                       : m.signin_check_email_title()}
@@ -201,18 +191,6 @@ export default function SignInPage({
           />
         </>
       )}
-      <p className="mt-7 flex gap-2 border-line-subtle border-t pt-5 text-ink-soft text-sm leading-relaxed">
-        <Lock aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-        <span>
-          {m.signin_privacy_note()}{" "}
-          <Link
-            to="/privasi"
-            className="font-semibold text-accent underline underline-offset-4 hover:no-underline"
-          >
-            {m.privacy_link()}
-          </Link>
-        </span>
-      </p>
     </AuthCard>
   )
 }

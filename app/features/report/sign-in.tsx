@@ -8,7 +8,11 @@ import {
   useState,
 } from "react"
 import { Button } from "~/components/ui/button"
-import { ErrorSummary, type FieldError } from "~/components/ui/error-summary"
+import {
+  ErrorSummary,
+  type FieldError,
+  untouched,
+} from "~/components/ui/error-summary"
 import {
   Checkbox,
   controlProps,
@@ -202,6 +206,8 @@ type CodeFormProps = {
   errors: FieldError[]
   busy: boolean
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  // Typing clears the code error
+  onEdit?: (event: FormEvent<HTMLFormElement>) => void
   onBack: () => void
   // WhatsApp failed, offer email
   notice?: ReactNode
@@ -258,6 +264,7 @@ export function CodeForm({
   errors,
   busy,
   onSubmit,
+  onEdit,
   onBack,
   notice,
   resend,
@@ -287,7 +294,12 @@ export function CodeForm({
       <div>
         <BackButton onClick={onBack}>{m.signin_change_channel()}</BackButton>
       </div>
-      <form noValidate onSubmit={onSubmit} className="flex flex-col gap-5">
+      <form
+        noValidate
+        onSubmit={onSubmit}
+        onChange={onEdit}
+        className="flex flex-col gap-5"
+      >
         <ErrorSummary errors={errors} attempt={errors} />
         {heading}
         {notice}
@@ -417,7 +429,7 @@ function ModeSwitch({
   onChange: (mode: Mode) => void
 }) {
   return (
-    <fieldset className="grid min-w-0 grid-cols-2 gap-1 rounded-[12px] bg-chip p-1">
+    <fieldset className="grid min-w-0 grid-cols-2 gap-1 rounded-full bg-chip p-1">
       <legend className="sr-only">{m.signin_tabs_label()}</legend>
       {MODES.map((item) => (
         <button
@@ -425,7 +437,7 @@ function ModeSwitch({
           type="button"
           aria-pressed={mode === item.value}
           onClick={() => onChange(item.value)}
-          className="min-h-11 cursor-pointer rounded-[9px] border border-transparent font-semibold text-ink-muted transition-[background-color,border-color,color] duration-150 hover:text-ink aria-pressed:border-line-subtle aria-pressed:bg-surface-raised aria-pressed:text-ink motion-reduce:transition-none"
+          className="min-h-11 cursor-pointer rounded-full border border-transparent font-semibold text-ink-muted transition-[background-color,border-color,color] duration-150 hover:text-ink aria-pressed:border-line-subtle aria-pressed:bg-surface-raised aria-pressed:text-ink motion-reduce:transition-none"
         >
           {item.label()}
         </button>
@@ -528,6 +540,11 @@ export function SignIn({
   const [captchaFailed, setCaptchaFailed] = useState(false)
   const [generation, setGeneration] = useState(0)
   const [errors, setErrors] = useState<FieldError[]>([])
+  // Edited field drops its red
+  const clearEdited = (event: FormEvent<HTMLFormElement>) => {
+    const { target } = event
+    setErrors((current) => untouched(current, (e) => e.fieldId, target))
+  }
   const [busy, setBusy] = useState(false)
   const [sentAt, setSentAt] = useState<number | null>(null)
   const [resends, setResends] = useState(0)
@@ -794,6 +811,7 @@ export function SignIn({
           errors={errors}
           busy={busy}
           onSubmit={verify}
+          onEdit={clearEdited}
           heading={heading?.code(channel)}
           primary={primary}
           onBack={() => {
@@ -854,7 +872,12 @@ export function SignIn({
               {m.signin_back()}
             </BackButton>
           </div>
-          <form noValidate onSubmit={send} className="flex flex-col gap-5">
+          <form
+            noValidate
+            onSubmit={send}
+            onChange={clearEdited}
+            className="flex flex-col gap-5"
+          >
             <ErrorSummary errors={errors} attempt={errors} />
             {heading?.channel}
             <ChannelChoice
@@ -890,7 +913,7 @@ export function SignIn({
           </form>
         </div>
       ) : (
-        <form ref={startForm} noValidate onSubmit={next}>
+        <form ref={startForm} noValidate onSubmit={next} onChange={clearEdited}>
           {/* Server HTML must not GET */}
           <fieldset
             disabled={!hydrated}
@@ -913,7 +936,7 @@ export function SignIn({
                 hint={m.signin_identifier_hint()}
                 error={messageFor(errors, IDS.identifier)}
                 defaultValue={values.identifier}
-                required
+                requiredMark
               />
             ) : (
               <>
@@ -925,7 +948,7 @@ export function SignIn({
                   hint={m.signin_name_hint()}
                   error={messageFor(errors, IDS.name)}
                   defaultValue={values.name}
-                  required
+                  requiredMark
                 />
                 <TextInput
                   id={IDS.email}
@@ -936,23 +959,22 @@ export function SignIn({
                   label={m.signin_email_label()}
                   error={messageFor(errors, IDS.email)}
                   defaultValue={values.email}
-                  required
+                  requiredMark
                 />
                 <TextInput
                   id={IDS.phone}
                   name="phone"
                   type="tel"
+                  prefix="+62"
                   inputMode="tel"
                   autoComplete="tel"
                   label={m.signin_phone_label()}
                   hint={m.signin_phone_hint()}
                   error={messageFor(errors, IDS.phone)}
-                  defaultValue={values.phone}
-                  required
+                  defaultValue={values.phone.replace(/^\+62/, "")}
+                  requiredMark
                 />
-                <div
-                  className={ageError ? "border-danger border-l-4 pl-4" : ""}
-                >
+                <div>
                   <Checkbox
                     id={IDS.age}
                     name="age"
@@ -965,7 +987,7 @@ export function SignIn({
                       true,
                       Boolean(ageError),
                     )}
-                    required
+                    requiredMark
                   />
                   {ageError && (
                     <ErrorMessage id={IDS.age}>{ageError}</ErrorMessage>
@@ -973,6 +995,9 @@ export function SignIn({
                 </div>
               </>
             )}
+            <p className="font-ui text-ink-muted text-sm">
+              {m.field_required_note()}
+            </p>
             <div>
               <Button
                 id={IDS.next}

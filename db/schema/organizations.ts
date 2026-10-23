@@ -71,7 +71,7 @@ export type OrgSettings = {
   officers?: string[]
 }
 
-export const COUNTER_KINDS = ["issue", "demand"] as const
+export const COUNTER_KINDS = ["issue", "demand", "report"] as const
 export type CounterKind = (typeof COUNTER_KINDS)[number]
 
 // Better Auth organization, no RLS
@@ -107,7 +107,7 @@ export const organizations = pgTable(
   ],
 )
 
-// Gapless per org, year, kind
+// Gapless per org, month, kind
 export const orgCounters = pgTable(
   "org_counters",
   {
@@ -115,11 +115,13 @@ export const orgCounters = pgTable(
       .notNull()
       .references(() => organizations.id),
     year: smallint("year").notNull(),
+    // 0: yearly (tuntutan, old issues)
+    month: smallint("month").notNull().default(0),
     kind: text("kind").$type<CounterKind>().notNull(),
     next: integer("next").notNull(),
   },
   (t) => [
-    primaryKey({ columns: [t.orgId, t.year, t.kind] }),
+    primaryKey({ columns: [t.orgId, t.year, t.month, t.kind] }),
     check("org_counters_kind_check", oneOf(t.kind, COUNTER_KINDS)),
     check("org_counters_next_check", sql`${t.next} > 0`),
     tenantPolicy(),

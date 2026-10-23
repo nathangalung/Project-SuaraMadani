@@ -27,8 +27,10 @@ import {
   publicMediaPath,
 } from "../../server/files.server.ts"
 import type { PublicMedia } from "../../shared/evidence.ts"
+import { jakartaMonth, jakartaYear } from "../../shared/format.ts"
 import { isReferralChannel, isRejectReason } from "../../shared/moderation.ts"
 import { AGE_CONSENT_VERSION } from "../../shared/report-fields.ts"
+import { formatReportCode } from "../../shared/report-id.ts"
 import { INITIAL_ISSUE_STATE, type ReportStatus } from "../../shared/status.ts"
 import { refreshDashboards } from "../../worker/aggregates.ts"
 import { createEvidenceHandler } from "../../worker/evidence.ts"
@@ -48,7 +50,7 @@ import { members, users } from "../schema/auth.ts"
 import { issueReports, issues } from "../schema/issues.ts"
 import { contentComplaints, takedowns } from "../schema/moderation.ts"
 import { follows } from "../schema/notifications.ts"
-import { organizations } from "../schema/organizations.ts"
+import { organizations, orgCounters } from "../schema/organizations.ts"
 import { regions } from "../schema/regions.ts"
 import { evidence, reports } from "../schema/reports.ts"
 import { withTenant } from "../tenant.server.ts"
@@ -392,6 +394,41 @@ async function insertReports(
   return withTenant(
     org.id,
     async (tx) => {
+      // Plan codes follow live counters
+      const taken = await tx
+        .select({
+          year: orgCounters.year,
+          month: orgCounters.month,
+          next: orgCounters.next,
+        })
+        .from(orgCounters)
+        .where(
+          and(eq(orgCounters.orgId, org.id), eq(orgCounters.kind, "report")),
+        )
+      const offset = new Map(taken.map((c) => [`${c.year}-${c.month}`, c.next]))
+      const top = new Map<string, { year: number; month: number; n: number }>()
+      for (const r of plan.reports) {
+        const year = jakartaYear(r.createdAt)
+        const month = jakartaMonth(r.createdAt)
+        const key = `${year}-${month}`
+        const n = Number(r.code.slice(-4)) + (offset.get(key) ?? 0)
+        r.code = formatReportCode(year, month, n)
+        if (n > (top.get(key)?.n ?? 0)) top.set(key, { year, month, n })
+      }
+      for (const { year, month, n } of top.values()) {
+        await tx
+          .insert(orgCounters)
+          .values({ orgId: org.id, year, month, kind: "report", next: n })
+          .onConflictDoUpdate({
+            target: [
+              orgCounters.orgId,
+              orgCounters.year,
+              orgCounters.month,
+              orgCounters.kind,
+            ],
+            set: { next: n },
+          })
+      }
       const ids: string[] = []
       for (const [index, r] of plan.reports.entries()) {
         const userId = userIds[r.reporter]
@@ -1397,7 +1434,11 @@ export async function resetSample(
                     sql`NOT EXISTS (SELECT 1 FROM issue_reports l WHERE l.issue_id = ${issues.id})`,
                   ),
                 )
-                .returning({ id: issues.id, year: issues.year })
+                .returning({
+                  id: issues.id,
+                  year: issues.year,
+                  month: issues.month,
+                })
         // No FK, rows outlive issues
         if (gone.length > 0) {
           await tx.delete(takedowns).where(
@@ -1407,21 +1448,44 @@ export async function resetSample(
             ),
           )
         }
-        for (const year of new Set(gone.map((row) => row.year))) {
+        const periods = new Map(
+          gone.map((row) => [`${row.year}-${row.month}`, row]),
+        )
+        for (const { year, month } of periods.values()) {
           await tx.execute(sql`
             WITH top AS (
               SELECT max(number) AS n FROM issues
-              WHERE org_id = ${org.id} AND year = ${year})
+              WHERE org_id = ${org.id} AND year = ${year} AND month = ${month})
             UPDATE org_counters SET next = (SELECT n FROM top)
-            WHERE org_id = ${org.id} AND year = ${year} AND kind = 'issue'
-              AND (SELECT n FROM top) IS NOT NULL`)
+            WHERE org_id = ${org.id} AND year = ${year} AND month = ${month}
+              AND kind = 'issue' AND (SELECT n FROM top) IS NOT NULL`)
           await tx.execute(sql`
             DELETE FROM org_counters
-            WHERE org_id = ${org.id} AND year = ${year} AND kind = 'issue'
+            WHERE org_id = ${org.id} AND year = ${year} AND month = ${month}
+              AND kind = 'issue'
               AND NOT EXISTS (SELECT 1 FROM issues
-                WHERE org_id = ${org.id} AND year = ${year})`)
+                WHERE org_id = ${org.id} AND year = ${year} AND month = ${month})`)
         }
         await tx.delete(reports).where(inArray(reports.id, reportIds))
+        // LPR counters back to remaining
+        await tx.execute(sql`
+          WITH top AS (
+            SELECT split_part(public_code, '-', 2)::int AS year,
+              split_part(public_code, '-', 3)::int AS month,
+              max(split_part(public_code, '-', 4)::int) AS n
+            FROM reports
+            WHERE org_id = ${org.id} AND public_code LIKE 'LPR-%'
+            GROUP BY 1, 2)
+          UPDATE org_counters c SET next = top.n FROM top
+          WHERE c.org_id = ${org.id} AND c.kind = 'report'
+            AND c.year = top.year AND c.month = top.month`)
+        await tx.execute(sql`
+          DELETE FROM org_counters c
+          WHERE c.org_id = ${org.id} AND c.kind = 'report'
+            AND NOT EXISTS (SELECT 1 FROM reports r
+              WHERE r.org_id = ${org.id}
+                AND r.public_code LIKE 'LPR-' || c.year || '-'
+                  || lpad(c.month::text, 2, '0') || '-%')`)
         removedReports += reportIds.length
         removedIssues += gone.length
         return evidenceRows

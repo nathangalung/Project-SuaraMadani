@@ -159,10 +159,7 @@ export function ThemeEditor({
       <input type="hidden" name="intent" value="theme" />
       <div className="flex min-w-0 flex-col gap-8">
         {failures.length > 0 ? (
-          <div
-            id="theme-contrast"
-            className="border-danger border-l-4 bg-danger-soft p-4 text-danger-ink text-sm"
-          >
+          <div id="theme-contrast" className="text-danger text-sm">
             <p className="font-bold">{m.theme_failures_title()}</p>
             <ul className="mt-2 list-disc pl-5">
               {failures.map((failure) => (

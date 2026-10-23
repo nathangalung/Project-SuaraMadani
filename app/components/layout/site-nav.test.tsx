@@ -13,7 +13,7 @@ describe("site navigation", () => {
     expect(mainNav()).toEqual([
       { to: "/", label: "Beranda" },
       { to: "/lapor", label: "Lapor" },
-      { to: "/isu", label: "Jelajahi Isu", also: ["/tuntutan"] },
+      { to: "/isu", label: "Jelajah", also: ["/tuntutan"] },
       { to: "/data", label: "Dashboard" },
       { to: "/tentang", label: "Tentang" },
     ])
@@ -29,12 +29,12 @@ describe("site navigation", () => {
     }
   })
 
-  test("Jelajahi Isu stays current on the Tuntutan tab", () => {
+  test("Jelajah stays current on the Tuntutan tab", () => {
     const explore = mainNav().find((item) => item.to === "/isu")
     if (!explore) throw new Error("no /isu item")
     for (const path of [
       "/isu",
-      "/isu/ISU-ITB-26-0001",
+      "/isu/ISU-2026-10-0001",
       "/tuntutan",
       "/tuntutan/TUN-ITB-26-0001",
     ]) {
@@ -55,7 +55,6 @@ describe("site navigation", () => {
       { to: "/pedoman", label: "Pedoman konten" },
       // PLAN §6.1 footer
       { to: "/aksesibilitas", label: "Pernyataan aksesibilitas" },
-      { to: "/tentang#lisensi", label: "Lisensi data dan kode" },
     ])
   })
 })

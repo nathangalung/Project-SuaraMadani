@@ -38,10 +38,10 @@ describe("canonicalizeSearch", () => {
   test("drops invalid values and defaults", () => {
     expect(
       canonicalizeSearch(
-        "?kategori=nope&status=claimed_resolved&urut=terbaru&wilayah=32.73.01.1001",
+        "?kategori=nope&status=in_progress&urut=terbaru&wilayah=32.73.01.1001",
         list,
       ).search,
-    ).toBe("?status=claimed_resolved")
+    ).toBe("?status=in_progress")
   })
 
   test("first valid value wins", () => {
@@ -117,7 +117,7 @@ describe("querySpecFor", () => {
   test("cacheable routes have specs", () => {
     expect(querySpecFor("/")).toEqual({})
     expect(querySpecFor("/isu")).toBe(ISSUE_LIST_QUERY)
-    expect(querySpecFor("/isu/ISU-ITB-26-0042")).toEqual({})
+    expect(querySpecFor("/isu/ISU-2026-10-0042")).toEqual({})
     expect(querySpecFor("/wilayah/32.73.json")).toEqual({})
     expect(querySpecFor("/tentang")).toEqual({})
     expect(querySpecFor("/data")).toBe(DATA_QUERY)
@@ -190,7 +190,7 @@ describe("querySpecFor", () => {
   })
 
   test("OG image keeps a positive integer version", () => {
-    const spec = querySpecFor("/isu/ISU-ITB-26-0042/og.png")
+    const spec = querySpecFor("/isu/ISU-2026-10-0042/og.png")
     expect(spec).not.toBeNull()
     if (spec === null) return
     expect(canonicalizeSearch("?v=3&fbclid=x", spec).search).toBe("?v=3")
@@ -202,8 +202,8 @@ describe("querySpecFor", () => {
   test("private and unknown routes are not canonicalized", () => {
     for (const path of [
       "/lapor",
-      "/lapor/sukses/ITB-26-7K3QX",
-      "/isu/ISU-ITB-26-0042/laporkan",
+      "/lapor/sukses/LPR-2026-10-0001",
+      "/isu/ISU-2026-10-0042/laporkan",
       "/kelola",
       "/api/upload/x",
       "/isu/",

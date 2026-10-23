@@ -25,7 +25,11 @@ export function DemandFilters({
   const form = useRef<HTMLFormElement>(null)
   // Phones: open when filtered
   const chosen = Boolean(
-    query.lingkup || query.provinsi || query.kategori || query.status,
+    query.lingkup ||
+      query.provinsi ||
+      query.kategori ||
+      query.status ||
+      (query.urut && query.urut !== "terbaru"),
   )
   useUrlFields(form, {
     q: query.q ?? "",
@@ -33,13 +37,14 @@ export function DemandFilters({
     provinsi: query.provinsi ?? "",
     kategori: query.kategori ?? "",
     status: query.status ?? "",
+    urut: query.urut ?? "terbaru",
   })
   return (
     <Form
       ref={form}
       method="get"
       action="/tuntutan"
-      className="border-ink border-y-2 bg-surface-raised/60 p-4 sm:p-5"
+      className="rounded-xl border border-line-subtle bg-surface-raised p-5 sm:p-6"
     >
       <h2 className="sr-only">{m.demands_filter_title()}</h2>
       <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
@@ -81,7 +86,7 @@ export function DemandFilters({
               className="size-4 transition-transform group-open:rotate-180 motion-reduce:transition-none"
             />
           </summary>
-          <div className="mt-2 grid grid-cols-1 items-start gap-4 sm:mt-0 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-2 grid grid-cols-1 items-start gap-4 sm:mt-0 sm:grid-cols-2 lg:grid-cols-5">
             <Select
               id="demands-scope"
               name="lingkup"
@@ -130,6 +135,15 @@ export function DemandFilters({
                   {FULFILMENT_TEXT[status]()}
                 </option>
               ))}
+            </Select>
+            <Select
+              id="demands-sort"
+              name="urut"
+              label={m.demands_sort_label()}
+              defaultValue={query.urut ?? "terbaru"}
+            >
+              <option value="terbaru">{m.demands_sort_newest()}</option>
+              <option value="peringkat">{m.demands_sort_rank()}</option>
             </Select>
           </div>
         </details>

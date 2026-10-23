@@ -1,4 +1,3 @@
-import { Lock } from "lucide-react"
 import {
   type FormEvent,
   type ReactNode,
@@ -12,6 +11,7 @@ import {
   ErrorSummary,
   errorTitle,
   type FieldError,
+  untouched,
 } from "~/components/ui/error-summary"
 import {
   Checkbox,
@@ -164,7 +164,7 @@ function Row({
       <dt className="font-ui text-ink-muted text-sm sm:pt-0.5">{label}</dt>
       {/* Mobile: link beside label */}
       <dd
-        className={`col-span-2 row-start-2 whitespace-pre-line break-words sm:col-span-1 sm:col-start-2 sm:row-start-1 ${empty ? "text-ink-muted" : ""}`}
+        className={`col-span-2 row-start-2 min-w-0 whitespace-pre-line sm:col-span-1 sm:col-start-2 sm:row-start-1 ${empty ? "text-ink-muted" : ""}`}
       >
         {empty ? m.review_not_filled() : value}
       </dd>
@@ -219,7 +219,18 @@ export function Summary({
           : []),
       ],
     ],
-    ["location", [[m.review_location(), location?.label]]],
+    [
+      "location",
+      [
+        [m.review_location(), location?.label],
+        ...(location?.point
+          ? ([[m.review_point(), m.review_point_attached()]] as [
+              string,
+              ReactNode,
+            ][])
+          : []),
+      ],
+    ],
     [
       "details",
       [
@@ -279,7 +290,7 @@ export function Summary({
           id={rowId(step)}
           tabIndex={-1}
           aria-labelledby={`${rowId(step)}-title`}
-          className={`border-line-subtle border-b py-4 first:pt-0 ${errorFor(step) ? "border-l-4 border-l-danger pl-4" : ""}`}
+          className="border-line-subtle border-b py-4 first:pt-0"
         >
           <h2 id={`${rowId(step)}-title`} className="mb-3 font-bold text-lg">
             {STEP_TITLE_TEXT[step]()}
@@ -343,6 +354,11 @@ export function Review({
   const [captchaFailed, setCaptchaFailed] = useState(false)
   const [generation, setGeneration] = useState(0)
   const [errors, setErrors] = useState<FieldError[]>([])
+  // Edited field drops its red
+  const clearEdited = (event: FormEvent<HTMLFormElement>) => {
+    const { target } = event
+    setErrors((current) => untouched(current, (e) => e.fieldId, target))
+  }
   const [flow, setFlow] = useState<Flow>({ kind: "idle" })
   const handled = useRef<unknown>(null)
   const missing = missingEntries(draft.evidence, memory.files)
@@ -481,7 +497,7 @@ export function Review({
         {signedInAs === null ? (
           <section
             aria-labelledby={SIGN_IN_TITLE_ID}
-            className="mt-6 flex flex-col gap-5 border-brand border-l-4 bg-surface p-4 sm:p-5"
+            className="mt-8 flex flex-col gap-5"
           >
             <h2
               id={SIGN_IN_TITLE_ID}
@@ -491,12 +507,12 @@ export function Review({
               {m.review_sign_in_title()}
             </h2>
             <SignIn siteKey={siteKey} onSignedIn={onSessionChange} />
-            <SignInPrivacy />
           </section>
         ) : (
           <form
             noValidate
             onSubmit={submit}
+            onChange={clearEdited}
             className="mt-6 flex flex-col gap-6"
           >
             <p className="font-ui text-ink-muted text-sm">
@@ -623,19 +639,6 @@ export function ConsentHint() {
   )
 }
 
-// Policy before the account exists
-function SignInPrivacy() {
-  return (
-    <p className="flex gap-2 border-line-subtle border-t pt-4 text-ink-soft text-sm leading-relaxed">
-      <Lock aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-      <span>
-        {m.signin_privacy_note()}{" "}
-        <PolicyLink href="/privasi" label={m.privacy_link()} />
-      </span>
-    </p>
-  )
-}
-
 type ConsentRowProps = {
   id: string
   name: string
@@ -655,7 +658,7 @@ export function ConsentRow({
   onChange,
 }: ConsentRowProps) {
   return (
-    <div className={error ? "border-danger border-l-4 pl-4" : undefined}>
+    <div>
       <Checkbox
         id={id}
         name={name}
@@ -700,10 +703,7 @@ function UploadFailure({
     .filter(Boolean)
     .join(", ")
   return (
-    <div
-      role="alert"
-      className="flex flex-col gap-4 border-danger border-l-4 bg-danger-soft p-4 text-danger-ink"
-    >
+    <div role="alert" className="flex flex-col gap-4 text-danger">
       <p className="font-semibold">{m.upload_failed({ names })}</p>
       <div className="flex flex-wrap gap-3">
         <Button

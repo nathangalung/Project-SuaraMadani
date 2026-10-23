@@ -1,19 +1,14 @@
 import { FileText, MapPin } from "lucide-react"
 import { Link } from "react-router"
-import { cn } from "~/components/ui/cn"
 import { m } from "~/paraglide/messages.js"
 import { formatDate } from "../../../shared/format.ts"
 import { labelOf, SUBCATEGORY_TEXT } from "../report/public-labels"
-import {
-  CategoryBadge,
-  GovernmentBadge,
-  VerificationBadge,
-} from "./issue-status"
+import { CategoryMark, StageMark } from "./issue-status"
 import type { ListedIssue } from "./issues.server"
 
 type Place = { regencyName: string; districtName: string | null }
 
-function placeOf(issue: Place): string {
+export function placeOf(issue: Place): string {
   return issue.districtName
     ? `${issue.districtName}, ${issue.regencyName}`
     : issue.regencyName
@@ -37,70 +32,53 @@ export function issueMeta(
     .join(" · ")
 }
 
-// Title link covers the card
-export function IssueCard({
-  issue,
-  className,
-}: {
-  issue: ListedIssue
-  className?: string
-}) {
+// Rounded card, pill statuses
+export function IssueCard({ issue }: { issue: ListedIssue }) {
+  const subcategory = labelOf(SUBCATEGORY_TEXT, issue.subcategoryId)
   return (
-    <article
-      className={cn(
-        "group relative flex flex-col border border-line-subtle bg-surface-raised transition-colors hover:border-ink has-[a:focus-visible]:outline-3 has-[a:focus-visible]:outline-focus has-[a:focus-visible]:outline-offset-3 has-[a:focus-visible]:outline-solid",
-        className,
-      )}
-    >
-      <div className="border-ink/8 border-b px-5 pt-5 pb-4">
-        <ul className="flex flex-wrap gap-1.5">
-          <li>
-            <CategoryBadge categoryId={issue.categoryId} />
-          </li>
-          <li>
-            <VerificationBadge label={issue.verificationLabel} />
-          </li>
-          <li>
-            <GovernmentBadge status={issue.govStatus} />
-          </li>
-        </ul>
-        <p className="mt-3 font-semibold font-ui text-ink-muted text-sm">
-          {labelOf(SUBCATEGORY_TEXT, issue.subcategoryId)}
-        </p>
+    <article className="group relative flex h-full flex-col rounded-2xl border border-line-subtle bg-surface-raised p-6 transition-[border-color,translate] duration-(--dur-hover) hover:-translate-y-0.5 hover:border-ink/40 has-[a:focus-visible]:outline-3 has-[a:focus-visible]:outline-focus has-[a:focus-visible]:outline-offset-3 has-[a:focus-visible]:outline-solid motion-reduce:hover:translate-y-0">
+      <div className="flex items-center justify-between gap-3">
+        <span className="inline-flex items-center rounded-full bg-surface px-3 py-1">
+          <CategoryMark categoryId={issue.categoryId} />
+        </span>
+        <span className="font-ui text-ink-muted text-xs tabular-nums">
+          {issue.code}
+        </span>
       </div>
-      <div className="flex flex-1 flex-col p-5">
-        <h3 className="font-bold text-ink text-lg leading-snug">
-          <Link
-            to={`/isu/${issue.code}`}
-            className="decoration-2 decoration-brand underline-offset-4 after:absolute after:inset-0 after:content-[''] focus-visible:outline-none group-hover:underline"
-          >
-            {issue.title}
-          </Link>
-        </h3>
-        <p className="mt-2 line-clamp-2 font-ui text-[0.95rem] text-ink-soft leading-relaxed">
-          {issue.excerpt}
-        </p>
-        <p className="mt-3 flex items-center gap-1.5 font-ui text-[0.95rem] text-ink-soft">
+      {subcategory ? (
+        <p className="mt-5 font-ui text-ink-muted text-sm">{subcategory}</p>
+      ) : null}
+      <h3 className="mt-1 font-bold text-ink text-xl leading-snug">
+        <Link
+          to={`/isu/${issue.code}`}
+          className="decoration-2 decoration-brand underline-offset-4 after:absolute after:inset-0 after:rounded-2xl after:content-[''] focus-visible:outline-none group-hover:underline"
+        >
+          {issue.title}
+        </Link>
+      </h3>
+      <p className="mt-2 line-clamp-3 text-ink-soft leading-relaxed">
+        {issue.excerpt}
+      </p>
+      <div className="mt-auto pt-6">
+        <span className="sr-only">{m.issue_stage_label()}: </span>
+        <StageMark
+          advocacy={issue.advocacyStatus}
+          government={issue.govStatus}
+        />
+      </div>
+      <div className="mt-4 flex items-center justify-between gap-3 font-ui text-ink-soft text-sm">
+        <span className="flex min-w-0 items-center gap-1.5">
           <MapPin aria-hidden="true" className="size-4 shrink-0 text-brand" />
           <span className="truncate">{placeOf(issue)}</span>
-        </p>
-        <div className="mt-auto pt-4">
-          <p className="flex flex-wrap items-center gap-x-4 gap-y-1 border-ink/10 border-t pt-3.5 font-ui text-[0.95rem] text-ink-soft">
-            <span className="flex items-center gap-1.5">
-              <FileText aria-hidden="true" className="size-4 text-brand" />
-              {m.issue_reports({ count: issue.reportCount })}
-            </span>
-            <span className="ml-auto text-ink-muted text-xs">
-              {m.issue_last_activity({
-                date: formatDate(issue.lastActivityAt),
-              })}
-            </span>
-          </p>
-          <p className="mt-2 font-ui text-ink-muted text-xs tabular-nums">
-            {issue.code}
-          </p>
-        </div>
+        </span>
+        <span className="flex shrink-0 items-center gap-1.5">
+          <FileText aria-hidden="true" className="size-4 text-brand" />
+          {m.issue_reports({ count: issue.reportCount })}
+        </span>
       </div>
+      <p className="mt-1 font-ui text-ink-muted text-xs">
+        {m.issue_last_activity({ date: formatDate(issue.lastActivityAt) })}
+      </p>
     </article>
   )
 }

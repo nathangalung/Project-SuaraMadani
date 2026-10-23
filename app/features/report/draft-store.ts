@@ -1,4 +1,4 @@
-import type { ReportStep } from "../../../shared/report-fields.ts"
+import type { LatLng, ReportStep } from "../../../shared/report-fields.ts"
 
 // Root needs only this part
 export type RelationAnswer = { relation?: string; otherConsent?: string }
@@ -7,6 +7,8 @@ export type LocationAnswer = {
   regencyCode?: string
   districtCode?: string
   villageCode?: string
+  // Device point, admin only
+  point?: LatLng
   // Display only, server ignores
   label?: string
 }

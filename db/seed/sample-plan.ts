@@ -14,7 +14,11 @@ import {
   type EvidenceDecision,
   type RedactionBox,
 } from "../../shared/evidence.ts"
-import { jakartaIsoDate } from "../../shared/format.ts"
+import {
+  jakartaIsoDate,
+  jakartaMonth,
+  jakartaYear,
+} from "../../shared/format.ts"
 import {
   addDays,
   type DecisionReason,
@@ -32,7 +36,7 @@ import {
   STORY_LENGTH,
   TITLE_LENGTH,
 } from "../../shared/report-fields.ts"
-import { generateReportCode } from "../../shared/report-id.ts"
+import { formatReportCode } from "../../shared/report-id.ts"
 import {
   INITIAL_ISSUE_STATE,
   type IssueAction,
@@ -118,7 +122,6 @@ export type SampleProfile = {
   draftIssues: number
   // Most advanced first
   paths: readonly PathName[]
-  unverifiedIssues: number
   evidence: number
   complaints: readonly ComplaintKind[]
 }
@@ -165,7 +168,6 @@ export const SAMPLE_PROFILES = {
       ...repeat("referred", 4),
       ...repeat("monitoring", 3),
     ],
-    unverifiedIssues: 6,
     evidence: 6,
     complaints: [
       "open",
@@ -211,7 +213,6 @@ export const SAMPLE_PROFILES = {
       "referred",
       "monitoring",
     ],
-    unverifiedIssues: 1,
     evidence: 2,
     complaints: ["open", "keep"],
   },
@@ -429,7 +430,6 @@ type Draft = Omit<
 
 function draftReport(
   rng: Rng,
-  profile: SampleProfile,
   input: {
     theme: SampleTheme
     placeKey: PlaceKey
@@ -437,7 +437,6 @@ function draftReport(
     variant: number
     createdAt: Date
   },
-  codes: Set<string>,
 ): Draft {
   const { theme, placeKey, district, createdAt } = input
   const place = PLACES[placeKey]
@@ -450,11 +449,6 @@ function draftReport(
     ["witness", 30],
     ["on_behalf", 15],
   ])
-  let code = ""
-  do {
-    code = generateReportCode(profile.campusCode, createdAt, rng.bytes)
-  } while (codes.has(code))
-  codes.add(code)
   const disaster = categoryId === "bencana"
   const groupCount = 1 + rng.int(3)
   const affectedGroups = rng.shuffle(AFFECTED_GROUPS).slice(0, groupCount)
@@ -464,7 +458,8 @@ function draftReport(
   const occurred = new Date(createdAt.getTime() - rng.between(1, 14) * DAY)
   const report: Draft = {
     submissionId: uuid(rng),
-    code,
+    // Set later, by time
+    code: "",
     relation,
     otherConsent: relation === "on_behalf" ? rng.pick(OTHER_CONSENTS) : null,
     provinceCode: place.regency.split(".")[0] ?? "",
@@ -532,7 +527,6 @@ function stepAfter(
 export function buildSamplePlan(profile: SampleProfile, now: Date): SamplePlan {
   const rng = createRng(hash(`${profile.slug}:${SAMPLE_VERSION}`))
   const end = now.getTime() - HOUR
-  const codes = new Set<string>()
   const places = Object.entries(profile.places) as [PlaceKey, number][]
   const themeOrder = rng.shuffle(THEMES)
   let themeCursor = 0
@@ -588,10 +582,6 @@ export function buildSamplePlan(profile: SampleProfile, now: Date): SamplePlan {
   big.forEach((n, i) => {
     sizes.splice(Math.min(bigSlots[i] ?? 0, sizes.length), 0, n)
   })
-  const smallIndexes = sizes.flatMap((n, i) => (n <= 2 ? [i] : []))
-  const unverified = new Set(
-    rng.shuffle(smallIndexes).slice(0, profile.unverifiedIssues),
-  )
   const paths = [...profile.paths]
   for (let i = 0; i + 1 < paths.length; i += 2) {
     if (rng.next() < 0.5) {
@@ -619,31 +609,23 @@ export function buildSamplePlan(profile: SampleProfile, now: Date): SamplePlan {
       const review = stepAfter(rng, createdAt, 2, draft ? 18 : 48)
       const decided = stepAfter(rng, review, 2, draft ? 18 : 96)
       const mergedAt = stepAfter(rng, decided, 1, draft ? 12 : 36)
-      const verifies =
-        !unverified.has(i) && (j === 0 || rng.next() > 0.2 || draft)
+      // Only verified reports merge
       const steps: PlannedStep[] = [
         { action: "start_review", at: review },
-        verifies
-          ? {
-              action: "verify",
-              at: decided,
-              method: rng.pick(SAMPLE_VERIFY_METHODS),
-            }
-          : { action: "mark_unverifiable", at: decided },
+        {
+          action: "verify",
+          at: decided,
+          method: rng.pick(SAMPLE_VERIFY_METHODS),
+        },
         { action: "merge", at: mergedAt },
       ]
-      const report = draftReport(
-        rng,
-        profile,
-        {
-          theme,
-          placeKey,
-          district: fixedDistrict ?? rng.pick(place.districts),
-          variant: j,
-          createdAt,
-        },
-        codes,
-      )
+      const report = draftReport(rng, {
+        theme,
+        placeKey,
+        district: fixedDistrict ?? rng.pick(place.districts),
+        variant: j,
+        createdAt,
+      })
       members.push({ report: push(report, steps, index, mergedAt), mergedAt })
     }
     members.sort((a, b) => a.mergedAt.getTime() - b.mergedAt.getTime())
@@ -721,18 +703,13 @@ export function buildSamplePlan(profile: SampleProfile, now: Date): SamplePlan {
       const fitting = THEMES.filter((t) => fits(t, placeKey))
       const theme = rng.pick(fitting)
       const steps = looseSteps(rng, status, createdAt, end)
-      const report = draftReport(
-        rng,
-        profile,
-        {
-          theme,
-          placeKey,
-          district: rng.pick(PLACES[placeKey].districts),
-          variant: rng.int(theme.reports.length),
-          createdAt,
-        },
-        codes,
-      )
+      const report = draftReport(rng, {
+        theme,
+        placeKey,
+        district: rng.pick(PLACES[placeKey].districts),
+        variant: rng.int(theme.reports.length),
+        createdAt,
+      })
       push(report, steps)
       if (finalStatus(steps) !== status) throw new Error(`plan ${status}`)
     }
@@ -777,6 +754,18 @@ export function buildSamplePlan(profile: SampleProfile, now: Date): SamplePlan {
       createdAt: new Date(firstAt - rng.between(0.1, 12) * HOUR),
     }
   })
+  // LPR per month, by time
+  const counts = new Map<string, number>()
+  const byTime = [...reports].sort(
+    (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+  )
+  for (const report of byTime) {
+    const year = jakartaYear(report.createdAt)
+    const month = jakartaMonth(report.createdAt)
+    const number = (counts.get(`${year}-${month}`) ?? 0) + 1
+    counts.set(`${year}-${month}`, number)
+    report.code = formatReportCode(year, month, number)
+  }
   // Own streams per concern
   const detailed = planDetails(
     createRng(hash(`${profile.slug}:${SAMPLE_VERSION}:details`)),

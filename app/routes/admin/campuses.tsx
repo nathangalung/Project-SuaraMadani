@@ -91,7 +91,7 @@ function CampusList({
         <li
           key={campus.id}
           style={{ "--i": i } as CSSProperties}
-          className="flex flex-col gap-3 border border-line-subtle border-l-4 border-l-brand bg-surface-raised p-4"
+          className="flex flex-col gap-3 rounded-lg border border-line-subtle bg-surface-raised p-4"
         >
           <div className="flex items-start gap-3">
             <Building2

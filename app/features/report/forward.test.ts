@@ -169,7 +169,7 @@ describe("forwardReport", () => {
       user_id: reporter,
       forwarded_from_org_id: orgA,
     })
-    expect(copy.public_code).toMatch(/^UGM-26-/)
+    expect(copy.public_code).toMatch(/^LPR-\d{4}-\d{2}-\d{4}$/)
     const { rows: original } = await su.query(
       "SELECT status, forwarded_to_org_id FROM reports WHERE id = $1",
       [seeded.id],

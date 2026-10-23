@@ -78,6 +78,7 @@ const TENANT_TABLES = [
   "demand_issues",
   "demand_follows",
   "demand_ratings",
+  "demand_rankings",
   "policy_briefs",
 ]
 
@@ -453,7 +454,12 @@ describe("concurrency", () => {
   test("concurrent merges get distinct issue numbers", async () => {
     const allocate = () =>
       withTenant(orgA, async (tx) => {
-        const n = await nextCounter(tx, orgA, 2026, "issue")
+        const n = await nextCounter(
+          tx,
+          orgA,
+          { year: 2026, month: 10 },
+          "issue",
+        )
         await Bun.sleep(100)
         return n
       })
@@ -463,14 +469,25 @@ describe("concurrency", () => {
 
   test("a rolled-back allocation returns its number", async () => {
     const failed = withTenant(orgB, async (tx) => {
-      await nextCounter(tx, orgB, 2026, "issue")
+      await nextCounter(tx, orgB, { year: 2026, month: 10 }, "issue")
       throw new Error("merge failed")
     })
     await expect(failed).rejects.toThrow("merge failed")
     const n = await withTenant(orgB, (tx) =>
-      nextCounter(tx, orgB, 2026, "issue"),
+      nextCounter(tx, orgB, { year: 2026, month: 10 }, "issue"),
     )
     expect(n).toBe(1)
+  })
+
+  test("each month and kind counts from 1", async () => {
+    const next = (month: number, kind: "issue" | "report") =>
+      withTenant(orgA, (tx) =>
+        nextCounter(tx, orgA, { year: 2027, month }, kind),
+      )
+    expect(await next(1, "report")).toBe(1)
+    expect(await next(1, "report")).toBe(2)
+    expect(await next(2, "report")).toBe(1)
+    expect(await next(1, "issue")).toBe(1)
   })
 })
 

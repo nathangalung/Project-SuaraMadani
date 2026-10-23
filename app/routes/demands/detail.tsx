@@ -1,9 +1,10 @@
-import { ChevronLeft, FileText, Flag, Info, MapPin } from "lucide-react"
+import { ChevronLeft, FileText, Flag, Info } from "lucide-react"
 import { lazy, Suspense } from "react"
 import { data, isRouteErrorResponse, Link, redirect } from "react-router"
-import { Badge } from "~/components/ui/badge"
+import { SECTION_TITLE } from "~/components/layout/section-heading"
 import { ButtonLink } from "~/components/ui/button"
 import { Container } from "~/components/ui/container"
+import { Fact } from "~/components/ui/fact"
 import { CATEGORY_TEXT } from "~/features/demands/category-labels"
 import { demandHistory } from "~/features/demands/demand-history"
 import { demandUrls, getDemandPage } from "~/features/demands/demands.server"
@@ -12,11 +13,11 @@ import {
   isFollowingDemand,
   unfollowDemand,
 } from "~/features/demands/follow.server"
-import { ImportancePanel } from "~/features/demands/importance"
-import { ImportanceLine } from "~/features/demands/importance-line"
 import { ItemUpdates } from "~/features/demands/item-updates"
 import { demandPlace, STATE_TEXT } from "~/features/demands/labels"
-import { ownRating } from "~/features/demands/rating.server"
+import { RankLine } from "~/features/demands/rank-line"
+import { RankPanel } from "~/features/demands/rank-panel"
+import { ownPosition } from "~/features/demands/ranking.server"
 import {
   FulfilmentMark,
   ProgressSquares,
@@ -52,7 +53,7 @@ export async function loader({ params, context }: Route.LoaderArgs) {
           emailReady: session.user.emailVerified,
         }
       : null,
-    own: session ? await ownRating(tenant.id, code, session.user.id) : null,
+    own: session ? await ownPosition(tenant.id, code, session.user.id) : null,
     signedIn: session !== null,
     organization: tenant.name,
     siteName: m.og_site_name({ name: tenant.name }),
@@ -82,13 +83,13 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 
 const LINK =
   "font-semibold text-accent underline underline-offset-4 hover:no-underline"
-const SECTION = "border-ink border-t-2 pt-6"
-const H2 = "font-bold text-2xl"
+// Space only, no rules
+const H2 = SECTION_TITLE
 
 const ANCHORS = [
   { id: "teks", label: m.demand_text_title },
   { id: "sub-tuntutan", label: m.demand_items_title },
-  { id: "kepentingan", label: m.demand_importance_title },
+  { id: "peringkat-warga", label: m.demand_rank_title },
   { id: "riwayat", label: m.issue_history_title },
   { id: "isu-terkait", label: m.demand_issues_title },
 ] as const
@@ -119,8 +120,13 @@ export default function DemandDetail({ loaderData }: Route.ComponentProps) {
       <meta property="og:image:height" content="630" />
       <meta name="twitter:card" content="summary_large_image" />
 
-      <section aria-labelledby="demand-title" className="bg-detail">
-        <Container className="pt-8 pb-12 sm:pt-10">
+      {/* Article head, no band */}
+      <section aria-labelledby="demand-title" className="relative isolate">
+        <div
+          aria-hidden="true"
+          className="header-bg absolute inset-0 -z-10 [mask-image:linear-gradient(180deg,#000_0%,#000_30%,transparent_100%)]"
+        />
+        <Container className="pt-8 pb-10 sm:pt-10">
           <Link
             to="/tuntutan"
             className="inline-flex items-center gap-1 font-semibold text-ink text-sm underline-offset-4 hover:underline"
@@ -128,50 +134,58 @@ export default function DemandDetail({ loaderData }: Route.ComponentProps) {
             <ChevronLeft aria-hidden="true" className="size-4" />
             {m.explore_tab_demands()}
           </Link>
-          <p className="mt-5 flex flex-wrap gap-2">
-            <Badge className="tabular-nums">{demand.code}</Badge>
-            <Badge tone="subtle">{demandPlace(demand)}</Badge>
+          <p className="mt-8 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[0.95rem] text-ink-soft">
+            <span className="font-bold text-ink">{demandPlace(demand)}</span>
             {demand.category ? (
-              <Badge tone="subtle">{CATEGORY_TEXT[demand.category]()}</Badge>
+              <span>· {CATEGORY_TEXT[demand.category]()}</span>
             ) : null}
+            <span className="tabular-nums">· {demand.code}</span>
             {demand.state === "closed" ? (
-              <Badge tone="ink">{STATE_TEXT.closed()}</Badge>
+              <span className="font-semibold text-ink">
+                · {STATE_TEXT.closed()}
+              </span>
             ) : null}
           </p>
           <h1
             id="demand-title"
-            className="mt-3 max-w-4xl font-bold text-[clamp(2rem,4.6vw,3.4rem)] text-ink leading-[1.08]"
+            className="mt-3 max-w-4xl font-bold font-heading text-[clamp(2rem,4.4vw,3rem)] text-ink leading-[1.1] [font-synthesis-weight:none]"
           >
             {demand.title}
           </h1>
-          <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2">
-            <FulfilmentMark status={demand.progress.status} />
-            <ProgressSquares
-              items={demand.items.map((item) => item.fulfilment)}
-              label={m.demand_progress_line({
-                done: demand.progress.fulfilled,
-                total: demand.progress.total,
-              })}
-            />
-            <span className="font-ui text-ink-soft text-sm">
-              {m.demand_responded_count({
-                done: demand.progress.responded,
-                total: demand.progress.total,
-              })}
-            </span>
-            <ImportanceLine importance={demand.importance} />
-          </div>
-          <p className="mt-5 flex items-start gap-1.5 text-ink-soft">
-            <MapPin
-              aria-hidden="true"
-              className="mt-1 size-4 shrink-0 text-brand"
-            />
-            {[
-              m.demand_target({ target: demand.target }),
-              m.demand_raised_on({ date: formatIsoDate(demand.raisedOn) }),
-            ].join(" · ")}
-          </p>
-          <p className="mt-5 max-w-3xl whitespace-pre-line text-ink text-lg leading-relaxed">
+          <h2 className="sr-only">{m.demand_facts_title()}</h2>
+          <dl className="mt-8 grid max-w-5xl grid-cols-2 gap-x-8 gap-y-6 lg:grid-cols-4">
+            <Fact term={m.demands_col_fulfilment()}>
+              <FulfilmentMark status={demand.progress.status} />
+            </Fact>
+            <Fact term={m.demand_fact_progress()}>
+              <ProgressSquares
+                items={demand.items.map((item) => item.fulfilment)}
+                label={m.demand_progress_line({
+                  done: demand.progress.fulfilled,
+                  total: demand.progress.total,
+                })}
+              />
+            </Fact>
+            <Fact term={m.demands_col_response()}>
+              <span>
+                {m.demand_responded_count({
+                  done: demand.progress.responded,
+                  total: demand.progress.total,
+                })}
+              </span>
+            </Fact>
+            <Fact term={m.demand_fact_raised()}>
+              <span>{formatIsoDate(demand.raisedOn)}</span>
+            </Fact>
+            <div className="col-span-2 flex flex-col gap-1">
+              <dt className="text-ink-muted text-sm">
+                {m.demand_fact_target()}
+              </dt>
+              <dd>{demand.target}</dd>
+            </div>
+          </dl>
+          <RankLine rank={demand.rank} className="mt-6" />
+          <p className="mt-8 max-w-3xl whitespace-pre-line text-ink text-lg leading-relaxed">
             {demand.summary}
           </p>
           {closing ? (
@@ -186,11 +200,11 @@ export default function DemandDetail({ loaderData }: Route.ComponentProps) {
       </section>
 
       <nav aria-labelledby="demand-on-page" className="bg-page">
-        <Container className="pt-8">
-          <h2 id="demand-on-page" className="font-bold text-lg">
+        <Container className="pt-2">
+          <h2 id="demand-on-page" className="text-ink-muted text-sm">
             {m.issue_on_this_page()}
           </h2>
-          <ul className="mt-2 flex flex-wrap gap-x-6 gap-y-2">
+          <ul className="mt-1 flex flex-wrap gap-x-6 gap-y-1">
             {ANCHORS.map((anchor) => (
               <li key={anchor.id}>
                 <a href={`#${anchor.id}`} className={LINK}>
@@ -204,36 +218,32 @@ export default function DemandDetail({ loaderData }: Route.ComponentProps) {
 
       <div className="bg-page">
         <Container className="grid gap-12 py-12 pb-24 lg:grid-cols-[1fr_22rem]">
-          <div className="min-w-0 space-y-12">
-            <section id="teks" aria-labelledby="teks-title" className={SECTION}>
+          <div className="min-w-0 space-y-16">
+            <section id="teks" aria-labelledby="teks-title">
               <h2 id="teks-title" className={H2}>
                 {m.demand_text_title()}
               </h2>
               <p className="mt-1 font-ui text-[0.95rem] text-ink-soft">
                 {m.demand_text_intro()}
               </p>
-              <blockquote className="mt-4 whitespace-pre-line border-brand border-l-4 bg-surface-raised p-5 text-ink leading-relaxed">
+              <blockquote className="mt-4 whitespace-pre-line text-ink text-lg leading-relaxed">
                 {demand.body}
               </blockquote>
             </section>
 
-            <section
-              id="sub-tuntutan"
-              aria-labelledby="sub-title"
-              className={SECTION}
-            >
+            <section id="sub-tuntutan" aria-labelledby="sub-title">
               <h2 id="sub-title" className={H2}>
                 {m.demand_items_title()}
               </h2>
               <p className="mt-1 font-ui text-[0.95rem] text-ink-soft">
                 {m.demand_items_intro()}
               </p>
-              <ol className="mt-6 border-ink border-t-2">
+              <ol className="mt-6 flex flex-col gap-8">
                 {demand.items.map((item) => (
                   <li
                     key={item.id}
                     id={`sub-${item.number}`}
-                    className="scroll-mt-24 border-line-subtle border-b py-5 last:border-b-0"
+                    className="scroll-mt-24"
                   >
                     <h3 className="font-bold text-lg leading-snug">
                       {/* The list already numbers */}
@@ -287,20 +297,14 @@ export default function DemandDetail({ loaderData }: Route.ComponentProps) {
               </ol>
             </section>
 
-            <ImportancePanel
-              code={demand.code}
-              importance={demand.importance}
-              named={demand.named}
-              open={demand.state === "published"}
+            <RankPanel
+              rank={demand.rank}
+              ranking={demand.ranking}
               own={own}
               signedIn={signedIn}
             />
 
-            <section
-              id="riwayat"
-              aria-labelledby="riwayat-title"
-              className={SECTION}
-            >
+            <section id="riwayat" aria-labelledby="riwayat-title">
               <h2 id="riwayat-title" className={H2}>
                 {m.issue_history_title()}
               </h2>
@@ -313,11 +317,7 @@ export default function DemandDetail({ loaderData }: Route.ComponentProps) {
               />
             </section>
 
-            <section
-              id="isu-terkait"
-              aria-labelledby="isu-terkait-title"
-              className={SECTION}
-            >
+            <section id="isu-terkait" aria-labelledby="isu-terkait-title">
               <h2 id="isu-terkait-title" className={H2}>
                 {m.demand_issues_title()}
               </h2>
@@ -339,13 +339,13 @@ export default function DemandDetail({ loaderData }: Route.ComponentProps) {
               )}
             </section>
           </div>
-          <aside className="space-y-8">
-            <p className="flex items-start gap-3 border-line-subtle border-y py-5 text-ink-soft text-sm leading-relaxed">
+          <aside className="space-y-10">
+            <p className="flex items-start gap-2 text-ink-soft text-sm leading-relaxed">
               <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
               {m.demand_method_note({ organization })}
             </p>
             <FollowCard code={demand.code} state={follow} kind="demand" />
-            <p className="flex items-start gap-2 border-line-subtle border-t pt-5 text-ink-soft text-sm">
+            <p className="flex items-start gap-2 text-ink-soft text-sm">
               <Flag aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
               <span>
                 {m.issue_complaint_note()}{" "}

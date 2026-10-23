@@ -186,7 +186,7 @@ export default function ManageComplaint({
           <dt className="font-semibold">{m.manage_col_received()}</dt>
           <dd>{formatDateTime(c.createdAt)}</dd>
         </dl>
-        <p className="mt-4 whitespace-pre-line border-line-subtle border-l-4 pl-4 leading-relaxed">
+        <p className="mt-4 whitespace-pre-line leading-relaxed">
           {c.explanation}
         </p>
         <p className="mt-3 font-ui text-ink-muted text-sm">
@@ -282,7 +282,7 @@ export default function ManageComplaint({
             <p className="mt-1 font-ui text-ink-muted text-sm">
               {formatDateTime(c.appeal.at)}
             </p>
-            <p className="mt-2 whitespace-pre-line border-line-subtle border-l-4 pl-4 leading-relaxed">
+            <p className="mt-2 whitespace-pre-line leading-relaxed">
               {c.appeal.text}
             </p>
           </div>

@@ -3,7 +3,7 @@ import type { ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { createRoutesStub } from "react-router"
 import { m } from "~/paraglide/messages.js"
-import { emptyImportance } from "../../../shared/demands.ts"
+import { emptyRank } from "../../../shared/demands.ts"
 import { outcome } from "./actions.server"
 import {
   DraftPreview,
@@ -48,8 +48,9 @@ const demand: ManagedDemand = {
   frozen: false,
   items: [item],
   issues: [],
-  importance: emptyImportance(),
-  pendingRaters: 0,
+  rank: emptyRank(),
+  ranking: { rankers: 0, shown: false },
+  pendingRankers: 0,
 }
 
 describe("editor errors", () => {

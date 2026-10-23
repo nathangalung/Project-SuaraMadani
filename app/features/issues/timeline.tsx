@@ -62,7 +62,7 @@ export function Timeline({
           <span
             aria-hidden="true"
             className={cn(
-              "absolute ring-4",
+              "absolute rounded-full ring-4",
               RING[on],
               DOT[entry.tone ?? "muted"],
               i === 0

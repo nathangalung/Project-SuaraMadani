@@ -44,7 +44,7 @@ export function TrendChart({
           : undefined
       }
       legend={
-        <ul className="flex flex-wrap gap-4 font-ui text-sm">
+        <ul className="flex flex-wrap gap-4 text-sm">
           {series.map((s) => (
             <li key={s.key} className="flex items-center gap-2">
               <span

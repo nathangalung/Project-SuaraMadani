@@ -31,13 +31,13 @@ describe("TwoFactorSteps", () => {
     expect(html).not.toMatch(/<details[^>]*open/)
   })
 
-  test("a backup code error opens the backup form and links to it", () => {
+  test("a backup code error opens the backup form at its field", () => {
     const html = render(
       { mode: "challenge" },
       { kind: "error", error: "backup_wrong" },
     )
     expect(html).toMatch(/<details[^>]*open/)
-    expect(html).toContain('href="#backup-code"')
+    expect(html).toContain('id="backup-code"')
     expect(html).toContain(m.error_backup_wrong())
   })
 
@@ -133,7 +133,7 @@ describe("TwoFactorSteps", () => {
     )
   })
 
-  test("an unticked box links from the summary and shows below it", () => {
+  test("an unticked box shows its error below it", () => {
     const html = render(
       { mode: "enroll", email: "staf@contoh.id" },
       {
@@ -143,7 +143,6 @@ describe("TwoFactorSteps", () => {
         backupCodes: ["ab12C-3dE45"],
       },
     )
-    expect(html).toContain('href="#totp-saved"')
     const box = html.indexOf('id="totp-saved"')
     const message = html.indexOf('id="totp-saved-error"')
     expect(message).toBeGreaterThan(box)

@@ -37,7 +37,8 @@ describe("/masuk flow", () => {
     expect(m.signin_page_intro()).toContain("Daftar")
     expect(html).toContain(`>${m.signin_page_heading()}</h1>`)
     expect(html).toContain(`>${m.signin_tab_up()}</button>`)
-    expect(html).toMatch(/href="\/privasi"[^>]*>Kebijakan privasi<\/a>/)
+    // NIK line removed 22 Oct
+    expect(html).not.toContain(m.signin_privacy_note())
   })
 
   test("home Buat akun opens Daftar", () => {
@@ -52,6 +53,11 @@ describe("/masuk flow", () => {
     const html = render(null, null, { signUp: data.signUp })
     expect(html).toContain('name="phone"')
     expect(html).toContain(m.signin_age())
+    // Every Daftar field is marked
+    expect(
+      html.match(/aria-hidden="true" class="ml-0.5 text-danger">\*/g),
+    ).toHaveLength(4)
+    expect(html).toContain(m.field_required_note())
   })
 
   test("signed in, one next step plus switching email", () => {

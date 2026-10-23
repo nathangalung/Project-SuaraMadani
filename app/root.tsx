@@ -111,6 +111,11 @@ export function Layout({ children }: { children: ReactNode }) {
         ...brandImages(data.brandAssets),
         logoSrc: data.logoSrc,
         logoSrcSet: undefined,
+        // Custom logo, no extras
+        logoIntroSrc: undefined,
+        logoIntroSrcSet: undefined,
+        emblemSrc: undefined,
+        emblemSrcSet: undefined,
       }
     : brandImages(data?.brandAssets)
   // Report steps have their own
@@ -152,7 +157,6 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="flex min-h-svh flex-col">
           <Header
             siteName={SITE_NAME}
-            tenantName={data?.siteName}
             nav={national ? nationalNav() : mainNav()}
             user={data?.user ?? null}
             {...brand}
@@ -181,6 +185,8 @@ export function Layout({ children }: { children: ReactNode }) {
               policyLinks={policyNav()}
               logoSrc={brand.logoSrc}
               logoSrcSet={brand.logoSrcSet}
+              emblemSrc={brand.emblemSrc}
+              emblemSrcSet={brand.emblemSrcSet}
               year={data.year}
             />
           ) : null}

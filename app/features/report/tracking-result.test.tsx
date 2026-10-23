@@ -6,7 +6,7 @@ import type { TrackedReport } from "./tracking.server"
 import { TrackingResult } from "./tracking-result"
 
 const BASE: TrackedReport = {
-  code: "ITB-26-7K3QX",
+  code: "LPR-2026-10-0001",
   title: "Atap sekolah runtuh",
   status: "in_review",
   createdAt: new Date("2026-10-13T03:00:00Z"),
@@ -104,7 +104,7 @@ describe("TrackingResult", () => {
 
   test("lists code, status label and received files", () => {
     const html = render([BASE])
-    expect(html).toContain("ITB-26-7K3QX")
+    expect(html).toContain("LPR-2026-10-0001")
     expect(html).toContain("Sedang diperiksa")
     expect(html).toContain("1 dari 2 diterima")
     expect(html).toContain("13 Oktober 2026")
@@ -113,11 +113,11 @@ describe("TrackingResult", () => {
   })
 
   test("each report is a card with its own heading, no table", () => {
-    const html = render([BASE, { ...BASE, code: "ITB-26-8M4RY" }])
+    const html = render([BASE, { ...BASE, code: "LPR-2026-10-0002" }])
     expect(html).not.toContain("<table")
     expect(html.match(/<article/g)).toHaveLength(2)
     expect(html.match(/<h2 /g)).toHaveLength(2)
-    expect(html).toContain('aria-labelledby="report-ITB-26-8M4RY"')
+    expect(html).toContain('aria-labelledby="report-LPR-2026-10-0002"')
   })
 
   test("each card's regions have their own names", () => {
@@ -135,14 +135,14 @@ describe("TrackingResult", () => {
     }
     const html = render([
       { ...BASE, ...pending },
-      { ...BASE, ...pending, code: "ITB-26-8M4RY" },
+      { ...BASE, ...pending, code: "LPR-2026-10-0002" },
     ])
     const names = [...html.matchAll(/<section aria-labelledby="([^"]+)"/g)].map(
       (match) => match[1],
     )
     expect(names).toHaveLength(4)
     expect(new Set(names).size).toBe(4)
-    for (const name of names) expect(name).toMatch(/ report-ITB-26-/)
+    for (const name of names) expect(name).toMatch(/ report-LPR-2026-10-/)
   })
 
   test("history shows only stored dates, newest first", () => {
@@ -174,11 +174,11 @@ describe("TrackingResult", () => {
       {
         ...BASE,
         status: "merged",
-        merged: { at: new Date(), code: "ISU-ITB-26-0042" },
+        merged: { at: new Date(), code: "ISU-2026-10-0042" },
       },
     ])
     expect(shown).toContain(m.track_merged_note())
-    expect(shown).toContain('href="/isu/ISU-ITB-26-0042"')
+    expect(shown).toContain('href="/isu/ISU-2026-10-0042"')
   })
 
   test("a merge into an unpublished issue says why no link", () => {
@@ -187,7 +187,7 @@ describe("TrackingResult", () => {
     ])
     expect(html).toContain(m.track_merged_pending())
     const linked = render([
-      { ...BASE, merged: { at: new Date(), code: "ISU-ITB-26-0042" } },
+      { ...BASE, merged: { at: new Date(), code: "ISU-2026-10-0042" } },
     ])
     expect(linked).not.toContain(m.track_merged_pending())
     expect(render([BASE])).not.toContain(m.track_merged_pending())

@@ -19,7 +19,7 @@ import { loader } from "./success"
 describe("success loader", () => {
   const su = superuserPool()
   const orgs: Record<string, string> = {}
-  const SENT = "ITB-26-7K3QX"
+  const SENT = "LPR-2026-10-0001"
 
   beforeAll(async () => {
     await migrate(testUrl("TEST_DATABASE_MIGRATOR_URL"))
@@ -67,7 +67,7 @@ describe("success loader", () => {
   }
 
   test("own campus code renders", async () => {
-    expect(await status("ITB", "itb-26-7k3qx")).toBe(200)
+    expect(await status("ITB", "lpr 2026 10 0001")).toBe(200)
   })
 
   test("says whether the visitor is signed in", async () => {
@@ -97,6 +97,6 @@ describe("success loader", () => {
   })
 
   test("a code never sent is not confirmed", async () => {
-    expect(await status("ITB", "ITB-26-ZZZZZ")).toBe(404)
+    expect(await status("ITB", "LPR-2026-10-0004")).toBe(404)
   })
 })

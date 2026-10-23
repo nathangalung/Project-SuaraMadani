@@ -57,9 +57,10 @@ describe("report lifecycle", () => {
     )
   })
 
-  test("merge needs a checked report", () => {
+  test("merge needs a verified report", () => {
     expect(transitionReport("verified", "merge").next).toBe("merged")
-    expect(transitionReport("unverifiable", "merge").next).toBe("merged")
+    // Unproven stays private, 22 Oct
+    expect(canTransitionReport("unverifiable", "merge")).toBe(false)
     expect(canTransitionReport("in_review", "merge")).toBe(false)
     expect(canTransitionReport("rejected", "merge")).toBe(false)
   })

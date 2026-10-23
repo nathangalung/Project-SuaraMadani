@@ -114,7 +114,7 @@ function ReportCard({
     until: report.uploadUntil,
   })
   return (
-    <Card variant="pastel">
+    <Card variant="pastel" className="rounded-xl">
       <article aria-labelledby={titleId}>
         <div className="px-6 pt-6 sm:px-8 sm:pt-8">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -204,7 +204,7 @@ export function TrackingResult({
 }) {
   if (reports.length === 0) {
     return (
-      <Card className="mx-auto flex max-w-2xl flex-col items-center px-6 py-14 text-center">
+      <Card className="mx-auto flex max-w-2xl flex-col items-center rounded-xl px-6 py-14 text-center">
         <FileQuestion aria-hidden="true" className="size-10 text-brand" />
         <p className="mt-4 font-semibold text-lg">
           {m.track_empty({ campus })}

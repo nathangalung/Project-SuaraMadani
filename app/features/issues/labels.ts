@@ -7,6 +7,7 @@ import type {
 import type {
   AdvocacyStatus,
   GovernmentStatus,
+  PublicStage,
   VerificationLabel,
 } from "../../../shared/status.ts"
 
@@ -15,6 +16,14 @@ type Text = () => string
 export const VERIFICATION_TEXT: Record<VerificationLabel, Text> = {
   verified: m.verification_verified,
   unverified: m.verification_unverified,
+}
+
+export const STAGE_TEXT: Record<PublicStage, Text> = {
+  verified: m.stage_verified,
+  referred: m.stage_referred,
+  responded: m.stage_responded,
+  in_progress: m.stage_in_progress,
+  done: m.stage_done,
 }
 
 export const ADVOCACY_TEXT: Record<AdvocacyStatus, Text> = {

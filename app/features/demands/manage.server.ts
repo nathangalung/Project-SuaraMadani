@@ -30,10 +30,10 @@ import type { PurgeDeps } from "../../../server/purge.server.ts"
 import {
   BRIEF_MAX_BYTES,
   type DemandCategory,
+  type DemandRank,
   type DemandScope,
-  emptyImportance,
+  emptyRank,
   formatDemandCode,
-  type Importance,
   MAX_DEMAND_ISSUES,
   MAX_DEMAND_ITEMS,
 } from "../../../shared/demands.ts"
@@ -50,7 +50,7 @@ import {
   transitionDemandItem,
 } from "../../../shared/status.ts"
 import { citedIssues, purgeDemandPages } from "./purge.server.ts"
-import { pendingRaters, readImportance } from "./rating.server.ts"
+import { pendingRankers, readCitizenRanking } from "./ranking.server.ts"
 
 export { demandProgress }
 
@@ -340,7 +340,13 @@ export function createDemand(
     tenant.id,
     async (tx) => {
       const year = Number(jakartaIsoDate(input.now ?? new Date()).slice(0, 4))
-      const number = await nextCounter(tx, tenant.id, year, "demand")
+      // Tuntutan stay yearly
+      const number = await nextCounter(
+        tx,
+        tenant.id,
+        { year, month: 0 },
+        "demand",
+      )
       const code = formatDemandCode(tenant.campusCode, year, number)
       const [row] = await tx
         .insert(demands)
@@ -1286,9 +1292,10 @@ export type ManagedDemand = DemandFields & {
   frozen: boolean
   items: ManagedItem[]
   issues: { code: string; title: string; published: boolean }[]
-  importance: Importance
+  rank: DemandRank
+  ranking: { rankers: number; shown: boolean }
   // Accounts too new yet
-  pendingRaters: number
+  pendingRankers: number
 }
 
 /** Editor view, every brief. */
@@ -1376,12 +1383,13 @@ export function getManagedDemand(
         )
         .where(eq(demandIssues.demandId, row.id))
         .orderBy(asc(issues.publicCode))
-      const ratings = await readImportance(tx, [row.id])
+      const ranking = await readCitizenRanking(tx)
       return {
         ...row,
         frozen: await closedNow(tx, row),
-        importance: ratings.get(row.id) ?? emptyImportance(),
-        pendingRaters: await pendingRaters(tx, row.id),
+        rank: ranking.places.get(row.id) ?? emptyRank(),
+        ranking: { rankers: ranking.rankers, shown: ranking.shown },
+        pendingRankers: await pendingRankers(tx),
         items: items.map((item) => ({
           ...item,
           briefs: briefs

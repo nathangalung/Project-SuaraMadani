@@ -60,9 +60,9 @@ export function DemandDigest({
                 })}
               />
               {/* Server text, see toDigest */}
-              {demand.importanceText ? (
+              {demand.rankText ? (
                 <p className="font-semibold font-ui text-sm">
-                  {demand.importanceText}
+                  {demand.rankText}
                 </p>
               ) : null}
               {demand.briefs > 0 && (

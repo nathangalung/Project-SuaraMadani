@@ -53,6 +53,23 @@ describe("Review before submit", () => {
     expect(html).toContain("<title>Periksa dan Kirim</title>")
   })
 
+  test("an attached device point is named, not shown", () => {
+    const location = {
+      provinceCode: "32",
+      regencyCode: "32.73",
+      districtCode: "32.73.02",
+      label: "Coblong, Kota Bandung, Jawa Barat",
+    }
+    const html = render({
+      submissionId: ID,
+      location: { ...location, point: { lat: -6.89, lng: 107.61 } },
+    })
+    expect(html).toContain(m.review_point_attached())
+    expect(html).not.toContain("107.61")
+    const plain = render({ submissionId: ID, location })
+    expect(plain).not.toContain(m.review_point())
+  })
+
   test("photos lost on reload are named on the photo row", () => {
     const html = render({
       submissionId: ID,
@@ -120,7 +137,7 @@ describe("Review consent form", () => {
 })
 
 describe("ConsentRow", () => {
-  test("error sits below its box, marked like the age box", () => {
+  test("error sits below its box, no red bar", () => {
     const html = renderToStaticMarkup(
       <ConsentRow
         id="consent-accurate"
@@ -135,7 +152,8 @@ describe("ConsentRow", () => {
     expect(html.indexOf("<input")).toBeLessThan(
       html.indexOf("Centang pernyataan ini"),
     )
-    expect(html).toMatch(/^<div class="border-danger border-l-4 pl-4">/)
+    expect(html).toMatch(/^<div>/)
+    expect(html).not.toContain("border-l-4")
     expect(html).toContain('aria-describedby="consent-accurate-error"')
   })
 })
@@ -148,16 +166,9 @@ describe("Review signed out", () => {
     )
   })
 
-  test("signed-out step 7 links the privacy policy before account creation", () => {
+  test("signed-out step 7 has no NIK line under sign-in", () => {
     const html = render({ submissionId: ID }, null)
-    const section = html.slice(html.indexOf(`id="${SIGN_IN_TITLE_ID}"`))
-    expect(section).toContain(
-      '<a href="/privasi" target="_blank" rel="noopener"',
-    )
-    expect(section).toContain(
-      `${m.privacy_link()} <span class="whitespace-nowrap">${m.link_new_tab()}</span></a>`,
-    )
-    expect(section).toContain(m.signin_privacy_note())
+    expect(html).not.toContain(m.signin_privacy_note())
     // Not inside the age label
     expect(html).not.toMatch(/<label[^>]*>(?:(?!<\/label>).)*<a /)
   })
@@ -268,12 +279,12 @@ describe("Review look", () => {
 })
 
 describe("Review signed out panel", () => {
-  test("form controls sit on surface, not a tinted fill", () => {
+  test("sign-in sits on the white card, no tinted box or bar", () => {
     const html = render({ submissionId: ID }, null)
     const panel = html.slice(
       html.lastIndexOf("<section", html.indexOf(SIGN_IN_TITLE_ID)),
     )
-    expect(panel).toMatch(/^<section[^>]*bg-surface /)
-    expect(html).not.toContain("bg-accent-soft")
+    expect(panel).toMatch(/^<section[^>]*class="mt-8 flex flex-col gap-5"/)
+    expect(html).not.toMatch(/bg-accent-soft|border-l-4/)
   })
 })

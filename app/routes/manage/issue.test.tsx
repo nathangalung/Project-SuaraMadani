@@ -8,7 +8,7 @@ import ManageIssue from "./issue"
 
 const issue: ManagedIssue = {
   id: "0199c2b0-1d2e-7000-8000-000000000001",
-  code: "ISU-ITB-26-0001",
+  code: "ISU-2026-10-0001",
   title: "Jalan berlubang di Dago",
   summary: "Warga melaporkan lubang besar.",
   verificationLabel: "verified",

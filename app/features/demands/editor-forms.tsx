@@ -353,7 +353,7 @@ export function DraftPreview({ demand }: { demand: ManagedDemand }) {
         {demand.summary}
       </p>
       <h4 className="mt-5 font-semibold">{m.demand_draft_preview_text()}</h4>
-      <blockquote className="mt-2 whitespace-pre-line border-brand border-l-4 bg-surface p-4 leading-relaxed">
+      <blockquote className="mt-2 whitespace-pre-line text-lg leading-relaxed">
         {demand.body}
       </blockquote>
     </div>

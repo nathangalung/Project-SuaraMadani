@@ -15,5 +15,10 @@ export function Card({
   className,
   ...rest
 }: HTMLAttributes<HTMLDivElement> & { variant?: Variant }) {
-  return <div className={cn(variants[variant], className)} {...rest} />
+  return (
+    <div
+      className={cn("rounded-2xl", variants[variant], className)}
+      {...rest}
+    />
+  )
 }

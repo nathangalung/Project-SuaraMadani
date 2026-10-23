@@ -44,7 +44,7 @@ async function seedIssue(
   overrides: Partial<typeof issues.$inferInsert> = {},
 ): Promise<string> {
   counter++
-  const code = `ISU-ITB-26-${String(counter).padStart(4, "0")}`
+  const code = `ISU-2026-10-${String(counter).padStart(4, "0")}`
   await suDb.insert(issues).values({
     orgId: orgA,
     year: 2026,
@@ -190,7 +190,7 @@ describe("listPublishedIssues", () => {
     await su.query(
       `INSERT INTO issues (org_id, year, number, public_code, title, summary,
          category_id, subcategory_id, province_code, regency_code, published_at)
-       SELECT $1, 2026, g, 'ISU-ITB-26-' || g,
+       SELECT $1, 2026, g, 'ISU-2026-10-' || g,
          (SELECT string_agg(w[1 + (g * 7 + k * 13) % 30], ' ') FROM generate_series(1, 6) k),
          (SELECT string_agg(w[1 + (g * 11 + k * 17) % 30], ' ') FROM generate_series(1, 60) k),
          'program', 'program.infrastruktur', '32', '32.73', now() - make_interval(mins => g)

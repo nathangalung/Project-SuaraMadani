@@ -1,8 +1,8 @@
 // Content complaints, PLAN §5.10
 import { REJECT_REASONS, type RejectReason } from "./moderation.ts"
 import {
-  generateReportCode,
-  normalizeReportCode,
+  generateRandomCode,
+  normalizeRandomCode,
   type RandomFill,
 } from "./report-id.ts"
 import type { VisibilityAction } from "./status.ts"
@@ -174,13 +174,13 @@ export function generateComplaintCode(
   now: Date,
   fill?: RandomFill,
 ): string {
-  return `${PREFIX}${generateReportCode(campusCode, now, fill)}`
+  return `${PREFIX}${generateRandomCode(campusCode, now, fill)}`
 }
 
 /** Canonical form or null. */
 export function normalizeComplaintCode(input: string): string | null {
   const trimmed = input.trim().toUpperCase()
   if (!trimmed.startsWith(PREFIX)) return null
-  const rest = normalizeReportCode(trimmed.slice(PREFIX.length))
+  const rest = normalizeRandomCode(trimmed.slice(PREFIX.length))
   return rest ? `${PREFIX}${rest}` : null
 }

@@ -620,8 +620,8 @@ describe("issue links", () => {
     const code = await create()
     const issue = await su.query<{ id: string }>(
       `INSERT INTO issues (org_id, year, number, public_code, title, summary, category_id, subcategory_id, province_code, regency_code, report_count, published_at)
-       VALUES ($1, 2026, 1, 'ISU-ITB-26-0001', 'Bantuan pangan terlambat', 'Penyaluran bantuan terlambat tiga bulan.', 'bansos', 'bansos.pangan', '32', '32.73', 1, now()),
-              ($1, 2026, 2, 'ISU-ITB-26-0002', 'Draf isu', 'Isu ini belum terbit untuk umum.', 'bansos', 'bansos.pangan', '32', '32.73', 1, NULL)
+       VALUES ($1, 2026, 1, 'ISU-2026-10-0001', 'Bantuan pangan terlambat', 'Penyaluran bantuan terlambat tiga bulan.', 'bansos', 'bansos.pangan', '32', '32.73', 1, now()),
+              ($1, 2026, 2, 'ISU-2026-10-0002', 'Draf isu', 'Isu ini belum terbit untuk umum.', 'bansos', 'bansos.pangan', '32', '32.73', 1, NULL)
        RETURNING id`,
       [itb.id],
     )
@@ -630,7 +630,7 @@ describe("issue links", () => {
       (
         await linkIssue(itb, {
           code,
-          issueCode: "ISU-ITB-26-0001",
+          issueCode: "ISU-2026-10-0001",
           actorId: admin,
         })
       ).ok,
@@ -638,20 +638,20 @@ describe("issue links", () => {
     expect(
       await linkIssue(itb, {
         code,
-        issueCode: "ISU-ITB-26-0002",
+        issueCode: "ISU-2026-10-0002",
         actorId: admin,
       }),
     ).toEqual({ ok: false, reason: "issue_not_found" })
     expect(
       await linkIssue(itb, {
         code,
-        issueCode: "ISU-ITB-26-0001",
+        issueCode: "ISU-2026-10-0001",
         actorId: admin,
       }),
     ).toEqual({ ok: false, reason: "unchanged" })
     expect((await managed(code)).issues).toEqual([
       {
-        code: "ISU-ITB-26-0001",
+        code: "ISU-2026-10-0001",
         title: "Bantuan pangan terlambat",
         published: true,
       },
@@ -660,7 +660,7 @@ describe("issue links", () => {
       (
         await unlinkIssue(itb, {
           code,
-          issueCode: "ISU-ITB-26-0001",
+          issueCode: "ISU-2026-10-0001",
           actorId: admin,
         })
       ).ok,
@@ -672,16 +672,16 @@ describe("issue links", () => {
   test("a public tuntutan purges the issue pages it cites", async () => {
     await su.query(
       `INSERT INTO issues (org_id, year, number, public_code, title, summary, category_id, subcategory_id, province_code, regency_code, report_count, published_at)
-       VALUES ($1, 2026, 3, 'ISU-ITB-26-0003', 'Bantuan pangan terlambat', 'Penyaluran bantuan terlambat tiga bulan.', 'bansos', 'bansos.pangan', '32', '32.73', 1, now())`,
+       VALUES ($1, 2026, 3, 'ISU-2026-10-0003', 'Bantuan pangan terlambat', 'Penyaluran bantuan terlambat tiga bulan.', 'bansos', 'bansos.pangan', '32', '32.73', 1, now())`,
       [itb.id],
     )
     const code = await create()
-    const link = { code, issueCode: "ISU-ITB-26-0003", actorId: admin }
+    const link = { code, issueCode: "ISU-2026-10-0003", actorId: admin }
     expect((await linkIssue(itb, link)).ok).toBe(true)
     // Draft: nothing cached yet
     expect(purged).toEqual([])
     await publish(code)
-    const page = "https://itb.localhost/isu/ISU-ITB-26-0003"
+    const page = "https://itb.localhost/isu/ISU-2026-10-0003"
     expect(purged.at(-1)).toEqual(
       expect.arrayContaining([page, `${page}.data`]),
     )

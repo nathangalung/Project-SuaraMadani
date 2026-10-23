@@ -173,7 +173,8 @@ describe("step card variants", () => {
       </Fieldset>,
     )
     expect(html).toContain(`<h1 class="${STEP_HEADING}">`)
-    expect(STEP_HEADING).not.toContain("font-heading")
+    // Tilt Warp since 21 Oct
+    expect(STEP_HEADING).toContain("font-heading")
   })
 
   test("inline choices drop the hint and keep the label link", () => {

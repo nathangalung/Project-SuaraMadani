@@ -31,7 +31,7 @@ export function AgencyResponse({ response }: { response: ResponseSummary }) {
   const { firstResponse: first } = response
   return (
     <div className="grid items-start gap-6 lg:grid-cols-2">
-      <div className="flex flex-col bg-brand p-6 text-on-accent">
+      <div className="flex flex-col rounded-2xl bg-brand p-6 text-on-accent">
         <h3 className="font-semibold">
           {m.data_response_rate_label({ days: response.days })}
         </h3>
@@ -60,7 +60,7 @@ export function AgencyResponse({ response }: { response: ResponseSummary }) {
       </div>
       <Card className="flex flex-col p-6">
         <h3 className="font-bold text-2xl">{m.data_first_response_title()}</h3>
-        <p className="mt-1 font-ui text-ink-muted text-sm">
+        <p className="mt-1 text-ink-muted text-sm">
           {m.data_first_response_lead()}
         </p>
         {first.medianDays === null || first.p90Days === null ? (
@@ -71,7 +71,7 @@ export function AgencyResponse({ response }: { response: ResponseSummary }) {
           <>
             <dl className="mt-6 grid grid-cols-2 gap-4 border-ink border-t-2 pt-4">
               <div className="flex flex-col justify-between">
-                <dt className="mb-1 font-ui text-ink-muted text-sm">
+                <dt className="mb-1 text-ink-muted text-sm">
                   {m.data_response_median_label()}
                 </dt>
                 <dd className="font-bold text-4xl leading-none">
@@ -79,7 +79,7 @@ export function AgencyResponse({ response }: { response: ResponseSummary }) {
                 </dd>
               </div>
               <div className="flex flex-col justify-between">
-                <dt className="mb-1 font-ui text-ink-muted text-sm">
+                <dt className="mb-1 text-ink-muted text-sm">
                   {m.data_response_p90_label()}
                 </dt>
                 <dd className="font-bold text-4xl leading-none">
@@ -87,7 +87,7 @@ export function AgencyResponse({ response }: { response: ResponseSummary }) {
                 </dd>
               </div>
             </dl>
-            <p className="mt-3 font-ui text-ink-muted text-xs">
+            <p className="mt-3 text-ink-muted text-xs">
               {m.data_first_response_n({ n: formatNumber(first.n) })}
             </p>
           </>
@@ -108,7 +108,7 @@ export function AgencyResponse({ response }: { response: ResponseSummary }) {
             [m.data_wait_unreferred(), formatNumber(response.unreferred)],
           ]}
         />
-        <p className="mt-4 font-ui text-sm">
+        <p className="mt-4 text-sm">
           <Link
             to="/isu?status=awaiting_response"
             className="font-semibold text-accent underline underline-offset-4 hover:no-underline"
@@ -158,13 +158,9 @@ function OverdueTable({ response }: { response: ResponseSummary }) {
         ])}
       />
       {response.clearAgencies > 0 && (
-        <p className="mt-3 font-ui text-sm">
-          {m.data_overdue_clear({ n: clear })}
-        </p>
+        <p className="mt-3 text-sm">{m.data_overdue_clear({ n: clear })}</p>
       )}
-      <p className="mt-3 font-ui text-ink-muted text-xs">
-        {m.data_overdue_note()}
-      </p>
+      <p className="mt-3 text-ink-muted text-xs">{m.data_overdue_note()}</p>
     </>
   )
 }
@@ -184,7 +180,7 @@ export function ReasonTable({ reasons }: { reasons: ReasonCounts }) {
   return (
     <Card className="p-6">
       <h3 className="font-bold text-2xl">{m.data_reasons_caption()}</h3>
-      <p className="mt-1 mb-4 font-ui text-ink-muted text-sm">
+      <p className="mt-1 mb-4 text-ink-muted text-sm">
         {m.data_reasons_lead()}
       </p>
       {rows.length === 0 ? (

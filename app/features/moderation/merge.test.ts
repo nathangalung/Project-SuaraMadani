@@ -126,12 +126,12 @@ describe("merge into a new issue", () => {
     const reportId = await seedReport("verified")
     const result = await runMerge(orgA, newIssue([reportId]))
     if (!result.ok) throw new Error(result.reason)
-    expect(result.code).toBe("ISU-ITB-26-0001")
+    expect(result.code).toBe("ISU-2026-10-0001")
     expect(result.published).toBe(false)
     const issue = await issueRow(result.issueId)
     expect(issue).toMatchObject({
       number: 1,
-      public_code: "ISU-ITB-26-0001",
+      public_code: "ISU-2026-10-0001",
       report_count: 1,
       verified_report_count: 1,
       verification_label: "verified",
@@ -168,13 +168,13 @@ describe("merge into a new issue", () => {
     ])
   })
 
-  test("an unverifiable report gives an unverified label", async () => {
+  test("an unverifiable report is refused and stays private", async () => {
     const reportId = await seedReport("unverifiable")
     const result = await runMerge(orgA, newIssue([reportId]))
-    if (!result.ok) throw new Error(result.reason)
-    expect((await issueRow(result.issueId))?.verification_label).toBe(
-      "unverified",
-    )
+    expect(result).toEqual({ ok: false, reason: "changed" })
+    expect(await statusOf(reportId)).toBe("unverifiable")
+    const { rows } = await su.query("SELECT 1 FROM issues")
+    expect(rows).toHaveLength(0)
   })
 
   test("concurrent merges get distinct issue numbers", async () => {
@@ -188,9 +188,9 @@ describe("merge into a new issue", () => {
     )
     const codes = results.map((r) => (r.ok ? r.code : r.reason)).sort()
     expect(codes).toEqual([
-      "ISU-ITB-26-0001",
-      "ISU-ITB-26-0002",
-      "ISU-ITB-26-0003",
+      "ISU-2026-10-0001",
+      "ISU-2026-10-0002",
+      "ISU-2026-10-0003",
     ])
   })
 
@@ -206,7 +206,7 @@ describe("merge into a new issue", () => {
       reason: "changed",
     })
     const next = await runMerge(orgA, newIssue([await seedReport("verified")]))
-    expect(next.ok && next.code).toBe("ISU-ITB-26-0002")
+    expect(next.ok && next.code).toBe("ISU-2026-10-0002")
   })
 
   test("a report not yet reviewed is refused and nothing is kept", async () => {
@@ -225,7 +225,7 @@ describe("merge into a new issue", () => {
     const first = await runMerge(orgA, newIssue(four))
     if (!first.ok) throw new Error(first.reason)
     expect((await issueRow(first.issueId))?.district_code).toBeNull()
-    const fifth = await seedReport("unverifiable")
+    const fifth = await seedReport("verified")
     await runMerge(orgA, intoIssue([fifth], first.issueId))
     expect((await issueRow(first.issueId))?.district_code).toBe("32.73.02")
   })
@@ -233,10 +233,7 @@ describe("merge into a new issue", () => {
 
 describe("merge into an existing issue", () => {
   test("updates counts and bumps the version", async () => {
-    const first = await runMerge(
-      orgA,
-      newIssue([await seedReport("unverifiable")]),
-    )
+    const first = await runMerge(orgA, newIssue([await seedReport("verified")]))
     if (!first.ok) throw new Error(first.reason)
     const second = await runMerge(
       orgA,
@@ -245,7 +242,7 @@ describe("merge into an existing issue", () => {
     expect(second).toMatchObject({ ok: true, code: first.code, version: 2 })
     expect(await issueRow(first.issueId)).toMatchObject({
       report_count: 2,
-      verified_report_count: 1,
+      verified_report_count: 2,
       verification_label: "verified",
       version: 2,
     })

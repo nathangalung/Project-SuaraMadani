@@ -50,11 +50,7 @@ export function FollowCard({
   const following =
     typeof intent === "string" ? intent === "follow" : Boolean(state?.following)
   return (
-    <section
-      id="ikuti"
-      aria-labelledby="follow-title"
-      className="border-ink border-t-2 pt-5"
-    >
+    <section id="ikuti" aria-labelledby="follow-title">
       <h2 id="follow-title" className="font-bold text-lg">
         {copy.title()}
       </h2>

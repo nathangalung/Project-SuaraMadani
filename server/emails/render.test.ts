@@ -22,17 +22,17 @@ const site: MailSite = {
 }
 const TRACK = "https://itb.suaramadani.id/lacak?t=2.abc.def"
 const UNFOLLOW =
-  "https://itb.suaramadani.id/isu/ISU-ITB-26-0042/berhenti?t=2.x.y"
-const ISSUE_URL = "https://itb.suaramadani.id/isu/ISU-ITB-26-0042"
+  "https://itb.suaramadani.id/isu/ISU-2026-10-0042/berhenti?t=2.x.y"
+const ISSUE_URL = "https://itb.suaramadani.id/isu/ISU-2026-10-0042"
 
 function reporterMail(template: ReporterMail["template"]): ReporterMail {
   return {
     template,
     site,
-    report: { code: "ITB-26-7K3QX", title: "Atap kelas runtuh" },
+    report: { code: "LPR-2026-10-0001", title: "Atap kelas runtuh" },
     issue:
       template === "report_merged"
-        ? { code: "ISU-ITB-26-0042", title: "Atap sekolah", url: ISSUE_URL }
+        ? { code: "ISU-2026-10-0042", title: "Atap sekolah", url: ISSUE_URL }
         : null,
     trackUrl: TRACK,
   }
@@ -43,7 +43,7 @@ function followerMail(template: FollowerMail["template"]): FollowerMail {
     template,
     site,
     issue: {
-      code: "ISU-ITB-26-0042",
+      code: "ISU-2026-10-0042",
       title: "Atap sekolah runtuh di Coblong",
       url: ISSUE_URL,
       govStatus: "in_progress",
@@ -92,7 +92,7 @@ describe("reporter emails", () => {
     for (const template of reporterTemplates) {
       const mail = renderReporterMail(reporterMail(template))
       expectComplete(mail)
-      expect(mail.subject).toContain("ITB-26-7K3QX")
+      expect(mail.subject).toContain("LPR-2026-10-0001")
       expect(mail.text).toContain(TRACK)
       expect(mail.html).toContain(escapeHtml(TRACK))
       expect(mail.text).toContain("30 hari")
@@ -101,17 +101,17 @@ describe("reporter emails", () => {
 
   test("the receipt names the code and the tracking link", () => {
     const mail = renderReporterMail(reporterMail("report_submitted"))
-    expect(mail.subject).toBe("Laporan ITB-26-7K3QX sudah kami terima")
+    expect(mail.subject).toBe("Laporan LPR-2026-10-0001 sudah kami terima")
     expect(mail.text).toContain("Atap kelas runtuh")
   })
 
   test("a merge links the issue once it is public", () => {
     const merged = renderReporterMail(reporterMail("report_merged"))
-    expect(merged.subject).toContain("ISU-ITB-26-0042")
+    expect(merged.subject).toContain("ISU-2026-10-0042")
     expect(merged.text).toContain(ISSUE_URL)
     const draft = renderReporterMail({
       ...reporterMail("report_merged"),
-      issue: { code: "ISU-ITB-26-0042", title: "Atap sekolah", url: null },
+      issue: { code: "ISU-2026-10-0042", title: "Atap sekolah", url: null },
     })
     expect(draft.text).not.toContain(ISSUE_URL)
     expect(draft.text).toContain("setelah admin menerbitkannya")
@@ -120,13 +120,16 @@ describe("reporter emails", () => {
   test("a forward names the known code, the campus and the new code", () => {
     const mail = renderReporterMail({
       ...reporterMail("report_forwarded"),
-      report: { code: "UGM-26-4M2PZ", title: "Atap kelas runtuh" },
-      forwarded: { from: "ITB-26-7K3QX", campus: "Universitas Gadjah Mada" },
+      report: { code: "LPR-2026-10-0005", title: "Atap kelas runtuh" },
+      forwarded: {
+        from: "LPR-2026-10-0001",
+        campus: "Universitas Gadjah Mada",
+      },
     })
     expect(mail.subject).toBe(
-      "Laporan ITB-26-7K3QX diteruskan ke Sadar Bersuara di Universitas Gadjah Mada",
+      "Laporan LPR-2026-10-0001 diteruskan ke Sadar Bersuara di Universitas Gadjah Mada",
     )
-    expect(mail.text).toContain("UGM-26-4M2PZ")
+    expect(mail.text).toContain("LPR-2026-10-0005")
     expect(mail.text).toContain("Nomor Laporan Sebelumnya")
   })
 
@@ -149,7 +152,7 @@ describe("reporter emails", () => {
   test("user text is escaped in html", () => {
     const mail = renderReporterMail({
       ...reporterMail("report_verified"),
-      report: { code: "ITB-26-7K3QX", title: "<img src=x onerror=1>" },
+      report: { code: "LPR-2026-10-0001", title: "<img src=x onerror=1>" },
     })
     expect(mail.html).not.toContain("<img src=x")
     expect(mail.html).toContain("&lt;img src=x onerror=1&gt;")
@@ -162,7 +165,7 @@ describe("follower emails", () => {
     for (const template of followerTemplates) {
       const mail = renderFollowerMail(followerMail(template))
       expectComplete(mail)
-      expect(mail.subject).toContain("ISU-ITB-26-0042")
+      expect(mail.subject).toContain("ISU-2026-10-0042")
       expect(mail.text).toContain(UNFOLLOW)
       expect(mail.html).toContain(escapeHtml(UNFOLLOW))
       expect(mail.text).toContain(ISSUE_URL)
@@ -171,7 +174,9 @@ describe("follower emails", () => {
 
   test("a status change names the new status", () => {
     const mail = renderFollowerMail(followerMail("issue_mark_in_progress"))
-    expect(mail.subject).toBe("Pembaruan isu ISU-ITB-26-0042: Dalam penanganan")
+    expect(mail.subject).toBe(
+      "Pembaruan isu ISU-2026-10-0042: Dalam penanganan",
+    )
     expect(mail.text).toContain("Diteruskan ke instansi")
   })
 })
@@ -205,7 +210,7 @@ describe("complaint mail", () => {
       site,
       complaint: {
         code: "ADU-ITB-26-7K3QX",
-        subject: { kind: "issue", code: "ISU-ITB-26-0042" },
+        subject: { kind: "issue", code: "ISU-2026-10-0042" },
         url: URL,
       },
       decision:

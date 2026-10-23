@@ -62,7 +62,7 @@ function Row({ term, children }: { term: string; children: ReactNode }) {
   return (
     <div className="grid gap-1 border-line-subtle border-b py-3 md:grid-cols-[14rem_1fr]">
       <dt className="font-semibold">{term}</dt>
-      <dd className="whitespace-pre-line">{children}</dd>
+      <dd className="min-w-0 whitespace-pre-line">{children}</dd>
     </div>
   )
 }
@@ -96,6 +96,11 @@ export function ReportDetails({ report }: { report: ReviewReport }) {
         </Row>
       ) : null}
       <Row term={m.review_location()}>{place}</Row>
+      {report.point ? (
+        <Row term={m.review_point()}>
+          {`${report.point.lat.toFixed(5)}, ${report.point.lng.toFixed(5)}`}
+        </Row>
+      ) : null}
       <Row term={m.review_title()}>{report.title}</Row>
       <Row term={m.review_story()}>{report.story}</Row>
       <Row term={m.review_category()}>

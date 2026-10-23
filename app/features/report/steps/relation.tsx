@@ -33,6 +33,7 @@ export function RelationStep({ draft }: { draft: Draft }) {
       title={m.step_relation_title()}
       titleInForm
       errors={errors}
+      setErrors={setErrors}
       onContinue={onContinue}
     >
       <RadioGroup
@@ -47,7 +48,7 @@ export function RelationStep({ draft }: { draft: Draft }) {
         onChange={setRelation}
         conditional={{
           on_behalf: (
-            <div className="mt-1 border-brand border-l-4 bg-surface p-4 sm:p-5">
+            <div className="mt-4 ml-8">
               <RadioGroup
                 name="otherConsent"
                 legend={m.other_consent_legend()}

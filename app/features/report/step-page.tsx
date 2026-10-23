@@ -1,5 +1,12 @@
 import { ChevronLeft } from "lucide-react"
-import { type FormEvent, type ReactNode, useState } from "react"
+import {
+  type Dispatch,
+  type FocusEvent,
+  type FormEvent,
+  type ReactNode,
+  type SetStateAction,
+  useState,
+} from "react"
 import {
   Link,
   useMatches,
@@ -8,7 +15,11 @@ import {
   useSearchParams,
 } from "react-router"
 import { Button } from "~/components/ui/button"
-import { ErrorSummary, errorTitle } from "~/components/ui/error-summary"
+import {
+  ErrorSummary,
+  errorTitle,
+  untouched,
+} from "~/components/ui/error-summary"
 import { STEP_HEADING } from "~/components/ui/field"
 import { Skeleton } from "~/components/ui/skeleton"
 import { m } from "~/paraglide/messages.js"
@@ -99,10 +110,7 @@ export function PausedBanner() {
   const { paused, statusHref } = useOutletContext<ReportOutlet>()
   if (!paused) return null
   return (
-    <div
-      role="status"
-      className="mb-6 border-ink border-l-4 bg-highlight p-4 text-sm leading-relaxed"
-    >
+    <div role="status" className="mb-6 text-sm leading-relaxed">
       <h2 className="font-bold text-base">{m.report_paused_title()}</h2>
       <p className="mt-1">{m.report_paused_body()}</p>
       {statusHref ? (
@@ -145,7 +153,7 @@ export function StepFallback() {
       <title>{useSiteTitle(title)}</title>
       {step && <FallbackBack step={step} />}
       <noscript>
-        <div className="mb-6 border-ink border-l-4 bg-surface p-4">
+        <div className="mb-6">
           <p className="font-semibold">{m.report_noscript()}</p>
           <Link
             to="/"
@@ -179,6 +187,10 @@ type StepPageProps = {
   // Explains the red asterisk
   requiredNote?: boolean
   errors: StepError[]
+  // Edit clears its error
+  setErrors?: Dispatch<SetStateAction<StepError[]>>
+  // Checks typed field on leave
+  validate?: (form: HTMLFormElement) => StepError[]
   onContinue: (form: HTMLFormElement) => void
   children: ReactNode
 }
@@ -190,6 +202,8 @@ export function StepPage({
   titleInForm,
   requiredNote = true,
   errors,
+  setErrors,
+  validate,
   onContinue,
   children,
 }: StepPageProps) {
@@ -201,6 +215,27 @@ export function StepPage({
     event.preventDefault()
     setAttempt((value) => value + 1)
     onContinue(event.currentTarget)
+  }
+  // Edited field drops its red
+  const clearEdited = (event: FormEvent<HTMLFormElement>) => {
+    const { target } = event
+    setErrors?.((current) => untouched(current, (e) => e.field, target))
+  }
+  // Typed then left: show now
+  const checkLeft = (event: FocusEvent<HTMLFormElement>) => {
+    const field = event.target
+    const typed =
+      (field instanceof HTMLInputElement &&
+        !["radio", "checkbox", "file"].includes(field.type)) ||
+      field instanceof HTMLTextAreaElement
+    if (!validate || !setErrors || !typed || field.value.trim() === "") return
+    const inField = (error: StepError) =>
+      document.getElementById(error.field)?.contains(field) ?? false
+    const found = validate(event.currentTarget).filter(inField)
+    setErrors((current) => [
+      ...current.filter((error) => !inField(error)),
+      ...found,
+    ])
   }
   return (
     <>
@@ -217,7 +252,13 @@ export function StepPage({
       <StepHeading step={step}>
         {!titleInForm && <h1 className={`mt-5 ${STEP_HEADING}`}>{title}</h1>}
       </StepHeading>
-      <form noValidate onSubmit={submit} className="mt-6 flex flex-1 flex-col">
+      <form
+        noValidate
+        onSubmit={submit}
+        onChange={clearEdited}
+        onBlur={checkLeft}
+        className="mt-6 flex flex-1 flex-col"
+      >
         <div className="flex flex-col gap-6">{children}</div>
         <div className="mt-auto pt-8">
           {requiredNote && (

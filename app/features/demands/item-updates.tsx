@@ -40,7 +40,7 @@ export function ItemUpdates({
   return (
     <ol className="mt-2 space-y-3">
       {shown.map((update) => (
-        <li key={update.id} className="border-line-subtle border-l-2 pl-3">
+        <li key={update.id}>
           <p className="font-ui text-ink-muted text-sm">
             <time dateTime={update.occurredOn}>
               {formatIsoDate(update.occurredOn)}

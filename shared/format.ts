@@ -80,6 +80,11 @@ export function jakartaYear(date: Date): number {
   return Number(jakartaIsoDate(date).slice(0, 4))
 }
 
+/** Jakarta month, 1 to 12. */
+export function jakartaMonth(date: Date): number {
+  return Number(jakartaIsoDate(date).slice(5, 7))
+}
+
 /** Jakarta calendar days, never negative. */
 export function daysSince(start: Date, now: Date): number {
   const from = Date.parse(jakartaIsoDate(start))
