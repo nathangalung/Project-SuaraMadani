@@ -158,7 +158,7 @@ export default function EvidenceEditor({
         </Note>
       )}
       {NO_ORIGINAL.has(view.status) ? null : (
-        <p className="font-ui text-[0.95rem] text-ink-soft">
+        <p className="text-[0.95rem] text-ink-soft">
           <a href={`/kelola/bukti/${view.id}/asli`} download className={LINK}>
             {m.manage_evidence_download()}
           </a>{" "}

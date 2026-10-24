@@ -1,4 +1,4 @@
-import { data, Form, useNavigate, useRevalidator } from "react-router"
+import { data, Form, redirect, useNavigate, useRevalidator } from "react-router"
 import { AUTH_TITLE, AuthCard } from "~/components/layout/auth-card"
 import { focusPageHeading } from "~/components/layout/route-focus"
 import { Button, ButtonLink } from "~/components/ui/button"
@@ -16,8 +16,12 @@ import { useSiteTitle } from "~/features/report/page-title"
 import { returnPath } from "~/features/report/return-path"
 import { SignedInAs, SignIn } from "~/features/report/sign-in"
 import { m } from "~/paraglide/messages.js"
-import { sessionContext, signedInLabel } from "../../context.ts"
+import { staffLinks } from "../../../server/shell.server.ts"
+import { sessionContext, signedInLabel, tenantContext } from "../../context.ts"
 import type { Route } from "./+types/sign-in"
+
+// Picks enrol, code or home
+const TWO_FACTOR = "/masuk/dua-langkah"
 
 // Logo-only header, task focus
 export const handle = { shell: "auth" }
@@ -26,13 +30,22 @@ export function headers() {
   return { "Cache-Control": "private, no-store" }
 }
 
-export function loader({ request, context }: Route.LoaderArgs) {
+export async function loader({ request, context }: Route.LoaderArgs) {
   const session = context.get(sessionContext)
   const params = new URL(request.url).searchParams
+  const next = returnPath(params.get("kembali"))
+  if (session && !next) {
+    const links = await staffLinks(
+      context.get(tenantContext).id,
+      session.user.id,
+    )
+    // Staff go enrol, then panel
+    if (links.manage || links.platform) throw redirect(TWO_FACTOR)
+  }
   return {
     siteKey: process.env.TURNSTILE_SITE_KEY ?? "",
     signedInAs: signedInLabel(session),
-    next: returnPath(params.get("kembali")),
+    next,
     // Home "Buat akun" opens Daftar
     signUp: params.get("daftar") === "1",
     // Number released to its prover

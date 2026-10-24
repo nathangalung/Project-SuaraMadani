@@ -581,11 +581,25 @@ type AccessInput = {
   user: { twoFactorEnabled: boolean; updatedAt: Date }
   session: { createdAt: Date }
   now: Date
+  // False only via staffTotpRequired
+  totp?: boolean
+}
+
+/** Only dev may skip TOTP. */
+export function staffTotpRequired(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return !(env.NODE_ENV === "development" && env.STAFF_TOTP === "off")
 }
 
 /** TOTP, fresh session, 12h cap. */
-function verifiedSession({ user, session, now }: AccessInput): boolean {
-  if (!user.twoFactorEnabled) return false
+function verifiedSession({
+  user,
+  session,
+  now,
+  totp = true,
+}: AccessInput): boolean {
+  if (totp && !user.twoFactorEnabled) return false
   if (session.createdAt.getTime() < user.updatedAt.getTime()) return false
   return now.getTime() - session.createdAt.getTime() <= STAFF_SESSION_MS
 }
@@ -598,12 +612,9 @@ export function superadminAccess(
 }
 
 /** Session must postdate TOTP change. */
-export function staffAccess(input: {
-  role: MemberRole | null
-  user: { twoFactorEnabled: boolean; updatedAt: Date }
-  session: { createdAt: Date }
-  now: Date
-}): boolean {
+export function staffAccess(
+  input: AccessInput & { role: MemberRole | null },
+): boolean {
   if (!input.role || !STAFF_ROLES.includes(input.role)) return false
   return verifiedSession(input)
 }

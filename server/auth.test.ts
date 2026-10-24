@@ -21,6 +21,7 @@ import {
   createAuth,
   readSessionWith,
   staffAccess,
+  staffTotpRequired,
 } from "./auth.server.ts"
 import type { EmailMessage } from "./email.ts"
 import type { WhatsAppGateway } from "./whatsapp.server.ts"
@@ -1348,6 +1349,29 @@ describe("staffAccess", () => {
   test("staff role, TOTP and a session after the last change", () => {
     expect(staffAccess({ role: "admin", user, session, now })).toBe(true)
     expect(staffAccess({ role: "editor", user, session, now })).toBe(true)
+  })
+
+  test("dev switch skips TOTP, nowhere else", () => {
+    const noTotp = { ...user, twoFactorEnabled: false }
+    expect(
+      staffAccess({ role: "admin", user: noTotp, session, now, totp: false }),
+    ).toBe(true)
+    // Role and session rules stay
+    expect(
+      staffAccess({
+        role: "reporter",
+        user: noTotp,
+        session,
+        now,
+        totp: false,
+      }),
+    ).toBe(false)
+    const off = { STAFF_TOTP: "off" }
+    expect(staffTotpRequired({ ...off, NODE_ENV: "development" })).toBe(false)
+    expect(staffTotpRequired({ ...off, NODE_ENV: "production" })).toBe(true)
+    expect(staffTotpRequired({ ...off, NODE_ENV: "test" })).toBe(true)
+    expect(staffTotpRequired({ ...off })).toBe(true)
+    expect(staffTotpRequired({ NODE_ENV: "development" })).toBe(true)
   })
 
   test("fails closed otherwise", () => {

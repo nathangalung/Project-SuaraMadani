@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm"
 import { data, type RouterContextProvider, redirect } from "react-router"
 import { type Db, database } from "../../../db/client.server.ts"
 import { sessions } from "../../../db/schema/auth.ts"
-import { getAuth } from "../../../server/auth.server.ts"
+import { getAuth, staffTotpRequired } from "../../../server/auth.server.ts"
 import { sessionContext } from "../../context.ts"
 
 // Better Auth freshAge, PLAN §13
@@ -36,6 +36,8 @@ export async function requireFresh(
 ): Promise<void> {
   const session = context.get(sessionContext)
   if (!session) throw data(null, { status: 403 })
+  // Dev email-only staff
+  if (!staffTotpRequired()) return
   if (await isFresh(session.session.id, db)) return
   const next = stepUpNext(new URL(request.url).pathname)
   throw redirect(

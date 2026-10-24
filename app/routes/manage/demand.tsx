@@ -217,7 +217,7 @@ export default function ManageDemand({
           <Badge tone="subtle">{CATEGORY_TEXT[demand.category]()}</Badge>
         ) : null}
         {demand.publishedAt ? (
-          <span className="font-ui text-ink-muted text-sm">
+          <span className="text-ink-muted text-sm">
             {m.demand_published_on({ date: formatDate(demand.publishedAt) })}
           </span>
         ) : null}
@@ -225,7 +225,7 @@ export default function ManageDemand({
       <h2 className="mt-6 font-bold text-2xl">{demand.title}</h2>
       <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
         <FulfilmentMark status={progress.status} />
-        <span className="font-ui text-sm">
+        <span className="text-sm">
           {m.demand_progress_line({
             done: progress.fulfilled,
             total: progress.total,
@@ -233,7 +233,7 @@ export default function ManageDemand({
         </span>
       </p>
       {demand.state !== "draft" ? (
-        <p className="mt-2 font-ui text-ink-soft text-sm">
+        <p className="mt-2 text-ink-soft text-sm">
           {!demand.ranking.shown
             ? m.demand_rank_admin_few({
                 total: demand.ranking.rankers,
@@ -291,7 +291,7 @@ export default function ManageDemand({
         <h2 id="demand-items" className={H2}>
           {m.demand_items_title()}
         </h2>
-        <p className="mt-1 mb-5 font-ui text-[0.95rem] text-ink-soft">
+        <p className="mt-1 mb-5 text-[0.95rem] text-ink-soft">
           {m.demand_items_admin_lead()}
         </p>
         {demand.items.length > 0 ? (
@@ -360,7 +360,7 @@ export default function ManageDemand({
         <h2 id="demand-issues" className={H2}>
           {m.demand_issues_title()}
         </h2>
-        <p className="mt-1 mb-5 font-ui text-[0.95rem] text-ink-soft">
+        <p className="mt-1 mb-5 text-[0.95rem] text-ink-soft">
           {m.demand_issues_admin_lead()}
         </p>
         <IssueLinks

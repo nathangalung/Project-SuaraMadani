@@ -11,10 +11,13 @@ export type NavItem = {
   label: string
   // Sections that light this item
   also?: string[]
+  // Current on this path only
+  end?: boolean
 }
 
 /** NavLink rule plus sibling sections. */
 export function isCurrent(item: NavItem, pathname: string): boolean {
+  if (item.end) return pathname === item.to
   const under = (to: string) =>
     to === "/"
       ? pathname === "/"
@@ -22,7 +25,15 @@ export function isCurrent(item: NavItem, pathname: string): boolean {
   return [item.to, ...(item.also ?? [])].some(under)
 }
 
-type User = { email: string }
+type User = { email: string; manage?: boolean; platform?: boolean }
+
+// Staff only, gates stay server-side
+function staffLinks(user: User) {
+  return [
+    ...(user.manage ? [{ to: "/kelola", label: m.manage_title() }] : []),
+    ...(user.platform ? [{ to: "/admin", label: m.header_platform() }] : []),
+  ]
+}
 
 type HeaderProps = {
   siteName: string
@@ -49,6 +60,8 @@ type HeaderProps = {
   showSignIn?: boolean
   // Auth pages show logo only
   variant?: "site" | "auth"
+  // Admin: Kelola menu only
+  staff?: boolean
 }
 
 /** Handle `shell: "auth"`. */
@@ -123,6 +136,7 @@ function useMorphHover() {
 }
 
 function Logo({
+  home = "/",
   siteName,
   logoSrc,
   logoSrcSet,
@@ -139,11 +153,11 @@ function Logo({
   | "logoIntroSrcSet"
   | "emblemSrc"
   | "emblemSrcSet"
->) {
+> & { home?: string }) {
   const morph = useMorphHover()
   return (
     <Link
-      to="/"
+      to={home}
       className="flex items-center gap-3 justify-self-start"
       onPointerEnter={logoIntroSrc ? morph.start : undefined}
       onPointerLeave={logoIntroSrc ? morph.stop : undefined}
@@ -258,6 +272,7 @@ type AccountProps = Pick<
   | "myReportsHref"
   | "onSignOut"
   | "showSignIn"
+  | "staff"
 > & { user: User | null }
 
 function DraftLink({ href, mobile }: { href: string; mobile?: boolean }) {
@@ -307,6 +322,7 @@ function DesktopAccount({
   myReportsHref,
   onSignOut,
   showSignIn,
+  staff,
 }: AccountProps) {
   return (
     <div className="hidden items-center gap-5 justify-self-end xl:flex">
@@ -325,13 +341,25 @@ function DesktopAccount({
             />
           </summary>
           <div className="absolute top-full right-0 z-10 mt-2 flex w-60 flex-col gap-2 rounded-[10px] bg-surface-raised p-3 shadow-floating">
-            <NavLink
-              to={myReportsHref ?? "/lacak"}
-              onClick={closeMenu}
-              className="block rounded-[10px] px-3 py-2.5 font-semibold underline-offset-4 hover:underline aria-[current=page]:underline"
-            >
-              {m.nav_track()}
-            </NavLink>
+            {staff ? null : (
+              <NavLink
+                to={myReportsHref ?? "/lacak"}
+                onClick={closeMenu}
+                className="block rounded-[10px] px-3 py-2.5 font-semibold underline-offset-4 hover:underline aria-[current=page]:underline"
+              >
+                {m.nav_track()}
+              </NavLink>
+            )}
+            {staffLinks(user).map((link) => (
+              <NavLink
+                key={link.to}
+                to={link.to}
+                onClick={closeMenu}
+                className="block rounded-[10px] px-3 py-2.5 font-semibold underline-offset-4 hover:underline aria-[current=page]:underline"
+              >
+                {link.label}
+              </NavLink>
+            ))}
             <SignOutForm action={signOutAction} onSignOut={onSignOut} />
           </div>
         </details>
@@ -357,6 +385,7 @@ function MobileMenu({ nav, ...account }: AccountProps & { nav: NavItem[] }) {
     signOutAction,
     myReportsHref,
     showSignIn,
+    staff,
   } = account
   return (
     <details
@@ -407,15 +436,31 @@ function MobileMenu({ nav, ...account }: AccountProps & { nav: NavItem[] }) {
                   </span>
                   <span className="block truncate text-lg">{user.email}</span>
                 </li>
-                <li className={ROW}>
-                  <NavLink
-                    to={myReportsHref ?? "/lacak"}
-                    onClick={closeMenu}
-                    className="block py-4 text-lg aria-[current=page]:font-semibold"
-                  >
-                    {m.nav_track()}
-                  </NavLink>
-                </li>
+                {staff ? null : (
+                  <li className={ROW}>
+                    <NavLink
+                      to={myReportsHref ?? "/lacak"}
+                      onClick={closeMenu}
+                      className="block py-4 text-lg aria-[current=page]:font-semibold"
+                    >
+                      {m.nav_track()}
+                    </NavLink>
+                  </li>
+                )}
+                {/* Kelola items fill the nav */}
+                {staffLinks(user)
+                  .filter((link) => !(staff && link.to === "/kelola"))
+                  .map((link) => (
+                    <li key={link.to} className={ROW}>
+                      <NavLink
+                        to={link.to}
+                        onClick={closeMenu}
+                        className="block py-4 text-lg aria-[current=page]:font-semibold"
+                      >
+                        {link.label}
+                      </NavLink>
+                    </li>
+                  ))}
                 <li className="pt-5">
                   <SignOutForm
                     action={signOutAction}
@@ -464,6 +509,7 @@ export function Header({
   onSignOut,
   showSignIn = true,
   variant = "site",
+  staff = false,
 }: HeaderProps) {
   const ref = useRef<HTMLElement>(null)
   useDismiss(ref)
@@ -487,12 +533,14 @@ export function Header({
   }
   const account = {
     user,
-    draftHref,
+    // Admins file no reports here
+    draftHref: staff ? undefined : draftHref,
     signInHref,
     signOutAction,
     myReportsHref,
     onSignOut,
     showSignIn,
+    staff,
   }
   return (
     <header
@@ -500,8 +548,13 @@ export function Header({
       className="header-bg sticky top-0 z-[1000] text-ink [@media(max-height:30rem)]:static"
     >
       <div className="relative mx-auto flex h-20 max-w-7xl items-center justify-between gap-4 px-4 sm:px-8 lg:h-24 xl:grid xl:grid-cols-[1fr_auto_1fr] xl:gap-8">
-        <Logo {...logo} />
-        <DesktopNav nav={nav} navStarSrc={navStarSrc} />
+        <Logo {...logo} home={staff ? "/kelola" : "/"} />
+        {/* Page has the Kelola strip */}
+        {staff ? (
+          <span aria-hidden="true" />
+        ) : (
+          <DesktopNav nav={nav} navStarSrc={navStarSrc} />
+        )}
         <DesktopAccount {...account} />
         <MobileMenu nav={nav} {...account} />
       </div>

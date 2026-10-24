@@ -100,12 +100,12 @@ function CampusList({
             />
             <div className="min-w-0">
               <p className="font-semibold">{campus.campusName}</p>
-              <p className="font-ui text-ink-muted text-sm">
+              <p className="text-ink-muted text-sm">
                 {campus.name} · {campus.campusCode}
               </p>
             </div>
           </div>
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 font-ui text-sm">
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
             <dt className="text-ink-muted">{m.admin_col_admins()}</dt>
             <dd className="text-right tabular-nums">
               {formatNumber(campus.admins)}

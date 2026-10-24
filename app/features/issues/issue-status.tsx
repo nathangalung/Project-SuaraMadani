@@ -56,7 +56,7 @@ export function CategoryBadge({ categoryId }: { categoryId: string }) {
     <Badge tone="subtle">
       <span
         aria-hidden="true"
-        className={`size-2.5 shrink-0 ${CATEGORY_MARK[categoryId]}`}
+        className={`size-2.5 shrink-0 rounded-full ${CATEGORY_MARK[categoryId]}`}
       />
       {CATEGORY_SHORT_TEXT[categoryId]()}
     </Badge>

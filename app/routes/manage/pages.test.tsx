@@ -135,12 +135,12 @@ describe("manage pages", () => {
       `<title>${m.manage_report_title({ code: report.code })} · ${SITE}</title>`,
     )
     expect(html.match(/href="\/kelola"/g)?.length).toBe(1)
-    // Underline without hover, phones
+    // Pill in a raised strip
     const back = html.match(/<a[^>]*href="\/kelola"[^>]*>/)?.[0] ?? ""
     expect(back).not.toContain('aria-current="page"')
     const tokens = (back.match(/class="([^"]*)"/)?.[1] ?? "").split(" ")
-    expect(tokens).toContain("underline")
-    expect(tokens).toContain("text-accent")
+    expect(tokens).toContain("rounded-full")
+    expect(html).toMatch(/<ul class="[^"]*rounded-full[^"]*bg-surface-raised/)
   })
 
   test("issue: the report list has a heading, a site title", () => {

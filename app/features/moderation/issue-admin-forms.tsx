@@ -99,7 +99,7 @@ export function EditIssueForm({
       title={m.manage_edit_title()}
       open={errors.length > 0 || unchanged}
     >
-      <p className="mb-5 font-ui text-[0.95rem] text-ink-soft">
+      <p className="mb-5 text-[0.95rem] text-ink-soft">
         {m.manage_edit_lead()}
       </p>
       <Form method="post" className="flex flex-col gap-6">
@@ -159,7 +159,7 @@ export function EditIssueForm({
           </Select>
         </div>
         {unchanged ? (
-          <p role="status" className="font-ui text-sm">
+          <p role="status" className="text-sm">
             {m.manage_edit_unchanged()}
           </p>
         ) : null}
@@ -192,7 +192,7 @@ export function LegalTakedownForm({
       tone="danger"
       open={errors.length > 0}
     >
-      <p className="mb-5 font-ui text-[0.95rem] text-ink-soft">
+      <p className="mb-5 text-[0.95rem] text-ink-soft">
         {m.manage_legal_lead()}
       </p>
       <Form method="post" className="flex flex-col gap-6">

@@ -16,7 +16,7 @@ export function FilterTabs({
   return (
     <nav
       aria-label={label}
-      className="flex flex-wrap border-ink border-b-2 bg-surface"
+      className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-full bg-surface-raised p-1"
     >
       {tabs.map((tab) => {
         const active = tab.key === current
@@ -26,10 +26,10 @@ export function FilterTabs({
             to={tab.to}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "min-h-11 px-4 py-2.5 font-semibold text-sm transition-colors",
+              "whitespace-nowrap rounded-full px-4 py-2 font-semibold transition-colors duration-(--dur-hover) motion-reduce:transition-none",
               active
                 ? "bg-brand text-on-accent"
-                : "text-ink underline-offset-4 hover:bg-ink/5 hover:underline",
+                : "text-ink hover:bg-brand-soft",
             )}
           >
             {tab.label}

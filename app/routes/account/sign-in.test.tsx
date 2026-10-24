@@ -41,10 +41,10 @@ describe("/masuk flow", () => {
     expect(html).not.toContain(m.signin_privacy_note())
   })
 
-  test("home Buat akun opens Daftar", () => {
+  test("home Buat akun opens Daftar", async () => {
     const context = new RouterContextProvider()
     context.set(sessionContext, null)
-    const data = loader({
+    const data = await loader({
       request: new Request("http://itb.localhost/masuk?daftar=1"),
       context,
     } as unknown as Parameters<typeof loader>[0])
@@ -84,10 +84,10 @@ describe("/masuk flow", () => {
     )
   })
 
-  test("a tuntutan follow returns to its tuntutan", () => {
+  test("a tuntutan follow returns to its tuntutan", async () => {
     const context = new RouterContextProvider()
     context.set(sessionContext, null)
-    const data = loader({
+    const data = await loader({
       request: new Request(
         "http://itb.localhost/masuk?kembali=%2Ftuntutan%2FTUN-ITB-26-0003",
       ),
@@ -98,13 +98,14 @@ describe("/masuk flow", () => {
     expect(html).toMatch(/href="\/tuntutan\/TUN-ITB-26-0003"[^>]*>Lanjutkan</)
   })
 
-  test("an account without a number is asked for one", () => {
+  test("an account without a number is asked for one", async () => {
     const context = new RouterContextProvider()
     context.set(sessionContext, {
       user: { email: "dilepas@contoh.id", phoneNumber: null },
     } as never)
-    const data = loader({
-      request: new Request("http://itb.localhost/masuk"),
+    // Return path skips staff lookup
+    const data = await loader({
+      request: new Request("http://itb.localhost/masuk?kembali=%2Flacak"),
       context,
     } as unknown as Parameters<typeof loader>[0])
     expect(data.needsPhone).toBe(true)

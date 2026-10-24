@@ -50,7 +50,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 export function SenderState({ view }: { view: SenderView }) {
   const status = STATUS[view.status]
   return (
-    <dl className="grid grid-cols-[minmax(0,10rem)_1fr] items-center gap-x-6 gap-y-3 font-ui text-sm">
+    <dl className="grid grid-cols-[minmax(0,10rem)_1fr] items-center gap-x-6 gap-y-3 text-sm">
       <Row label={m.wa_status()}>
         <Badge tone={status.tone}>{status.text()}</Badge>
       </Row>

@@ -14,7 +14,7 @@ import { DISTRICT_MIN_REPORTS } from "../../../shared/report-fields.ts"
 import type { Route } from "./+types/privacy"
 
 // Draft, legal review before launch
-const UPDATED = "2026-10-16"
+const UPDATED = "2026-10-24"
 
 // Server constant, no client chunk
 export function loader() {

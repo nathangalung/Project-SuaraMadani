@@ -20,6 +20,7 @@ import { ownsDescription, SiteMeta } from "~/components/layout/site-meta"
 import {
   footerNav,
   mainNav,
+  manageNav,
   nationalNav,
   policyNav,
 } from "~/components/layout/site-nav"
@@ -37,6 +38,7 @@ import {
   nationalShellData,
   type ShellData,
   shellData,
+  staffLinks,
 } from "../server/shell.server.ts"
 import type { WebFont } from "../server/theme.server.ts"
 import type { Route } from "./+types/root"
@@ -64,9 +66,16 @@ const RootError = lazy(() =>
 
 export const middleware: Route.MiddlewareFunction[] = [rootMiddleware]
 
-export function loader({ context }: Route.LoaderArgs): ShellData {
+export async function loader({
+  context,
+}: Route.LoaderArgs): Promise<ShellData> {
   if (context.get(nationalContext)) return nationalShellData()
-  return shellData(context.get(tenantContext), context.get(sessionContext))
+  const tenant = context.get(tenantContext)
+  const session = context.get(sessionContext)
+  const shell = shellData(tenant, session)
+  if (!session || !shell.user) return shell
+  const links = await staffLinks(tenant.id, session.user.id)
+  return { ...shell, user: { ...shell.user, ...links } }
 }
 
 // Middleware 403 and apex 404
@@ -125,6 +134,8 @@ export function Layout({ children }: { children: ReactNode }) {
   const showPause = data?.intakePaused === true && !stepPage
   // Apex: tables only, no JS
   const national = data?.national === true
+  // Admins see Kelola only
+  const staff = data?.user?.manage === true
   useRouteFocus()
   return (
     <html lang="id">
@@ -157,13 +168,14 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="flex min-h-svh flex-col">
           <Header
             siteName={SITE_NAME}
-            nav={national ? nationalNav() : mainNav()}
+            nav={national ? nationalNav() : staff ? manageNav() : mainNav()}
             user={data?.user ?? null}
             {...brand}
             draftHref={national ? undefined : draftHref}
             onSignOut={() => clearDraft(browserStorage())}
             showSignIn={!pageSignIn && !national}
             variant={authShell ? "auth" : "site"}
+            staff={staff}
           />
           {showPause ? (
             <IntakeBanner statusHref={data?.identity.statusHref} />
@@ -181,7 +193,9 @@ export function Layout({ children }: { children: ReactNode }) {
               siteName={SITE_NAME}
               {...data.identity}
               note={national ? m.national_footer_note() : undefined}
-              links={national ? nationalNav().slice(1) : footerNav()}
+              links={
+                national ? nationalNav().slice(1) : staff ? [] : footerNav()
+              }
               policyLinks={policyNav()}
               logoSrc={brand.logoSrc}
               logoSrcSet={brand.logoSrcSet}

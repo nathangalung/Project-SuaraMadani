@@ -157,9 +157,7 @@ type BoxListProps = {
 function BoxList({ boxes, onChange, onRemove }: BoxListProps) {
   if (boxes.length === 0) {
     return (
-      <p className="font-ui text-ink-muted text-sm">
-        {m.manage_evidence_no_boxes()}
-      </p>
+      <p className="text-ink-muted text-sm">{m.manage_evidence_no_boxes()}</p>
     )
   }
   return (
@@ -348,7 +346,7 @@ export function EvidenceDecisionForm(props: FormProps) {
             aria-label={m.manage_evidence_video_label({ position })}
             className="w-full border border-line-subtle bg-ink"
           />
-          <p className="font-ui text-[0.95rem] text-ink-soft">
+          <p className="text-[0.95rem] text-ink-soft">
             {m.manage_evidence_video_hint()}
           </p>
         </>
@@ -367,7 +365,7 @@ export function EvidenceDecisionForm(props: FormProps) {
               {m.manage_evidence_noscript()}
             </p>
           </noscript>
-          <p id={hintId} className="font-ui text-[0.95rem] text-ink-soft">
+          <p id={hintId} className="text-[0.95rem] text-ink-soft">
             {m.manage_evidence_draw_hint()}
           </p>
           <fieldset className="flex flex-wrap items-center gap-x-5 gap-y-1">

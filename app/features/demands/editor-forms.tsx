@@ -343,7 +343,7 @@ export function DraftPreview({ demand }: { demand: ManagedDemand }) {
       <p className="mt-1 text-ink-soft text-sm">
         {m.demand_draft_preview_lead()}
       </p>
-      <p className="mt-4 font-ui text-ink-soft text-sm">
+      <p className="mt-4 text-ink-soft text-sm">
         {m.demand_draft_preview_meta({
           target: demand.target,
           date: formatIsoDate(demand.raisedOn),
@@ -477,7 +477,7 @@ function BriefPanel({
               className="flex flex-wrap items-center gap-x-3 gap-y-2 border-line-subtle border-b pb-2"
             >
               <FileText aria-hidden="true" className="size-4 text-brand" />
-              <span className="font-ui text-sm">
+              <span className="text-sm">
                 {formatDate(brief.createdAt)} · {formatFileSize(brief.byteSize)}
               </span>
               <Badge tone={brief.status === "infected" ? "danger" : "neutral"}>
@@ -526,7 +526,7 @@ function BriefPanel({
         <p className="text-ink-muted">{m.demand_brief_missing()}</p>
       )}
       {item.briefs.some((brief) => brief.publishedAt) ? (
-        <p className="font-ui text-ink-muted text-sm">
+        <p className="text-ink-muted text-sm">
           {m.demand_brief_withdraw_hint()}
         </p>
       ) : null}
@@ -803,10 +803,7 @@ export function ItemEditor({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <h3 className="font-bold text-lg leading-snug">
           {/* The list already numbers */}
-          <span
-            aria-hidden="true"
-            className="mr-2 font-ui text-accent tabular-nums"
-          >
+          <span aria-hidden="true" className="mr-2 text-accent tabular-nums">
             {String(index + 1).padStart(2, "0")}
           </span>
           {item.body}
@@ -940,10 +937,8 @@ export function IssueLinks({
               className="flex flex-wrap items-center justify-between gap-3 border-line-subtle border-b pb-2"
             >
               <span>
-                <span className="font-ui text-sm tabular-nums">
-                  {issue.code}
-                </span>{" "}
-                · {issue.title}
+                <span className="text-sm tabular-nums">{issue.code}</span> ·{" "}
+                {issue.title}
                 {issue.published ? null : (
                   <span className="text-ink-muted">
                     {" "}

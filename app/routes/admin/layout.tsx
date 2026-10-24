@@ -21,9 +21,7 @@ export default function AdminLayout() {
         <span className="font-bold font-heading text-ink-muted [font-synthesis-weight:none]">
           {m.admin_title()}
         </span>
-        <span className="font-ui text-ink-muted text-sm">
-          {m.admin_scope()}
-        </span>
+        <span className="text-ink-muted text-sm">{m.admin_scope()}</span>
         <nav
           aria-label={m.admin_nav_label()}
           className="flex w-full flex-wrap gap-x-6 gap-y-2 pt-2"

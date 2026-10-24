@@ -22,18 +22,18 @@ export function ActionPanel({
       id={id}
       open={open}
       className={cn(
-        "group border bg-surface-raised",
+        "group overflow-hidden rounded-2xl border bg-surface-raised",
         tone === "danger" ? "border-danger" : "border-line-subtle",
       )}
     >
-      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-5 py-3 font-semibold transition-colors hover:bg-ink/5 [&::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-6 py-4 font-semibold text-lg transition-colors hover:bg-ink/5 [&::-webkit-details-marker]:hidden">
         {title}
         <ChevronDown
           aria-hidden="true"
           className="size-5 shrink-0 transition-transform group-open:rotate-180"
         />
       </summary>
-      <div className="border-line-subtle border-t px-5 pt-5 pb-6">
+      <div className="border-line-subtle border-t px-6 pt-6 pb-7">
         {children}
       </div>
     </details>
