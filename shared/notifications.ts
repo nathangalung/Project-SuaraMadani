@@ -27,23 +27,26 @@ const MORNING_HOUR_WIB = 7
 const WIB_OFFSET_MS = 7 * 3_600_000
 const DAY_MS = 86_400_000
 
-// Complainant mail, PLAN §5.10
-export const COMPLAINT_TEMPLATES = [
+// Legacy rows, complaints removed
+const COMPLAINT_TEMPLATES = [
   "complaint_received",
   "complaint_decided",
   "complaint_appeal_decided",
 ] as const
-export type ComplaintTemplate = (typeof COMPLAINT_TEMPLATES)[number]
+type ComplaintTemplate = (typeof COMPLAINT_TEMPLATES)[number]
 
 export type NotificationTemplate =
   | EmailTemplate
   | "issue_published"
+  // Legacy rows, claim removed
+  | "issue_claim_resolved"
   | ComplaintTemplate
 
 export const NOTIFICATION_TEMPLATES: readonly NotificationTemplate[] = [
   ...REPORT_STATUSES.map((status) => `report_${status}` as const),
   ...ISSUE_ACTIONS.map((action) => `issue_${action}` as const),
   "issue_published",
+  "issue_claim_resolved",
   ...COMPLAINT_TEMPLATES,
   ...DEMAND_ACTIONS.map((action) => `demand_${action}` as const),
   "demand_update",
@@ -53,12 +56,6 @@ export type DemandTemplate = `demand_${DemandAction}` | "demand_update"
 
 export function isDemandTemplate(template: string): template is DemandTemplate {
   return template.startsWith("demand_")
-}
-
-export function isComplaintTemplate(
-  template: string,
-): template is ComplaintTemplate {
-  return (COMPLAINT_TEMPLATES as readonly string[]).includes(template)
 }
 
 export function templateForReport(status: ReportStatus): NotificationTemplate {

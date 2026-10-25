@@ -1,4 +1,4 @@
-import { ChevronLeft, FileText, Flag, Info } from "lucide-react"
+import { ChevronLeft, FileText } from "lucide-react"
 import { lazy, Suspense } from "react"
 import { data, isRouteErrorResponse, Link, redirect } from "react-router"
 import { SECTION_TITLE } from "~/components/layout/section-heading"
@@ -16,13 +16,7 @@ import {
 import { ItemUpdates } from "~/features/demands/item-updates"
 import { demandPlace, STATE_TEXT } from "~/features/demands/labels"
 import { RankLine } from "~/features/demands/rank-line"
-import { RankPanel } from "~/features/demands/rank-panel"
-import { ownPosition } from "~/features/demands/ranking.server"
-import {
-  FulfilmentMark,
-  ProgressSquares,
-  ResponseMark,
-} from "~/features/demands/status-mark"
+import { FulfilmentMark } from "~/features/demands/status-mark"
 import { FollowCard, signInToFollow } from "~/features/issues/follow-card"
 import { Timeline } from "~/features/issues/timeline"
 import { useSiteTitle } from "~/features/report/page-title"
@@ -53,8 +47,6 @@ export async function loader({ params, context }: Route.LoaderArgs) {
           emailReady: session.user.emailVerified,
         }
       : null,
-    own: session ? await ownPosition(tenant.id, code, session.user.id) : null,
-    signedIn: session !== null,
     organization: tenant.name,
     siteName: m.og_site_name({ name: tenant.name }),
     ...demandUrls(tenant.host, code, demand.version),
@@ -86,18 +78,19 @@ const LINK =
 // Space only, no rules
 const H2 = SECTION_TITLE
 
-const ANCHORS = [
-  { id: "teks", label: m.demand_text_title },
-  { id: "sub-tuntutan", label: m.demand_items_title },
-  { id: "peringkat-warga", label: m.demand_rank_title },
-  { id: "riwayat", label: m.issue_history_title },
-  { id: "isu-terkait", label: m.demand_issues_title },
-] as const
+// External brief, new tab
+function BriefLink({ href }: { href: string }) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className={LINK}>
+      {m.demand_brief_link()}{" "}
+      <span className="whitespace-nowrap">{m.link_new_tab()}</span>
+    </a>
+  )
+}
 
 // PLAN §6.1 order, no JS
 export default function DemandDetail({ loaderData }: Route.ComponentProps) {
   const { demand, siteName, url, image, follow, organization } = loaderData
-  const { own, signedIn } = loaderData
   const actor = m.demand_actor({ organization })
   const description = demand.summary.slice(0, 200)
   // Reopened: old reason is history
@@ -107,7 +100,7 @@ export default function DemandDetail({ loaderData }: Route.ComponentProps) {
       : undefined
   return (
     <>
-      <title>{`${demand.title} · ${siteName}`}</title>
+      <title>{`${demand.title} - ${siteName}`}</title>
       <meta name="description" content={description} />
       <link rel="canonical" href={url} />
       <meta property="og:type" content="article" />
@@ -134,45 +127,28 @@ export default function DemandDetail({ loaderData }: Route.ComponentProps) {
             <ChevronLeft aria-hidden="true" className="size-4" />
             {m.explore_tab_demands()}
           </Link>
-          <p className="mt-8 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[0.95rem] text-ink-soft">
+          <p className="mt-8 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[0.95rem] text-ink-soft">
             <span className="font-bold text-ink">{demandPlace(demand)}</span>
             {demand.category ? (
-              <span>· {CATEGORY_TEXT[demand.category]()}</span>
+              <span>{CATEGORY_TEXT[demand.category]()}</span>
             ) : null}
-            <span className="tabular-nums">· {demand.code}</span>
+            <span className="tabular-nums">{demand.code}</span>
             {demand.state === "closed" ? (
               <span className="font-semibold text-ink">
-                · {STATE_TEXT.closed()}
+                {STATE_TEXT.closed()}
               </span>
             ) : null}
           </p>
           <h1
             id="demand-title"
-            className="mt-3 max-w-4xl font-bold font-heading text-[clamp(2rem,4.4vw,3rem)] text-ink leading-[1.1] [font-synthesis-weight:none]"
+            className="mt-3 font-bold font-heading text-[clamp(2rem,4.4vw,3rem)] text-ink leading-[1.1] [font-synthesis-weight:none]"
           >
             {demand.title}
           </h1>
           <h2 className="sr-only">{m.demand_facts_title()}</h2>
-          <dl className="mt-8 grid max-w-5xl grid-cols-2 gap-x-8 gap-y-6 lg:grid-cols-4">
+          <dl className="mt-8 grid grid-cols-2 gap-x-8 gap-y-6 lg:grid-cols-4">
             <Fact term={m.demands_col_fulfilment()}>
               <FulfilmentMark status={demand.progress.status} />
-            </Fact>
-            <Fact term={m.demand_fact_progress()}>
-              <ProgressSquares
-                items={demand.items.map((item) => item.fulfilment)}
-                label={m.demand_progress_line({
-                  done: demand.progress.fulfilled,
-                  total: demand.progress.total,
-                })}
-              />
-            </Fact>
-            <Fact term={m.demands_col_response()}>
-              <span>
-                {m.demand_responded_count({
-                  done: demand.progress.responded,
-                  total: demand.progress.total,
-                })}
-              </span>
             </Fact>
             <Fact term={m.demand_fact_raised()}>
               <span>{formatIsoDate(demand.raisedOn)}</span>
@@ -185,11 +161,16 @@ export default function DemandDetail({ loaderData }: Route.ComponentProps) {
             </div>
           </dl>
           <RankLine rank={demand.rank} className="mt-6" />
-          <p className="mt-8 max-w-3xl whitespace-pre-line text-ink text-lg leading-relaxed">
+          <p className="mt-8 whitespace-pre-line text-ink text-lg leading-relaxed">
             {demand.summary}
           </p>
+          {demand.briefUrl ? (
+            <p className="mt-4">
+              <BriefLink href={demand.briefUrl} />
+            </p>
+          ) : null}
           {closing ? (
-            <p className="mt-4 max-w-3xl font-ui text-ink-soft">
+            <p className="mt-4 font-ui text-ink-soft">
               {m.demand_closed_line({
                 date: formatIsoDate(closing.occurredOn),
               })}{" "}
@@ -199,38 +180,9 @@ export default function DemandDetail({ loaderData }: Route.ComponentProps) {
         </Container>
       </section>
 
-      <nav aria-labelledby="demand-on-page" className="bg-page">
-        <Container className="pt-2">
-          <h2 id="demand-on-page" className="text-ink-muted text-sm">
-            {m.issue_on_this_page()}
-          </h2>
-          <ul className="mt-1 flex flex-wrap gap-x-6 gap-y-1">
-            {ANCHORS.map((anchor) => (
-              <li key={anchor.id}>
-                <a href={`#${anchor.id}`} className={LINK}>
-                  {anchor.label()}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </Container>
-      </nav>
-
       <div className="bg-page">
         <Container className="grid gap-12 py-12 pb-24 lg:grid-cols-[1fr_22rem]">
           <div className="min-w-0 space-y-16">
-            <section id="teks" aria-labelledby="teks-title">
-              <h2 id="teks-title" className={H2}>
-                {m.demand_text_title()}
-              </h2>
-              <p className="mt-1 font-ui text-[0.95rem] text-ink-soft">
-                {m.demand_text_intro()}
-              </p>
-              <blockquote className="mt-4 whitespace-pre-line text-ink text-lg leading-relaxed">
-                {demand.body}
-              </blockquote>
-            </section>
-
             <section id="sub-tuntutan" aria-labelledby="sub-title">
               <h2 id="sub-title" className={H2}>
                 {m.demand_items_title()}
@@ -255,11 +207,10 @@ export default function DemandDetail({ loaderData }: Route.ComponentProps) {
                       </span>
                       {item.body}
                     </h3>
-                    <p className="mt-3 flex flex-wrap gap-x-6 gap-y-1">
-                      <ResponseMark status={item.response} />
+                    <p className="mt-3">
                       <FulfilmentMark status={item.fulfilment} />
                     </p>
-                    {item.briefSummary || item.brief ? (
+                    {item.briefSummary || item.brief || item.briefUrl ? (
                       <>
                         <h4 className="mt-5 font-bold">
                           {m.demand_brief_title()}
@@ -280,6 +231,11 @@ export default function DemandDetail({ loaderData }: Route.ComponentProps) {
                             })}
                           </a>
                         ) : null}
+                        {item.briefUrl ? (
+                          <p className="mt-2">
+                            <BriefLink href={item.briefUrl} />
+                          </p>
+                        ) : null}
                       </>
                     ) : null}
                     <h4 className="mt-5 font-bold">
@@ -297,13 +253,6 @@ export default function DemandDetail({ loaderData }: Route.ComponentProps) {
               </ol>
             </section>
 
-            <RankPanel
-              rank={demand.rank}
-              ranking={demand.ranking}
-              own={own}
-              signedIn={signedIn}
-            />
-
             <section id="riwayat" aria-labelledby="riwayat-title">
               <h2 id="riwayat-title" className={H2}>
                 {m.issue_history_title()}
@@ -316,44 +265,9 @@ export default function DemandDetail({ loaderData }: Route.ComponentProps) {
                 entries={demandHistory(demand.events, actor)}
               />
             </section>
-
-            <section id="isu-terkait" aria-labelledby="isu-terkait-title">
-              <h2 id="isu-terkait-title" className={H2}>
-                {m.demand_issues_title()}
-              </h2>
-              {demand.issues.length > 0 ? (
-                <ul className="mt-3 space-y-2">
-                  {demand.issues.map((issue) => (
-                    <li key={issue.code}>
-                      <Link to={`/isu/${issue.code}`} className={LINK}>
-                        {issue.title}
-                      </Link>{" "}
-                      <span className="font-ui text-ink-muted text-sm tabular-nums">
-                        {issue.code}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="mt-3 text-ink-muted">{m.demand_issues_none()}</p>
-              )}
-            </section>
           </div>
           <aside className="space-y-10">
-            <p className="flex items-start gap-2 text-ink-soft text-sm leading-relaxed">
-              <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-              {m.demand_method_note({ organization })}
-            </p>
             <FollowCard code={demand.code} state={follow} kind="demand" />
-            <p className="flex items-start gap-2 text-ink-soft text-sm">
-              <Flag aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-              <span>
-                {m.issue_complaint_note()}{" "}
-                <Link to={`/tuntutan/${demand.code}/laporkan`} className={LINK}>
-                  {m.issue_complaint_link()}
-                </Link>
-              </span>
-            </p>
           </aside>
         </Container>
       </div>

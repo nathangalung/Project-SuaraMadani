@@ -205,34 +205,34 @@ describe("email-send", () => {
     expect(rows[0]?.address_hash).not.toContain("pelapor")
   })
 
-  test("a rejection email carries the stored reason", async () => {
+  test("an unverifiable email carries the admin's text", async () => {
     const reportId = await addReport()
+    // Free text, no code
     await su.query(
       `INSERT INTO moderation_decisions (org_id, report_id, action, reason_code, reason_text)
-       VALUES ($1, $2, 'reject', 'standard_11', 'Hapus nomor telepon tetangga, lalu kirim ulang.')`,
+       VALUES ($1, $2, 'mark_unverifiable', NULL, 'Kirim foto lokasi agar bisa kami cek.')`,
       [orgA, reportId],
     )
-    const id = await notification("report_rejected", { reportId })
+    const id = await notification("report_unverifiable", { reportId })
     expect(
       await createEmailSendHandler(deps())({ orgId: orgA, notificationId: id }),
     ).toBe("sent")
     const text = sent[0]?.text ?? ""
-    expect(text).toContain("Standar 11")
-    expect(text).toContain("Hapus nomor telepon tetangga, lalu kirim ulang.")
-    expect(text).toContain("/pedoman#standar-11")
+    expect(text).toContain(
+      "Alasan dari admin: Kirim foto lokasi agar bisa kami cek.",
+    )
+    expect(text).not.toContain("Standar")
+    expect(text).not.toContain("/pedoman#standar")
   })
 
-  test("a complaint decision mails reason and appeal date", async () => {
+  test("a legacy complaint notification is skipped", async () => {
     const { rows } = await su.query<{ id: string }>(
       `INSERT INTO content_complaints (org_id, issue_id, public_code, user_id,
-         submission_id, reason, part, explanation, status, decision,
-         decision_reason, decision_text, decided_by, decided_at)
+         submission_id, reason, part, explanation)
        VALUES ($1, $2, 'ADU-NTA-26-7K3QX', $3, gen_random_uuid(),
-         'personal_data', 'title_summary', 'Ringkasan menyebut alamat warga.',
-         'decided', 'edit', 'standard_11',
-         'Alamat warga kami hapus dari ringkasan.', $3, $4)
+         'personal_data', 'title_summary', 'Ringkasan menyebut alamat warga.')
        RETURNING id`,
-      [orgA, issueId, reporter, NOW],
+      [orgA, issueId, reporter],
     )
     const complaintId = rows[0]?.id ?? ""
     const { rows: notes } = await su.query<{ id: string }>(
@@ -243,14 +243,12 @@ describe("email-send", () => {
     const id = notes[0]?.id ?? ""
     expect(
       await createEmailSendHandler(deps())({ orgId: orgA, notificationId: id }),
-    ).toBe("sent")
-    const text = sent[0]?.text ?? ""
-    expect(sent[0]?.subject).toContain("ADU-NTA-26-7K3QX")
-    expect(text).toContain("Standar 11")
-    expect(text).toContain("Alamat warga kami hapus dari ringkasan.")
-    expect(text).toContain("https://nta.localhost/aduan/ADU-NTA-26-7K3QX")
-    // 180 days after decision
-    expect(text).toContain("12 April 2027")
+    ).toBe("skipped")
+    expect(sent).toHaveLength(0)
+    expect(await status(id)).toEqual({
+      status: "skipped",
+      error: "unpublished",
+    })
     await su.query("DELETE FROM content_complaints WHERE id = $1", [
       complaintId,
     ])

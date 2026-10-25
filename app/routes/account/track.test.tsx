@@ -7,9 +7,9 @@ import Track, { handle } from "./track"
 
 type Props = Parameters<typeof Track>[0]
 
-function render(own: unknown, emailReady = true) {
+function render(own: unknown, emailReady = true, followed: unknown = null) {
   const props = {
-    loaderData: { campus: "ITB", tenant: "KM ITB", own, emailReady },
+    loaderData: { campus: "ITB", tenant: "KM ITB", own, emailReady, followed },
   } as unknown as Props
   const Stub = createRoutesStub([
     { path: "/lacak", Component: () => <Track {...props} /> },
@@ -32,8 +32,29 @@ describe("/lacak signed out", () => {
 
 describe("/lacak signed in", () => {
   test("an unproven email hears that no mail comes", () => {
-    const own = { reports: [], capped: false }
+    const own = { reports: [], page: 1, pageCount: 1 }
     expect(render(own, false)).toContain(m.report_email_unverified())
     expect(render(own, true)).not.toContain(m.report_email_unverified())
+  })
+
+  test("followed items show under Yang Anda Ikuti", () => {
+    const own = { reports: [], page: 1, pageCount: 1 }
+    const followed = {
+      issues: [
+        {
+          code: "ISU-2026-10-0007",
+          title: "Jalan rusak di Dago",
+          state: { advocacy: "referred", government: "responded" },
+          updatedAt: new Date("2026-10-20T03:00:00Z"),
+        },
+      ],
+      demands: [],
+    }
+    const html = render(own, true, followed)
+    expect(html).toMatch(/<h2 id="yang-diikuti"[^>]*>Yang Anda Ikuti<\/h2>/)
+    expect(html).toContain('href="/isu/ISU-2026-10-0007"')
+    expect(html).toContain("Jalan rusak di Dago")
+    // Signed out: no section
+    expect(render(null)).not.toContain('id="yang-diikuti"')
   })
 })

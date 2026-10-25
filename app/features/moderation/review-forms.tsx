@@ -12,21 +12,17 @@ import { Select } from "~/components/ui/select"
 import { m } from "~/paraglide/messages.js"
 import {
   MODERATION_LENGTHS,
-  REJECT_REASONS,
   UNVERIFIABLE_REASONS,
   VERIFY_METHODS,
 } from "../../../shared/moderation.ts"
 import type { ReportStatus } from "../../../shared/status.ts"
-import type { ForwardTarget } from "../report/forward.server"
 import {
   ISSUE_SUMMARY_LENGTH,
   ISSUE_TITLE_LENGTH,
   PUBLISH_CHECKLIST,
   type ReviewErrorKey,
 } from "./fields"
-import { UNVERIFIABLE_TEXT } from "./public-reason-labels"
 import type { MergeTargetOption } from "./queue.server"
-import { rejectReasonText } from "./reason-labels"
 import { useSubmitting } from "./submitting"
 
 // Groups link their first input
@@ -41,7 +37,6 @@ const FIELD_IDS: Record<ReviewErrorKey, string> = {
   reject_text: "reject-text",
   unverifiable_reason: `unverifiable-${UNVERIFIABLE_REASONS[0]}`,
   unverifiable_text: "unverifiable-text",
-  forward_target: "forward-target",
 }
 
 const REASON_TEXT_LENGTH = MODERATION_LENGTHS.reasonText
@@ -57,7 +52,6 @@ const ERROR_TEXT: Record<ReviewErrorKey, () => string> = {
   reject_text: () => m.error_reason_text_length(REASON_TEXT_LENGTH),
   unverifiable_reason: m.error_unverifiable_reason,
   unverifiable_text: () => m.error_reason_text_length(REASON_TEXT_LENGTH),
-  forward_target: m.error_forward_target,
 }
 
 const METHOD_TEXT = {
@@ -121,58 +115,50 @@ function Submit({ intent, label }: { intent: string; label: string }) {
   )
 }
 
-export function StartReviewForm({ from }: { from: ReportStatus }) {
-  return (
-    <Form method="post">
-      <input type="hidden" name="intent" value="start_review" />
-      <input type="hidden" name="from" value={from} />
-      <Button type="submit" pending={useSubmitting("start_review")}>
-        {m.manage_start_review()}
-      </Button>
-    </Form>
-  )
-}
-
 export function VerifyForm({
   from,
   contactable,
   errors,
+  ...target
 }: {
   from: ReportStatus
   // Consent from step 7
   contactable: boolean
-  errors: FieldError[]
-}) {
+} & Omit<TargetProps, "checklist">) {
   const methods = VERIFY_METHODS.filter(
     (method) => contactable || method !== "reporter_contact",
   )
   return (
-    <Form method="post" className="flex flex-col gap-6">
-      <input type="hidden" name="intent" value="verify" />
-      <input type="hidden" name="from" value={from} />
-      <Fieldset
-        id="verify-method"
-        legend={m.manage_verify_legend()}
-        hint={
-          contactable
-            ? m.manage_verify_hint()
-            : m.manage_verify_hint_no_contact()
-        }
-        // Shares the contact error's id
-        error={errorFor(errors, "verify_method")}
-      >
-        {methods.map((method) => (
-          <Radio
-            key={method}
-            id={`verify-${method}`}
-            name="method"
-            value={method}
-            label={METHOD_TEXT[method]()}
-          />
-        ))}
-      </Fieldset>
-      <Submit intent="verify" label={m.manage_verify()} />
-    </Form>
+    <>
+      <SearchForm />
+      <Form method="post" className="group flex flex-col gap-6">
+        <input type="hidden" name="intent" value="verify" />
+        <input type="hidden" name="from" value={from} />
+        <Fieldset
+          id="verify-method"
+          legend={m.manage_verify_legend()}
+          hint={
+            contactable
+              ? m.manage_verify_hint()
+              : m.manage_verify_hint_no_contact()
+          }
+          // Shares the contact error's id
+          error={errorFor(errors, "verify_method")}
+        >
+          {methods.map((method) => (
+            <Radio
+              key={method}
+              id={`verify-${method}`}
+              name="method"
+              value={method}
+              label={METHOD_TEXT[method]()}
+            />
+          ))}
+        </Fieldset>
+        <IssueTarget {...target} errors={errors} checklist />
+        <Submit intent="verify" label={m.manage_verify_submit()} />
+      </Form>
+    </>
   )
 }
 
@@ -197,43 +183,6 @@ function ReasonText({
   )
 }
 
-// PLAN §5.10: cite a standard
-export function RejectForm({
-  from,
-  errors,
-}: {
-  from: ReportStatus
-  errors: FieldError[]
-}) {
-  return (
-    <Form method="post" className="flex flex-col gap-6">
-      <input type="hidden" name="intent" value="reject" />
-      <input type="hidden" name="from" value={from} />
-      <Select
-        id={FIELD_IDS.reject_reason}
-        name="reason"
-        label={m.manage_reject_reason_label()}
-        hint={m.manage_reject_reason_hint()}
-        error={errorFor(errors, "reject_reason")}
-        defaultValue=""
-      >
-        <option value="">{m.location_choose()}</option>
-        {REJECT_REASONS.map((reason) => (
-          <option key={reason} value={reason}>
-            {rejectReasonText(reason)}
-          </option>
-        ))}
-      </Select>
-      <ReasonText
-        id={FIELD_IDS.reject_text}
-        errors={errors}
-        errorKey="reject_text"
-      />
-      <Submit intent="reject" label={m.manage_action_reject()} />
-    </Form>
-  )
-}
-
 export function UnverifiableForm({
   from,
   errors,
@@ -245,21 +194,6 @@ export function UnverifiableForm({
     <Form method="post" className="flex flex-col gap-6">
       <input type="hidden" name="intent" value="mark_unverifiable" />
       <input type="hidden" name="from" value={from} />
-      <Fieldset
-        id="unverifiable-reason"
-        legend={m.manage_unverifiable_reason_label()}
-        error={errorFor(errors, "unverifiable_reason")}
-      >
-        {UNVERIFIABLE_REASONS.map((reason) => (
-          <Radio
-            key={reason}
-            id={`unverifiable-${reason}`}
-            name="reason"
-            value={reason}
-            label={UNVERIFIABLE_TEXT[reason]()}
-          />
-        ))}
-      </Fieldset>
       <ReasonText
         id={FIELD_IDS.unverifiable_text}
         errors={errors}
@@ -273,134 +207,138 @@ export function UnverifiableForm({
   )
 }
 
-export function ForwardForm({
-  targets,
-  errors,
-}: {
-  targets: ForwardTarget[]
-  errors: FieldError[]
-}) {
-  if (targets.length === 0) {
-    return <p className="text-ink-muted">{m.manage_forward_none()}</p>
-  }
-  return (
-    <Form method="post" className="flex flex-col gap-6">
-      <input type="hidden" name="intent" value="forward" />
-      <Select
-        id={FIELD_IDS.forward_target}
-        name="targetOrgId"
-        label={m.manage_forward_label()}
-        hint={m.manage_forward_hint()}
-        error={errorFor(errors, "forward_target")}
-        defaultValue=""
-      >
-        <option value="">{m.location_choose()}</option>
-        {targets.map((target) => (
-          <option key={target.id} value={target.id}>
-            {target.name}
-          </option>
-        ))}
-      </Select>
-      <Submit intent="forward" label={m.manage_action_forward()} />
-    </Form>
-  )
-}
-
-// No JS: CSS shows branch
-export function MergeForm({
-  defaultTitle,
-  targets,
-  search,
-  errors,
-}: {
+type TargetProps = {
   defaultTitle: string
   targets: MergeTargetOption[]
   search: string
   errors: FieldError[]
-}) {
+  // New issue publishes at once
+  checklist?: boolean
+}
+
+/** Existing or new issue. */
+function IssueTarget({
+  defaultTitle,
+  targets,
+  search,
+  errors,
+  checklist = false,
+}: TargetProps) {
   const existing = search !== "" || Boolean(errorFor(errors, "merge_issue"))
   // Search stays open after misses
   const noTargets = targets.length === 0 && search === ""
   return (
+    <Fieldset id="merge-target" legend={m.manage_merge_target_legend()}>
+      <Radio
+        id="merge-target-existing"
+        name="target"
+        value="existing"
+        label={m.manage_merge_existing()}
+        hint={noTargets ? m.manage_merge_no_issues() : undefined}
+        defaultChecked={existing && !noTargets}
+        disabled={noTargets}
+      />
+      {noTargets ? null : (
+        <div className="mt-2 mb-4 ml-8 flex flex-col gap-6 group-has-[#merge-target-new:checked]:hidden">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <TextInput
+              id="merge-search-input"
+              name="cari"
+              type="search"
+              form="merge-search"
+              label={m.manage_merge_search_label()}
+              hint={m.manage_merge_search_hint()}
+              defaultValue={search}
+              className="flex-1"
+            />
+            <Button type="submit" form="merge-search" variant="secondary">
+              {m.manage_merge_search_submit()}
+            </Button>
+          </div>
+          {targets.length === 0 ? (
+            <p className="text-ink-muted">{m.manage_merge_no_match()}</p>
+          ) : (
+            <Select
+              id={FIELD_IDS.merge_issue}
+              name="issueId"
+              label={m.manage_merge_issue_label()}
+              error={errorFor(errors, "merge_issue")}
+              defaultValue=""
+            >
+              <option value="">{m.location_choose()}</option>
+              {targets.map((issue) => (
+                <option key={issue.id} value={issue.id}>
+                  {issue.sameRegency
+                    ? `${issue.code}, ${issue.title}, ${m.manage_merge_same_regency()}`
+                    : `${issue.code}, ${issue.title}`}
+                </option>
+              ))}
+            </Select>
+          )}
+        </div>
+      )}
+      <Radio
+        id="merge-target-new"
+        name="target"
+        value="new"
+        label={m.manage_merge_new()}
+        defaultChecked={!existing || noTargets}
+      />
+      <div className="mt-2 ml-8 flex flex-col gap-6 group-has-[#merge-target-existing:checked]:hidden">
+        <TextInput
+          id={FIELD_IDS.issue_title}
+          name="title"
+          label={m.manage_issue_title_label()}
+          hint={m.manage_issue_title_hint(ISSUE_TITLE_LENGTH)}
+          error={errorFor(errors, "issue_title")}
+          defaultValue={defaultTitle}
+        />
+        <Textarea
+          id={FIELD_IDS.issue_summary}
+          name="summary"
+          label={m.manage_issue_summary_label()}
+          hint={m.manage_issue_summary_hint(ISSUE_SUMMARY_LENGTH)}
+          error={errorFor(errors, "issue_summary")}
+        />
+        {checklist ? <Checklist errors={errors} /> : null}
+      </div>
+    </Fieldset>
+  )
+}
+
+function Checklist({ errors }: { errors: FieldError[] }) {
+  return (
+    <Fieldset
+      id="publish-checklist"
+      legend={m.manage_checklist_legend()}
+      hint={m.manage_checklist_hint()}
+      error={errorFor(errors, "checklist")}
+    >
+      {PUBLISH_CHECKLIST.map((item) => (
+        <Checkbox
+          key={item}
+          id={`checklist-${item}`}
+          name="checklist"
+          value={item}
+          label={CHECKLIST_TEXT[item]()}
+        />
+      ))}
+    </Fieldset>
+  )
+}
+
+// GET search, fields point here
+function SearchForm() {
+  return <Form id="merge-search" method="get" preventScrollReset />
+}
+
+export function MergeForm(props: Omit<TargetProps, "checklist">) {
+  return (
     <>
-      {/* GET search, fields point here */}
-      <Form id="merge-search" method="get" preventScrollReset />
+      <SearchForm />
       <Form method="post" className="group flex flex-col gap-6">
         <input type="hidden" name="intent" value="merge" />
-        <Fieldset id="merge-target" legend={m.manage_merge_target_legend()}>
-          <Radio
-            id="merge-target-new"
-            name="target"
-            value="new"
-            label={m.manage_merge_new()}
-            defaultChecked={!existing || noTargets}
-          />
-          <div className="mt-2 mb-4 ml-8 flex flex-col gap-6 group-has-[#merge-target-existing:checked]:hidden">
-            <TextInput
-              id={FIELD_IDS.issue_title}
-              name="title"
-              label={m.manage_issue_title_label()}
-              hint={m.manage_issue_title_hint(ISSUE_TITLE_LENGTH)}
-              error={errorFor(errors, "issue_title")}
-              defaultValue={defaultTitle}
-            />
-            <Textarea
-              id={FIELD_IDS.issue_summary}
-              name="summary"
-              label={m.manage_issue_summary_label()}
-              hint={m.manage_issue_summary_hint(ISSUE_SUMMARY_LENGTH)}
-              error={errorFor(errors, "issue_summary")}
-            />
-          </div>
-          <Radio
-            id="merge-target-existing"
-            name="target"
-            value="existing"
-            label={m.manage_merge_existing()}
-            hint={noTargets ? m.manage_merge_no_issues() : undefined}
-            defaultChecked={existing && !noTargets}
-            disabled={noTargets}
-          />
-          {noTargets ? null : (
-            <div className="mt-2 ml-8 flex flex-col gap-6 group-has-[#merge-target-new:checked]:hidden">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                <TextInput
-                  id="merge-search-input"
-                  name="cari"
-                  type="search"
-                  form="merge-search"
-                  label={m.manage_merge_search_label()}
-                  hint={m.manage_merge_search_hint()}
-                  defaultValue={search}
-                  className="flex-1"
-                />
-                <Button type="submit" form="merge-search" variant="secondary">
-                  {m.manage_merge_search_submit()}
-                </Button>
-              </div>
-              {targets.length === 0 ? (
-                <p className="text-ink-muted">{m.manage_merge_no_match()}</p>
-              ) : (
-                <Select
-                  id={FIELD_IDS.merge_issue}
-                  name="issueId"
-                  label={m.manage_merge_issue_label()}
-                  error={errorFor(errors, "merge_issue")}
-                  defaultValue=""
-                >
-                  <option value="">{m.location_choose()}</option>
-                  {targets.map((issue) => (
-                    <option key={issue.id} value={issue.id}>
-                      {issue.sameRegency
-                        ? `${issue.code} · ${issue.title} · ${m.manage_merge_same_regency()}`
-                        : `${issue.code} · ${issue.title}`}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </div>
-          )}
-        </Fieldset>
+        <IssueTarget {...props} />
         <Submit intent="merge" label={m.manage_merge_submit()} />
       </Form>
     </>
@@ -418,22 +356,7 @@ export function PublishForm({
     <Form method="post" className="flex flex-col gap-6">
       <input type="hidden" name="intent" value="publish" />
       <input type="hidden" name="issueId" value={issueId} />
-      <Fieldset
-        id="publish-checklist"
-        legend={m.manage_checklist_legend()}
-        hint={m.manage_checklist_hint()}
-        error={errorFor(errors, "checklist")}
-      >
-        {PUBLISH_CHECKLIST.map((item) => (
-          <Checkbox
-            key={item}
-            id={`checklist-${item}`}
-            name="checklist"
-            value={item}
-            label={CHECKLIST_TEXT[item]()}
-          />
-        ))}
-      </Fieldset>
+      <Checklist errors={errors} />
       <Submit intent="publish" label={m.manage_publish()} />
     </Form>
   )

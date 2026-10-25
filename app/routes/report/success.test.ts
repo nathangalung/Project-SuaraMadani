@@ -12,7 +12,6 @@ import {
   superuserPool,
   testUrl,
 } from "../../../db/testing.ts"
-import { SNAPSHOT_VERSION } from "../../../shared/dashboard.ts"
 import { sessionContext, tenantContext } from "../../context.ts"
 import { loader } from "./success"
 
@@ -72,23 +71,6 @@ describe("success loader", () => {
 
   test("says whether the visitor is signed in", async () => {
     expect((await loader(args("ITB", SENT))).signedIn).toBe(false)
-  })
-
-  test("usual check time from the snapshot", async () => {
-    // No snapshot yet, no promise
-    expect((await loader(args("ITB", SENT))).verifyHours).toBeNull()
-    await su.query(
-      `INSERT INTO dashboard_snapshots (org_id, data, computed_at)
-       VALUES ($1, $2, now())`,
-      [
-        orgs.ITB,
-        JSON.stringify({
-          v: SNAPSHOT_VERSION,
-          verifyTime: { n: 12, medianHours: 30, p90Hours: 70 },
-        }),
-      ],
-    )
-    expect((await loader(args("ITB", SENT))).verifyHours).toBe(30)
   })
 
   test("another campus code is not found", async () => {

@@ -1,23 +1,6 @@
-import {
-  complaintOutcomeText,
-  complaintReasonText,
-} from "../../app/features/moderation/complaint-labels.ts"
-import { decisionReasonText } from "../../app/features/moderation/reason-labels.ts"
 import { m } from "../../app/paraglide/messages.js"
-import {
-  COMPLAINT_SLA_DAYS,
-  type ComplaintDecision,
-  type ComplaintDecisionReason,
-  type ComplaintSubjectKind,
-} from "../../shared/complaints.ts"
 import { formatDate } from "../../shared/format.ts"
-import {
-  type DecisionReason,
-  isRejectReason,
-  standardAnchor,
-} from "../../shared/moderation.ts"
 import type {
-  ComplaintTemplate,
   DemandTemplate,
   NotificationTemplate,
 } from "../../shared/notifications.ts"
@@ -67,7 +50,7 @@ export type ReporterMail = {
   } | null
   trackUrl: string
   // Rejected or not verifiable
-  decision?: { reason: DecisionReason; text: string } | null
+  decision?: { text: string } | null
   // Copy at campus B
   forwarded?: { from: string; campus: string } | null
 }
@@ -158,7 +141,6 @@ const ISSUE_LEAD: Record<IssueAction, Text> = {
   escalate: m.mail_issue_escalate,
   record_response: m.mail_issue_record_response,
   mark_in_progress: m.mail_issue_mark_in_progress,
-  claim_resolved: m.mail_issue_claim_resolved,
   confirm_resolved: m.mail_issue_confirm_resolved,
   reopen: m.mail_issue_reopen,
   mark_not_competent: m.mail_issue_mark_not_competent,
@@ -190,14 +172,10 @@ export function renderReporterMail(mail: ReporterMail): RenderedMail {
     status === "forwarded" ? forwardedCopy(mail) : REPORT_COPY[status]
   const issueCode = mail.issue?.code ?? ""
   const { decision } = mail
-  const anchor =
-    decision && isRejectReason(decision.reason)
-      ? `#${standardAnchor(decision.reason)}`
-      : ""
   const paragraphs = [
     copy.body({
       issue: issueCode,
-      url: `${mail.site.origin}/pedoman${anchor}`,
+      url: `${mail.site.origin}/pedoman`,
     }),
   ]
   if (decision) paragraphs.push(m.mail_reason_note({ text: decision.text }))
@@ -213,9 +191,6 @@ export function renderReporterMail(mail: ReporterMail): RenderedMail {
   }
   if (mail.issue?.title)
     facts.push([m.mail_fact_issue_title(), mail.issue.title])
-  if (decision) {
-    facts.push([m.mail_fact_reason(), decisionReasonText(decision.reason)])
-  }
   const content: MailContent = {
     subject: copy.subject({ code: mail.report.code, issue: issueCode }),
     preheader: copy.heading(),
@@ -320,96 +295,6 @@ export function renderDemandMail(mail: DemandMail): RenderedMail {
     footer: footer(),
   }
   return renderMail(mail.site, content)
-}
-
-export type ComplaintMail = {
-  template: ComplaintTemplate
-  site: MailSite
-  complaint: {
-    code: string
-    subject: { kind: ComplaintSubjectKind; code: string }
-    url: string
-  }
-  decision: {
-    decision: ComplaintDecision
-    reason: ComplaintDecisionReason
-    text: string
-  } | null
-  // First decision only
-  appealUntil: Date | null
-}
-
-const COMPLAINT_COPY: Record<
-  ComplaintTemplate,
-  { subject: (p: { code: string }) => string; heading: Text }
-> = {
-  complaint_received: {
-    subject: m.mail_complaint_received_subject,
-    heading: m.mail_complaint_received_heading,
-  },
-  complaint_decided: {
-    subject: m.mail_complaint_decided_subject,
-    heading: m.mail_complaint_decided_heading,
-  },
-  complaint_appeal_decided: {
-    subject: m.mail_complaint_appeal_decided_subject,
-    heading: m.mail_complaint_appeal_decided_heading,
-  },
-}
-
-function complaintLead(mail: ComplaintMail): string {
-  const { kind, code } = mail.complaint.subject
-  const subject =
-    kind === "issue"
-      ? m.complaint_subject_issue({ code })
-      : m.complaint_subject_demand({ code })
-  if (mail.template === "complaint_received") {
-    return m.mail_complaint_received_body({ subject, days: COMPLAINT_SLA_DAYS })
-  }
-  return mail.template === "complaint_decided"
-    ? m.mail_complaint_decided_body({ subject })
-    : m.mail_complaint_appeal_decided_body({ subject })
-}
-
-export function renderComplaintMail(mail: ComplaintMail): RenderedMail {
-  const copy = COMPLAINT_COPY[mail.template]
-  const { decision } = mail
-  const lead = complaintLead(mail)
-  const paragraphs = [lead]
-  if (decision) paragraphs.push(m.mail_reason_note({ text: decision.text }))
-  if (mail.appealUntil) {
-    paragraphs.push(
-      m.mail_complaint_appeal_note({ date: formatDate(mail.appealUntil) }),
-    )
-  }
-  const facts: MailContent["facts"] = [
-    [m.mail_fact_complaint_code(), mail.complaint.code],
-    [
-      mail.complaint.subject.kind === "issue"
-        ? m.mail_fact_issue_code()
-        : m.mail_fact_demand_code(),
-      mail.complaint.subject.code,
-    ],
-  ]
-  if (decision) {
-    facts.push(
-      [
-        m.mail_fact_decision(),
-        complaintOutcomeText(decision.decision, mail.complaint.subject.kind),
-      ],
-      [m.mail_fact_reason(), complaintReasonText(decision.reason)],
-    )
-  }
-  return renderMail(mail.site, {
-    subject: copy.subject({ code: mail.complaint.code }),
-    preheader: lead,
-    heading: copy.heading(),
-    paragraphs,
-    facts,
-    action: { label: m.mail_complaint_action(), url: mail.complaint.url },
-    notes: [],
-    footer: footer(),
-  })
 }
 
 // Plain identity, no tenant needed

@@ -3,7 +3,7 @@ import { m } from "~/paraglide/messages.js"
 
 /** Tabs stay distinguishable. */
 export function siteTitle(title: string, siteName: string | undefined): string {
-  return siteName ? `${title} · ${m.og_site_name({ name: siteName })}` : title
+  return siteName ? `${title} - ${m.og_site_name({ name: siteName })}` : title
 }
 
 export function useSiteTitle(title: string): string {

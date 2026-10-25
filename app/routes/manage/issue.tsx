@@ -87,7 +87,6 @@ export default function ManageIssue({
       : null
   const errors = actionErrors?.errors ?? [...publishErrors, ...edit, ...legal]
   const unchanged = Boolean(actionData && "unchanged" in actionData)
-  const declined = issue.reports.filter((r) => !r.forwardConsent).length
   const conflict = Boolean(actionData && "conflict" in actionData)
   const title = m.manage_issue_page_title({ code: issue.code })
   const pageTitle = useSiteTitle(title)
@@ -105,7 +104,7 @@ export default function ManageIssue({
           : issue.takenDownAt
             ? m.manage_issue_taken_down()
             : m.manage_issue_unpublished()}
-        {" · "}
+        {", "}
         {m.issue_reports({ count: issue.reportCount })}
       </p>
       <h2 className="mt-8 font-bold text-2xl">{issue.title}</h2>
@@ -142,11 +141,6 @@ export default function ManageIssue({
             <p className="mt-1 mb-5 text-[0.95rem] text-ink-soft">
               {m.manage_actions_lead()}
             </p>
-            {declined > 0 ? (
-              <Note tone="info" className="mb-5">
-                {m.manage_issue_no_forward_consent({ count: declined })}
-              </Note>
-            ) : null}
             <IssueActions
               actions={actions}
               state={state}
@@ -228,10 +222,7 @@ export default function ManageIssue({
               <Link to={`/kelola/laporan/${report.code}`} className={LINK}>
                 {report.code}
               </Link>{" "}
-              · {report.title}
-              {report.forwardConsent
-                ? null
-                : ` · ${m.manage_issue_report_no_forward()}`}
+              {report.title}
             </li>
           ))}
         </ul>

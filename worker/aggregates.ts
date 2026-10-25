@@ -26,7 +26,13 @@ import {
 } from "../shared/dashboard.ts"
 import { jakartaIsoDate } from "../shared/format.ts"
 import { REJECT_REASONS, UNVERIFIABLE_REASONS } from "../shared/moderation.ts"
-import { GOVERNMENT_STATUSES, type GovernmentStatus } from "../shared/status.ts"
+import {
+  type AdvocacyStatus,
+  type GovernmentStatus,
+  PUBLIC_STAGES,
+  type PublicStage,
+  publicStage,
+} from "../shared/status.ts"
 
 // Starting Values: aggregate refresh
 const REFRESH_STATEMENT_TIMEOUT = "300s"
@@ -48,6 +54,7 @@ type VerifyRow = {
 }
 type IssueRow = {
   category_id: string
+  advocacy_status: AdvocacyStatus
   gov_status: GovernmentStatus
   province_code: string
   n: number
@@ -211,8 +218,8 @@ export function summarizeIssues(groups: IssueRow[]) {
     CATEGORY_IDS.map((id) => [id, 0]),
   ) as Record<CategoryId, number>
   const statuses = Object.fromEntries(
-    GOVERNMENT_STATUSES.map((id) => [id, 0]),
-  ) as Record<GovernmentStatus, number>
+    PUBLIC_STAGES.map((id) => [id, 0]),
+  ) as Record<PublicStage, number>
   const sums: Record<string, Record<string, number>> = {}
   for (const category of CATEGORY_FILTERS) {
     for (const status of STATUS_FILTERS) {
@@ -222,9 +229,14 @@ export function summarizeIssues(groups: IssueRow[]) {
   for (const group of groups) {
     const category = group.category_id as CategoryId
     if (category in categories) categories[category] += group.n
-    statuses[group.gov_status] += group.n
+    // Same stages as Jelajah
+    const stage = publicStage({
+      advocacy: group.advocacy_status,
+      government: group.gov_status,
+    })
+    statuses[stage] += group.n
     for (const c of ["all", category] as const) {
-      for (const s of ["all", group.gov_status] as const) {
+      for (const s of ["all", stage] as const) {
         const cell = sums[filterKey(c, s)]
         if (!cell) continue
         cell[group.province_code] =
@@ -245,24 +257,16 @@ export function summarizeIssues(groups: IssueRow[]) {
       Object.values(cell).reduce((a, n) => a + n, 0),
     )
   }
-  // Reopen only follows a claim
-  const pending = statuses.claimed_resolved
-  const confirmed = statuses.confirmed_resolved
-  const reopened = statuses.reopened
+  // Done over published, one step
+  const done = statuses.done
+  const published = Object.values(statuses).reduce((a, n) => a + n, 0)
   // Public on /isu: exact
   return {
     categories,
     statuses,
     verifiedProvinces,
     verifiedProvinceTotals,
-    resolution: {
-      pending,
-      confirmed,
-      reopened,
-      claimTotal: pending + confirmed + reopened,
-      checked: confirmed + reopened,
-      confirmedShare: publicShare(confirmed, confirmed + reopened),
-    },
+    resolution: { done, published, share: publicShare(done, published) },
   }
 }
 
@@ -306,10 +310,11 @@ async function computeSnapshot(
   )
   const groups = await rows<IssueRow>(
     tx,
-    sql`SELECT category_id, gov_status, province_code, count(*)::int AS n,
+    sql`SELECT category_id, advocacy_status, gov_status, province_code,
+      count(*)::int AS n,
       coalesce(sum(verified_report_count), 0)::int AS verified
     FROM issues WHERE org_id = ${orgId} AND published_at IS NOT NULL
-    GROUP BY 1, 2, 3`,
+    GROUP BY 1, 2, 3, 4`,
   )
   const received = await rows<MonthRow>(
     tx,

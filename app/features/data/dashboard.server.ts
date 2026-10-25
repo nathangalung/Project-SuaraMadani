@@ -13,23 +13,14 @@ import {
   REFRESH_MINUTES,
   SNAPSHOT_VERSION,
   STALE_AFTER_MINUTES,
+  STATUS_FILTERS,
   type StatusFilter,
 } from "../../../shared/dashboard.ts"
-import {
-  FULFILMENT_STATUSES,
-  type FulfilmentStatus,
-  type GovernmentStatus,
-} from "../../../shared/status.ts"
-import type {
-  DemandOverview,
-  NationalDemand,
-} from "../demands/demands.server.ts"
 import { MAP_HEIGHT, MAP_WIDTH, PROVINCE_SHAPES } from "./region-map.server.ts"
 
 export type DataQuery = {
   kategori?: string
   status?: string
-  lapisan?: string
   tampilan?: string
   peringkat?: string
 }
@@ -39,14 +30,6 @@ export type RegionRow = {
   name: string
   count: Count | undefined
   byCategory: Record<CategoryId, Count | undefined>
-}
-
-// Exact public counts
-type DemandRegionRow = {
-  code: string
-  name: string
-  count: number
-  byStatus: Record<FulfilmentStatus, number>
 }
 
 type MapBase = {
@@ -59,23 +42,12 @@ type MapBase = {
   height: number
 }
 
-export type MapView = MapBase &
-  (
-    | {
-        layer: "laporan"
-        total: Count | undefined
-        // Geometry order, paths in provinces.svg
-        regions: RegionRow[]
-      }
-    | {
-        layer: "tuntutan"
-        total: number
-        regions: DemandRegionRow[]
-        // Beside the map
-        national: NationalDemand[]
-        nationalTotal: number
-      }
-  )
+// Reports only, team 25 Oct
+export type MapView = MapBase & {
+  total: Count | undefined
+  // Geometry order, paths in provinces.svg
+  regions: RegionRow[]
+}
 
 export type Dashboard =
   | { kind: "empty" }
@@ -88,13 +60,15 @@ export type Dashboard =
         DashboardSnapshot,
         "verifiedProvinces" | "verifiedProvinceTotals"
       >
+      // Verified reports per stage
+      stageReports: Record<StatusFilter, Count>
       map: MapView
     }
 
 function mapBase(query: DataQuery): MapBase {
   return {
     category: (query.kategori ?? "all") as CategoryFilter,
-    status: (query.status ?? "all") as GovernmentStatus | "all",
+    status: (query.status ?? "all") as StatusFilter,
     view: query.tampilan === "tabel" ? "tabel" : "peta",
     ranking: query.peringkat === "terlama" ? "terlama" : "laporan",
     width: MAP_WIDTH,
@@ -130,34 +104,8 @@ function reportMap(snapshot: DashboardSnapshot, base: MapBase): MapView {
   }))
   return {
     ...base,
-    layer: "laporan",
     total: snapshot.verifiedProvinceTotals[key],
     regions,
-  }
-}
-
-/** Live tuntutan layer, exact. */
-function demandMap(overview: DemandOverview, base: MapBase): MapView {
-  const regions = PROVINCE_SHAPES.map((shape) => {
-    const byStatus =
-      overview.provinces[shape.code] ??
-      (Object.fromEntries(
-        FULFILMENT_STATUSES.map((status) => [status, 0]),
-      ) as Record<FulfilmentStatus, number>)
-    return {
-      code: shape.code,
-      name: shape.name,
-      count: Object.values(byStatus).reduce((sum, n) => sum + n, 0),
-      byStatus,
-    }
-  })
-  return {
-    ...base,
-    layer: "tuntutan",
-    total: overview.counts.regional,
-    regions,
-    national: overview.national,
-    nationalTotal: overview.counts.national,
   }
 }
 
@@ -165,8 +113,6 @@ function demandMap(overview: DemandOverview, base: MapBase): MapView {
 export async function readDashboard(
   orgId: string,
   query: DataQuery,
-  // Tuntutan layer needs it
-  demands?: DemandOverview,
   now = new Date(),
 ): Promise<Dashboard> {
   const [row] = await withTenant(orgId, (tx) =>
@@ -179,28 +125,18 @@ export async function readDashboard(
     ...summary
   } = row.data
   const computed = row.computedAt.getTime()
-  const base = mapBase(query)
   return {
     kind: "ready",
     computedAt: row.computedAt.toISOString(),
     nextAt: new Date(computed + REFRESH_MINUTES * 60_000).toISOString(),
     stale: now.getTime() - computed > STALE_AFTER_MINUTES * 60_000,
     summary,
-    map:
-      query.lapisan === "tuntutan" && demands
-        ? demandMap(demands, base)
-        : reportMap(row.data, base),
+    stageReports: Object.fromEntries(
+      STATUS_FILTERS.map((s) => [
+        s,
+        row.data.verifiedProvinceTotals[filterKey("all", s)] ?? 0,
+      ]),
+    ) as Record<StatusFilter, Count>,
+    map: reportMap(row.data, mapBase(query)),
   }
-}
-
-/** Median check hours or null. */
-export async function readVerifyMedian(orgId: string): Promise<number | null> {
-  const [row] = await withTenant(orgId, (tx) =>
-    tx
-      .select({ data: dashboardSnapshots.data })
-      .from(dashboardSnapshots)
-      .limit(1),
-  )
-  if (!row || row.data.v !== SNAPSHOT_VERSION) return null
-  return row.data.verifyTime?.medianHours ?? null
 }

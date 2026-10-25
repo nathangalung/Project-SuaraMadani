@@ -18,6 +18,7 @@ import {
   superuserPool,
   testUrl,
 } from "../../../db/testing.ts"
+import { DEMAND_PAGE_SIZE } from "../../../shared/demands.ts"
 import { jakartaIsoDate } from "../../../shared/format.ts"
 import {
   demandOverview,
@@ -56,6 +57,7 @@ const REGIONAL: DemandFields = {
   summary: "Waktu pemulihan suplai air dan kewajiban tangki air bantuan.",
   target: "Pemerintah Kota Bandung",
   raisedOn: "2026-07-30",
+  briefUrl: null,
 }
 
 const NATIONAL: DemandFields = {
@@ -176,8 +178,35 @@ describe("listPublishedDemands", () => {
     expect(await listPublishedDemands(itb.id, { q: "ai" })).toEqual({
       kind: "short_query",
     })
-    expect(await listPublishedDemands(itb.id, { kursor: "x" })).toEqual({
-      kind: "bad_cursor",
+  })
+
+  test("numbered pages, counted under the filters", async () => {
+    const codes: string[] = []
+    for (let i = 0; i <= DEMAND_PAGE_SIZE; i++) codes.push(await make(NATIONAL))
+    await make(REGIONAL)
+    const page1 = await listPublishedDemands(itb.id, { lingkup: "nasional" })
+    if (page1.kind !== "results") throw new Error(page1.kind)
+    expect(page1.demands).toHaveLength(DEMAND_PAGE_SIZE)
+    const total = DEMAND_PAGE_SIZE + 1
+    expect(page1).toMatchObject({ page: 1, pageCount: 2, total })
+    const page2 = await listPublishedDemands(itb.id, {
+      lingkup: "nasional",
+      halaman: "2",
+    })
+    if (page2.kind !== "results") throw new Error(page2.kind)
+    expect(page2.demands.map((demand) => demand.code)).toEqual(
+      codes.slice(0, 1),
+    )
+    const daerah = await listPublishedDemands(itb.id, {
+      lingkup: "daerah",
+      halaman: "2",
+    })
+    expect(daerah).toEqual({
+      kind: "results",
+      demands: [],
+      page: 2,
+      pageCount: 1,
+      total: 1,
     })
   })
 

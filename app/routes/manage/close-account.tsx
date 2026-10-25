@@ -55,7 +55,7 @@ export default function CloseAccount({
   const pending = useSubmitting()
   if (done) {
     return (
-      <div className="max-w-3xl">
+      <div>
         <title>{pageTitle}</title>
         <h1 className="font-bold font-heading text-3xl [font-synthesis-weight:none]">
           {title}
@@ -73,7 +73,7 @@ export default function CloseAccount({
                     {issue}
                   </Link>
                   {done.unpublished.includes(issue)
-                    ? ` · ${m.manage_close_done_unpublished()}`
+                    ? `, ${m.manage_close_done_unpublished()}`
                     : null}
                 </li>
               ))}
@@ -92,7 +92,7 @@ export default function CloseAccount({
   const error = (key: CloseErrorKey) =>
     errors.find((e) => e.fieldId === FIELD[key])?.message
   return (
-    <div className="max-w-3xl">
+    <div>
       <title>{errorTitle(pageTitle, errors.length > 0)}</title>
       <ErrorSummary errors={errors} attempt={actionData} />
       <h1 className="font-bold font-heading text-3xl [font-synthesis-weight:none]">

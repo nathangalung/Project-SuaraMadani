@@ -18,10 +18,7 @@ export type TenantOptions = {
 }
 
 // Random public codes retry
-const CODE_CONSTRAINTS = new Set([
-  "reports_org_id_public_code_key",
-  "content_complaints_public_code_key",
-])
+const CODE_CONSTRAINTS = new Set(["reports_org_id_public_code_key"])
 const MAX_CODE_ATTEMPTS = 3
 const MAX_DEADLOCK_RETRIES = 1
 // Caddy minus transaction minus margin

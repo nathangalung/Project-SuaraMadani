@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  parseBriefUrl,
   parseDemandFields,
   parseItemLines,
   parseItemUpdate,
@@ -25,7 +26,48 @@ const VALID = {
   raisedOn: "2026-09-01",
 }
 
+describe("parseBriefUrl", () => {
+  test("empty is null, a web link is kept", () => {
+    expect(parseBriefUrl("")).toBeNull()
+    expect(parseBriefUrl("   ")).toBeNull()
+    expect(parseBriefUrl(" https://docs.google.com/document/d/abc/view ")).toBe(
+      "https://docs.google.com/document/d/abc/view",
+    )
+    expect(parseBriefUrl("http://contoh.id/brief")).toBe(
+      "http://contoh.id/brief",
+    )
+  })
+
+  test("other schemes, junk and long links fail", () => {
+    for (const bad of [
+      "javascript:alert(1)",
+      "ftp://contoh.id/brief.pdf",
+      "docs.google.com/document/d/abc",
+      "https://user:pass@contoh.id/brief",
+      `https://contoh.id/${"a".repeat(490)}`,
+    ]) {
+      expect(parseBriefUrl(bad)).toBe(false)
+    }
+    expect(parseBriefUrl(`https://contoh.id/${"a".repeat(470)}`)).toBeString()
+  })
+})
+
 describe("parseDemandFields", () => {
+  test("the brief link is optional and checked", () => {
+    expect(
+      parseDemandFields(
+        form({ ...VALID, briefUrl: "https://docs.google.com/d/x" }),
+        TODAY,
+      ),
+    ).toMatchObject({
+      ok: true,
+      fields: { briefUrl: "https://docs.google.com/d/x" },
+    })
+    expect(
+      parseDemandFields(form({ ...VALID, briefUrl: "bukan tautan" }), TODAY),
+    ).toEqual({ ok: false, errors: ["brief_url"] })
+  })
+
   test("a category from the list is required", () => {
     for (const category of ["", "olahraga", "bansos"]) {
       expect(
@@ -37,7 +79,7 @@ describe("parseDemandFields", () => {
   test("a regional demand keeps its region", () => {
     expect(parseDemandFields(form(VALID), TODAY)).toEqual({
       ok: true,
-      fields: { ...VALID, scope: "regional" },
+      fields: { ...VALID, scope: "regional", briefUrl: null },
     })
   })
 

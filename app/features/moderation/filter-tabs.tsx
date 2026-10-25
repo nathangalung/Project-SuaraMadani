@@ -16,7 +16,7 @@ export function FilterTabs({
   return (
     <nav
       aria-label={label}
-      className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-full bg-surface-raised p-1"
+      className="flex w-full gap-1 overflow-x-auto rounded-full bg-surface-raised p-1"
     >
       {tabs.map((tab) => {
         const active = tab.key === current
@@ -26,7 +26,7 @@ export function FilterTabs({
             to={tab.to}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "whitespace-nowrap rounded-full px-4 py-2 font-semibold transition-colors duration-(--dur-hover) motion-reduce:transition-none",
+              "flex-1 whitespace-nowrap rounded-full px-4 py-2 text-center font-semibold transition-colors duration-(--dur-hover) motion-reduce:transition-none",
               active
                 ? "bg-brand text-on-accent"
                 : "text-ink hover:bg-brand-soft",

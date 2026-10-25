@@ -4,9 +4,8 @@ import { jakartaIsoDate } from "../../../shared/format.ts"
 import {
   CLOSE_ACCOUNT_REASONS,
   MODERATION_LENGTHS,
-  REJECT_REASONS,
-  UNVERIFIABLE_REASONS,
   VERIFY_METHODS,
+  type VerifyMethod,
 } from "../../../shared/moderation.ts"
 import {
   type IssueAction,
@@ -14,7 +13,6 @@ import {
   type ReportStatus,
 } from "../../../shared/status.ts"
 import { purgeIssuePages, runPublish } from "../issues/publish.server.ts"
-import { forwardReport } from "../report/forward.server.ts"
 import { requireAdmin } from "./access.server.ts"
 import { closeAccount } from "./close-account.server.ts"
 import {
@@ -45,6 +43,7 @@ import { type MergeTarget, runMerge } from "./merge.server.ts"
 import { getManagedIssue, getReviewReport } from "./queue.server.ts"
 import { runIssueAction } from "./referrals.server.ts"
 import { type ReviewDecision, reviewReport } from "./verify.server.ts"
+import { verifyIntoIssue } from "./verify-issue.server.ts"
 
 export type ReviewActionData =
   | { conflict: true }
@@ -61,69 +60,73 @@ export type IssueActionData =
   | { errors: IssueErrorKey[]; intent: IssueAction }
 
 type ParsedReview =
-  | (ReviewDecision & { from: ReportStatus })
+  | (Exclude<ReviewDecision, { action: "verify" }> & { from: ReportStatus })
+  | {
+      action: "verify"
+      from: ReportStatus
+      method: VerifyMethod
+      target: MergeTarget
+    }
   | { action: "merge"; target: MergeTarget }
-  | { action: "forward"; targetOrgId: string }
   | { errors: ReviewErrorKey[]; intent: string }
 
 const L = MODERATION_LENGTHS
 
 function parseDecision(
   form: FormData,
-  intent: "reject" | "mark_unverifiable",
+  intent: "mark_unverifiable",
   from: ReportStatus,
 ): ParsedReview {
+  // Free text only, no codes
   const reasonText = longText(form, "reasonText")
-  const textOk = within(reasonText, L.reasonText)
-  if (intent === "reject") {
-    const reason = oneOf(REJECT_REASONS, text(form, "reason"))
-    const errors: ReviewErrorKey[] = []
-    if (!reason) errors.push("reject_reason")
-    if (!textOk) errors.push("reject_text")
-    return reason && textOk
-      ? { action: intent, from, reason, reasonText }
-      : { errors, intent }
-  }
-  const reason = oneOf(UNVERIFIABLE_REASONS, text(form, "reason"))
-  const errors: ReviewErrorKey[] = []
-  if (!reason) errors.push("unverifiable_reason")
-  if (!textOk) errors.push("unverifiable_text")
-  return reason && textOk
-    ? { action: intent, from, reason, reasonText }
-    : { errors, intent }
+  return within(reasonText, L.reasonText)
+    ? { action: intent, from, reasonText }
+    : { errors: ["unverifiable_text"], intent }
 }
 
 /** Null means a malformed request. */
 export function parseReviewForm(form: FormData): ParsedReview | null {
   const intent = text(form, "intent")
-  if (intent === "forward") {
-    const targetOrgId = text(form, "targetOrgId")
-    return UUID.test(targetOrgId)
-      ? { action: intent, targetOrgId }
-      : { errors: ["forward_target"], intent }
-  }
-  if (
-    intent === "start_review" ||
-    intent === "verify" ||
-    intent === "reject" ||
-    intent === "mark_unverifiable"
-  ) {
+  if (intent === "verify" || intent === "mark_unverifiable") {
     const from = oneOf(REPORT_STATUSES, text(form, "from"))
     if (!from) return null
-    if (intent === "start_review") return { action: intent, from }
     if (intent !== "verify") return parseDecision(form, intent, from)
+    // Verify lands in an issue
     const method = oneOf(VERIFY_METHODS, text(form, "method"))
-    return method
-      ? { action: intent, from, method }
-      : { errors: ["verify_method"], intent }
+    const target = parseTarget(form)
+    if (!target) return null
+    const errors: ReviewErrorKey[] = method ? [] : ["verify_method"]
+    if ("errors" in target) errors.push(...target.errors)
+    const newIssue = "kind" in target && target.kind === "new"
+    if (newIssue && !checklistDone(form)) errors.push("checklist")
+    if (errors.length > 0 || !method || "errors" in target) {
+      return { errors, intent }
+    }
+    return { action: intent, from, method, target }
   }
   if (intent !== "merge") return null
+  const target = parseTarget(form)
+  if (!target) return null
+  return "errors" in target
+    ? { errors: target.errors, intent }
+    : { action: intent, target }
+}
+
+function checklistDone(form: FormData): boolean {
+  const checked = new Set(form.getAll("checklist"))
+  return PUBLISH_CHECKLIST.every((item) => checked.has(item))
+}
+
+/** New issue or existing one. */
+function parseTarget(
+  form: FormData,
+): MergeTarget | { errors: ReviewErrorKey[] } | null {
   const target = text(form, "target")
   if (target === "existing") {
     const issueId = text(form, "issueId")
     return UUID.test(issueId)
-      ? { action: intent, target: { kind: "existing", issueId } }
-      : { errors: ["merge_issue"], intent }
+      ? { kind: "existing", issueId }
+      : { errors: ["merge_issue"] }
   }
   if (target !== "new") return null
   const title = text(form, "title")
@@ -131,8 +134,7 @@ export function parseReviewForm(form: FormData): ParsedReview | null {
   const errors: ReviewErrorKey[] = []
   if (!within(title, ISSUE_TITLE_LENGTH)) errors.push("issue_title")
   if (!within(summary, ISSUE_SUMMARY_LENGTH)) errors.push("issue_summary")
-  if (errors.length > 0) return { errors, intent }
-  return { action: intent, target: { kind: "new", title, summary } }
+  return errors.length > 0 ? { errors } : { kind: "new", title, summary }
 }
 
 export function parsePublishForm(
@@ -140,10 +142,7 @@ export function parsePublishForm(
 ): { issueId: string } | { errors: ["checklist"] } | null {
   const issueId = text(form, "issueId")
   if (!UUID.test(issueId)) return null
-  const checked = new Set(form.getAll("checklist"))
-  return PUBLISH_CHECKLIST.every((item) => checked.has(item))
-    ? { issueId }
-    : { errors: ["checklist"] }
+  return checklistDone(form) ? { issueId } : { errors: ["checklist"] }
 }
 
 type Args = {
@@ -188,6 +187,32 @@ export async function reportPageAction({ request, context, params }: Args) {
   }
   const actorId = session.user.id
 
+  if (parsed.action === "verify") {
+    const result = await verifyIntoIssue(tenant, role, {
+      reportId: report.id,
+      from: parsed.from,
+      method: parsed.method,
+      target: parsed.target,
+      actorId,
+    })
+    if (!result.ok) {
+      if (result.reason === "not_found") {
+        return data<ReviewActionData>(
+          { errors: ["merge_issue"], intent: "verify" },
+          { status: 400 },
+        )
+      }
+      if (result.reason === "no_contact_consent") {
+        return data<ReviewActionData>(
+          { errors: ["verify_contact"], intent: "verify" },
+          { status: 400 },
+        )
+      }
+      return conflict()
+    }
+    throw redirect(`/kelola/isu/${result.code}`, 303)
+  }
+
   if (parsed.action === "merge") {
     const merged = await runMerge(tenant.id, {
       reportIds: [report.id],
@@ -206,25 +231,6 @@ export async function reportPageAction({ request, context, params }: Args) {
     }
     if (merged.published) await purgeIssuePages(tenant.host, merged)
     throw redirect(`/kelola/isu/${merged.code}`, 303)
-  }
-
-  if (parsed.action === "forward") {
-    const forwarded = await forwardReport({
-      source: { id: tenant.id, campusCode: tenant.campusCode },
-      reportId: report.id,
-      targetOrgId: parsed.targetOrgId,
-      actorId,
-    })
-    if (!forwarded.ok) {
-      return forwarded.reason === "changed" ||
-        forwarded.reason === "not_allowed"
-        ? conflict()
-        : data<ReviewActionData>(
-            { errors: ["forward_target"], intent: "forward" },
-            { status: 400 },
-          )
-    }
-    throw redirect(`/kelola/laporan/${report.code}`, 303)
   }
 
   const result = await withTenant(

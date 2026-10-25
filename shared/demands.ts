@@ -43,13 +43,15 @@ export const DEMAND_LENGTHS = {
 // Starting Values: tuntutan limits
 export const MAX_DEMAND_ITEMS = 12
 export const MAX_DEMAND_ISSUES = 10
+// Brief link, Docs or Drive
+export const BRIEF_URL_MAX = 500
 export const BRIEF_MAX_BYTES = 10 * 1024 * 1024
 
 /** Checked in the browser too. */
 export function briefTooLarge(file: { size: number } | undefined): boolean {
   return file !== undefined && file.size > BRIEF_MAX_BYTES
 }
-export const DEMAND_PAGE_SIZE = 20
+export const DEMAND_PAGE_SIZE = 15
 
 // PLAN §5.4 style: TUN-ITB-26-0007
 const DEMAND_CODE = /^TUN-[A-Z][A-Z0-9]{1,9}-\d{2}-\d{4,6}$/
@@ -101,13 +103,12 @@ export function isDemandCategory(value: string): value is DemandCategory {
 }
 
 // Starting Values: citizen ranking
-export const RANKING_SIZE = 5
 export const RANKING_MIN_RANKERS = 10
 export const RANKING_ACCOUNT_DAYS = 7
 
-/** Borda: first place most. */
-export function rankingPoints(position: number): number {
-  return RANKING_SIZE + 1 - position
+/** Borda over the voter's list. */
+export function rankingPoints(position: number, listLength: number): number {
+  return listLength + 1 - position
 }
 
 export type RankRow = {

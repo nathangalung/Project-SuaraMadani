@@ -12,7 +12,6 @@ import {
   sql,
 } from "drizzle-orm"
 import { sendJob, sendJobs } from "../../../db/jobs.server.ts"
-import { notifyDemandFollowers } from "../../../db/notifications.server.ts"
 import { auditLog } from "../../../db/schema/audit.ts"
 import {
   demandIssues,
@@ -67,6 +66,8 @@ export type DemandFields = {
   summary: string
   target: string
   raisedOn: string
+  // External brief, optional
+  briefUrl: string | null
 }
 
 type DemandFailure =
@@ -111,7 +112,7 @@ type Locked = {
   version: number
   // Hidden ones keep it
   publishedAt: Date | null
-  // Set while complaint hides
+  // Legacy complaint hide, still honoured
   hiddenAt: Date | null
   fields: DemandFields
 }
@@ -128,6 +129,7 @@ const FIELD_COLUMNS = {
   summary: "summary",
   target: "target",
   raisedOn: "raised_on",
+  briefUrl: "brief_url",
 } as const satisfies Record<keyof DemandFields, string>
 
 // Free text hashed, never stored
@@ -151,6 +153,7 @@ async function lockDemand(tx: Tx, code: string): Promise<Locked | null> {
       summary: demands.summary,
       target: demands.target,
       raisedOn: demands.raisedOn,
+      briefUrl: demands.briefUrl,
     })
     .from(demands)
     .where(eq(demands.publicCode, code))
@@ -254,23 +257,6 @@ async function audit(
 }
 
 type Notify = { notify?: boolean }
-
-async function tellFollowers(
-  tx: Tx,
-  orgId: string,
-  demand: { id: string; public: boolean },
-  eventId: string,
-  template: Parameters<typeof notifyDemandFollowers>[1]["template"],
-  input: Notify,
-): Promise<void> {
-  if (!demand.public || input.notify === false) return
-  await notifyDemandFollowers(tx, {
-    orgId,
-    demandId: demand.id,
-    eventId,
-    template,
-  })
-}
 
 export type BriefDeps = { filesDir?: string }
 
@@ -502,7 +488,7 @@ export function changeDemandState(
         if ((items?.n ?? 0) === 0) return fail("no_items")
         if (!demand.fields.category) return fail("no_category")
       }
-      const { next, followUps } = transitionDemand(demand.state, input.action)
+      const { next } = transitionDemand(demand.state, input.action)
       await tx
         .update(demands)
         .set({
@@ -521,23 +507,13 @@ export function changeDemandState(
         note: input.note,
         createdBy: input.actorId,
       })
-      const eventId = await audit(tx, tenant.id, {
+      await audit(tx, tenant.id, {
         actorId: input.actorId,
         action: `demand.${input.action}`,
         entityId: demand.id,
         changedColumns: ["state", "version"],
       })
       const done = await touch(tx, demand)
-      for (const followUp of followUps) {
-        await tellFollowers(
-          tx,
-          tenant.id,
-          { id: demand.id, public: done.public },
-          eventId,
-          followUp.template,
-          input,
-        )
-      }
       return done
     },
     deps,
@@ -593,7 +569,12 @@ export async function deleteDraft(
 
 export function addItem(
   tenant: DemandTenant,
-  input: { code: string; body: string; actorId: string },
+  input: {
+    code: string
+    body: string
+    briefUrl?: string | null
+    actorId: string
+  },
   deps: PurgeDeps = {},
 ): Promise<DemandResult> {
   return run(
@@ -615,6 +596,7 @@ export function addItem(
         demandId: demand.id,
         position: (count?.last ?? -1) + 1,
         body: input.body,
+        briefUrl: input.briefUrl ?? null,
       })
       await audit(tx, tenant.id, {
         actorId: input.actorId,
@@ -632,6 +614,7 @@ type ItemRow = {
   position: number
   body: string
   briefSummary: string | null
+  briefUrl: string | null
   version: number
   state: DemandItemState
 }
@@ -643,6 +626,7 @@ async function readItems(tx: Tx, demandId: string): Promise<ItemRow[]> {
       position: demandItems.position,
       body: demandItems.body,
       briefSummary: demandItems.briefSummary,
+      briefUrl: demandItems.briefUrl,
       version: demandItems.version,
       response: demandItems.responseStatus,
       fulfilment: demandItems.fulfilmentStatus,
@@ -656,7 +640,7 @@ async function readItems(tx: Tx, demandId: string): Promise<ItemRow[]> {
   }))
 }
 
-/** Text and brief summary. */
+/** Text, brief summary and link. */
 export function editItem(
   tenant: DemandTenant,
   input: {
@@ -666,6 +650,7 @@ export function editItem(
     // Left out: kept as is
     body?: string
     briefSummary?: string | null
+    briefUrl?: string | null
     actorId: string
   },
   deps: PurgeDeps = {},
@@ -685,9 +670,12 @@ export function editItem(
         input.briefSummary === undefined
           ? item.briefSummary
           : input.briefSummary
+      const briefUrl =
+        input.briefUrl === undefined ? item.briefUrl : input.briefUrl
       const changed = [
         item.body !== body ? "body" : null,
         item.briefSummary !== briefSummary ? "brief_summary" : null,
+        item.briefUrl !== briefUrl ? "brief_url" : null,
       ].filter((column) => column !== null)
       if (changed.length === 0) return fail("unchanged")
       await tx
@@ -695,6 +683,7 @@ export function editItem(
         .set({
           body,
           briefSummary,
+          briefUrl,
           version: sql`${demandItems.version} + 1`,
           updatedAt: sql`now()`,
         })
@@ -886,7 +875,7 @@ export function recordItemUpdate(
         sourceUrl: input.sourceUrl,
         createdBy: input.actorId,
       })
-      const eventId = await audit(tx, tenant.id, {
+      await audit(tx, tenant.id, {
         actorId: input.actorId,
         action: next ? "demand.item_status" : "demand.item_note",
         entityId: demand.id,
@@ -894,14 +883,6 @@ export function recordItemUpdate(
         reasonCode: next ? `${next.response}/${next.fulfilment}` : null,
       })
       const done = await touch(tx, demand)
-      await tellFollowers(
-        tx,
-        tenant.id,
-        { id: demand.id, public: done.public },
-        eventId,
-        "demand_update",
-        input,
-      )
       return done
     },
     deps,
@@ -1132,20 +1113,12 @@ export function publishBrief(
         occurredOn: jakartaIsoDate(input.now ?? new Date()),
         createdBy: input.actorId,
       })
-      const eventId = await audit(tx, tenant.id, {
+      await audit(tx, tenant.id, {
         actorId: input.actorId,
         action: "demand.brief_publish",
         entityId: demand.id,
       })
       const done = await touch(tx, demand)
-      await tellFollowers(
-        tx,
-        tenant.id,
-        { id: demand.id, public: done.public },
-        eventId,
-        "demand_update",
-        input,
-      )
       return { ...done, removedBriefs: replaced.map((row) => row.id) }
     },
     deps,
@@ -1321,6 +1294,7 @@ export function getManagedDemand(
           summary: demands.summary,
           target: demands.target,
           raisedOn: demands.raisedOn,
+          briefUrl: demands.briefUrl,
           publishedAt: demands.publishedAt,
           closedAt: demands.closedAt,
           hiddenAt: demands.hiddenAt,

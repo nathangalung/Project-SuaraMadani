@@ -145,22 +145,19 @@ describe("runPublish", () => {
     expect(audit.rows).toHaveLength(1)
   })
 
-  test("publication fans out to followers through one job", async () => {
+  test("publication queues no follower email", async () => {
     const issue = await seedIssue()
     await runPublish(
       { id: orgA, host: "itb.localhost" },
       { issueId: issue.issueId, actorId: moderator },
       { purge: recordingPurge([], issue.issueId) },
     )
-    const { rows } = await su.query<{ template: string; audited: boolean }>(
-      `SELECT j.data->>'template' AS template,
-         EXISTS (SELECT 1 FROM audit_log a
-           WHERE a.id::text = j.data->>'eventId' AND a.action = 'issue.publish') AS audited
-       FROM pgboss.job j
-       WHERE j.name = 'issue-notify' AND j.data->>'issueId' = $1`,
+    // Followers check /lacak now
+    const { rows } = await su.query(
+      "SELECT 1 FROM pgboss.job WHERE name = 'issue-notify' AND data->>'issueId' = $1",
       [issue.issueId],
     )
-    expect(rows).toEqual([{ template: "issue_published", audited: true }])
+    expect(rows).toEqual([])
   })
 
   test("a second publish changes nothing", async () => {

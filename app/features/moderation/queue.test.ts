@@ -70,7 +70,8 @@ afterAll(async () => {
 describe("listQueue", () => {
   test("lists open reports of this tenant, oldest first", async () => {
     const first = await seedReport("submitted")
-    const second = await seedReport("verified")
+    const second = await seedReport("unverifiable")
+    await seedReport("verified")
     await seedReport("rejected")
     await seedReport("submitted", orgB)
     const rows = await listQueue(orgA, "admin")
@@ -137,17 +138,23 @@ describe("getReviewReport", () => {
     const found = await getReviewReport(orgA, "admin", report.code)
     expect(found?.issue?.code).toBe(merged.code)
     const near = { regencyCode: "32.73", title: "Sekolah rusak di Dago" }
+    // Drafts are never targets
+    expect(await listMergeTargets(orgA, "admin", near)).toEqual([])
+    await su.query(
+      "UPDATE issues SET published_at = now() WHERE public_code = $1",
+      [merged.code],
+    )
     const targets = await listMergeTargets(orgA, "admin", near)
     expect(targets.map((t) => t.code)).toEqual([merged.code])
     expect(await listMergeTargets(orgB, "admin", near)).toEqual([])
     // Removed issues stay down
     await su.query(
-      "UPDATE issues SET taken_down_at = now(), takedown_reason = 'standard_8' WHERE public_code = $1",
+      "UPDATE issues SET taken_down_at = now(), takedown_reason = 'standard_8', published_at = NULL WHERE public_code = $1",
       [merged.code],
     )
     expect(await listMergeTargets(orgA, "admin", near)).toEqual([])
     await su.query(
-      "UPDATE issues SET taken_down_at = NULL, takedown_reason = NULL WHERE public_code = $1",
+      "UPDATE issues SET taken_down_at = NULL, takedown_reason = NULL, published_at = now() WHERE public_code = $1",
       [merged.code],
     )
     // Terminal issues take no reports
@@ -163,7 +170,6 @@ describe("getReviewReport", () => {
     const issue = await getManagedIssue(orgA, "admin", merged.code)
     expect(issue).toMatchObject({
       code: merged.code,
-      publishedAt: null,
       reportCount: 1,
       reports: [{ code: report.code, title: "Sekolah rusak di Dago" }],
     })
@@ -186,9 +192,9 @@ describe("listMergeTargets", () => {
     await su.query(
       `INSERT INTO issues (org_id, year, number, public_code, title, summary,
          category_id, subcategory_id, province_code, regency_code,
-         gov_status, advocacy_status, report_count, last_activity_at)
+         gov_status, advocacy_status, report_count, last_activity_at, published_at)
        VALUES ($1, 2026, $2, $3, $4, 'Ringkasan.', 'program', 'program.pendidikan',
-         '32', $5, 'awaiting_response', 'monitoring', 1, now() - make_interval(days => $6))`,
+         '32', $5, 'awaiting_response', 'monitoring', 1, now() - make_interval(days => $6), now())`,
       [
         orgA,
         n,

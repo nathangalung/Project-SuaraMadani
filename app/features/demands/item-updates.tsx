@@ -2,7 +2,7 @@ import { m } from "~/paraglide/messages.js"
 import { formatIsoDate } from "../../../shared/format.ts"
 import type { DemandItemState } from "../../../shared/status.ts"
 import { sourceLine } from "./demand-history"
-import { FULFILMENT_TEXT, RESPONSE_TEXT } from "./labels"
+import { FULFILMENT_TEXT } from "./labels"
 
 const LINK =
   "font-semibold text-accent underline underline-offset-4 hover:no-underline"
@@ -41,15 +41,14 @@ export function ItemUpdates({
     <ol className="mt-2 space-y-3">
       {shown.map((update) => (
         <li key={update.id}>
-          <p className="font-ui text-ink-muted text-sm">
+          <p className="flex flex-wrap gap-x-3 font-ui text-ink-muted text-sm">
             <time dateTime={update.occurredOn}>
               {formatIsoDate(update.occurredOn)}
             </time>
-            {actor ? ` · ${actor}` : null}
+            {actor ? <span>{actor}</span> : null}
           </p>
-          {withStatus && update.response && update.fulfilment ? (
+          {withStatus && update.fulfilment ? (
             <p className="mt-0.5 font-semibold font-ui text-sm">
-              {RESPONSE_TEXT[update.response]()} ·{" "}
               {FULFILMENT_TEXT[update.fulfilment]()}
             </p>
           ) : null}

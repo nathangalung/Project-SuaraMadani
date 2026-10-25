@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm"
 import { issues } from "../../../db/schema/issues.ts"
 import { withTenant } from "../../../db/tenant.server.ts"
 import type { LegalReason } from "../../../shared/complaints.ts"
-import { withdrawIssue } from "./complaints.server.ts"
+import { withdrawIssue } from "./takedown.server.ts"
 
 export type LegalTakedownInput = {
   issueId: string
@@ -42,7 +42,6 @@ export function legalTakedown(
       return withdrawIssue(tx, tenant.id, issue, {
         remove: input.decision === "remove",
         reason: input.reason,
-        complaintId: null,
         actorId: input.actorId,
       })
     },

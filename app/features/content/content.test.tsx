@@ -28,10 +28,9 @@ describe("policy page", () => {
     expect(html).toContain("Terakhir diperbarui 14 Oktober 2026")
   })
 
-  test("ends with one next step", () => {
+  test("ends without a report button", () => {
     const main = html.slice(html.indexOf('id="hak"'))
-    expect(main.match(/<a /g)).toHaveLength(1)
-    expect(main).toMatch(/href="\/lapor"[^>]*>Buat laporan<\/a>/)
+    expect(main).not.toContain('href="/lapor"')
   })
 
   test("a fixed date keeps its day in any server zone", () => {

@@ -15,8 +15,8 @@ import { useOnChange } from "~/features/report/focus"
 import { useSiteTitle } from "~/features/report/page-title"
 import { returnPath } from "~/features/report/return-path"
 import { SignedInAs, SignIn } from "~/features/report/sign-in"
+import { isStaffAccount } from "~/features/report/staff-landing.server"
 import { m } from "~/paraglide/messages.js"
-import { staffLinks } from "../../../server/shell.server.ts"
 import { sessionContext, signedInLabel, tenantContext } from "../../context.ts"
 import type { Route } from "./+types/sign-in"
 
@@ -35,12 +35,12 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const params = new URL(request.url).searchParams
   const next = returnPath(params.get("kembali"))
   if (session && !next) {
-    const links = await staffLinks(
+    const staff = await isStaffAccount(
       context.get(tenantContext).id,
       session.user.id,
     )
     // Staff go enrol, then panel
-    if (links.manage || links.platform) throw redirect(TWO_FACTOR)
+    if (staff) throw redirect(TWO_FACTOR)
   }
   return {
     siteKey: process.env.TURNSTILE_SITE_KEY ?? "",

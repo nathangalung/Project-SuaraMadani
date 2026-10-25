@@ -1,19 +1,13 @@
-import { and, asc, desc, eq, inArray, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, type SQL, sql } from "drizzle-orm"
 import { issueReports, issues } from "../../../db/schema/issues.ts"
 import { moderationDecisions } from "../../../db/schema/moderation.ts"
-import { organizations } from "../../../db/schema/organizations.ts"
 import {
   type EvidenceStatus,
   evidence,
   reports,
 } from "../../../db/schema/reports.ts"
 import { type Tx, withTenant } from "../../../db/tenant.server.ts"
-import { originFor } from "../../../server/origin.server.ts"
 import { UPLOAD_CLOSED, UPLOAD_WINDOW_MS } from "../../../shared/evidence.ts"
-import {
-  type DecisionReason,
-  isDecisionReason,
-} from "../../../shared/moderation.ts"
 import type { EvidenceKind } from "../../../shared/report-fields.ts"
 import type { ReportStatus } from "../../../shared/status.ts"
 
@@ -38,22 +32,26 @@ export type TrackedReport = {
   pendingUploads: PendingUpload[]
   uploadUntil: Date | null
   // Rejected or not verifiable
-  decision: { reason: DecisionReason; text: string } | null
-  // Their own /lacak page
-  forwardedTo: { campus: string; url: string } | null
+  // Admin text only, no codes
+  decision: { text: string } | null
 }
 
-// Recent first, one page
-const LIMIT = 50
+// Recent first, three per page
+export const TRACK_PAGE_SIZE = 3
 const DECIDED = new Set<ReportStatus>(["rejected", "unverifiable"])
 
-export type OwnReports = { reports: TrackedReport[]; capped: boolean }
+export type OwnReports = {
+  reports: TrackedReport[]
+  page: number
+  pageCount: number
+}
 
 /** Never reads report_contacts. */
 async function trackedReports(
   tx: Tx,
   where: SQL | undefined,
   limit: number,
+  offset = 0,
   now = new Date(),
 ): Promise<TrackedReport[]> {
   const rows = await tx
@@ -67,11 +65,8 @@ async function trackedReports(
       mergedAt: issueReports.createdAt,
       issueCode: issues.publicCode,
       issuePublishedAt: issues.publishedAt,
-      forwardCampus: organizations.campusName,
-      forwardHost: organizations.host,
     })
     .from(reports)
-    .leftJoin(organizations, eq(organizations.id, reports.forwardedToOrgId))
     .leftJoin(
       issueReports,
       and(
@@ -87,8 +82,9 @@ async function trackedReports(
       ),
     )
     .where(where)
-    .orderBy(desc(reports.createdAt))
+    .orderBy(desc(reports.createdAt), desc(reports.id))
     .limit(limit)
+    .offset(offset)
   if (rows.length === 0) return []
   const files = await tx
     .select({
@@ -123,70 +119,62 @@ async function trackedReports(
       ),
     )
     .orderBy(desc(moderationDecisions.decidedAt))
-  return rows.map(
-    ({
-      id,
-      mergedAt,
-      issueCode,
-      issuePublishedAt,
-      forwardCampus,
-      forwardHost,
-      ...row
-    }) => {
-      const decision = DECIDED.has(row.status)
-        ? decisions.find((d) => d.reportId === id)
-        : undefined
-      const own = files.filter((f) => f.reportId === id)
-      const until = new Date(row.createdAt.getTime() + UPLOAD_WINDOW_MS)
-      const open =
-        until.getTime() > now.getTime() && !UPLOAD_CLOSED.includes(row.status)
-      const pending = open
-        ? own
-            .filter((f) => f.status === "awaiting_upload")
-            .map(({ id, position, name, kind, size }) => ({
-              id,
-              position,
-              name,
-              kind,
-              size,
-            }))
-        : []
-      return {
-        ...row,
-        merged: mergedAt
-          ? { at: mergedAt, code: issuePublishedAt ? issueCode : null }
-          : null,
-        evidence: own.map((f) => f.status),
-        pendingUploads: pending,
-        uploadUntil: pending.length > 0 ? until : null,
-        decision:
-          decision?.text && isDecisionReason(decision.reason)
-            ? { reason: decision.reason, text: decision.text }
-            : null,
-        forwardedTo:
-          forwardCampus && forwardHost
-            ? { campus: forwardCampus, url: `${originFor(forwardHost)}/lacak` }
-            : null,
-      }
-    },
-  )
+  return rows.map(({ id, mergedAt, issueCode, issuePublishedAt, ...row }) => {
+    const decision = DECIDED.has(row.status)
+      ? decisions.find((d) => d.reportId === id)
+      : undefined
+    const own = files.filter((f) => f.reportId === id)
+    const until = new Date(row.createdAt.getTime() + UPLOAD_WINDOW_MS)
+    const open =
+      until.getTime() > now.getTime() && !UPLOAD_CLOSED.includes(row.status)
+    const pending = open
+      ? own
+          .filter((f) => f.status === "awaiting_upload")
+          .map(({ id, position, name, kind, size }) => ({
+            id,
+            position,
+            name,
+            kind,
+            size,
+          }))
+      : []
+    return {
+      ...row,
+      merged: mergedAt
+        ? { at: mergedAt, code: issuePublishedAt ? issueCode : null }
+        : null,
+      evidence: own.map((f) => f.status),
+      pendingUploads: pending,
+      uploadUntil: pending.length > 0 ? until : null,
+      decision: decision?.text ? { text: decision.text } : null,
+    }
+  })
 }
 
 export function listOwnReports(
   orgId: string,
   userId: string,
+  page = 1,
 ): Promise<OwnReports> {
   return withTenant(
     orgId,
     async (tx) => {
+      const mine = eq(reports.userId, userId)
+      const [counted] = await tx
+        .select({ total: sql<number>`count(*)::int` })
+        .from(reports)
+        .where(mine)
+      const total = counted?.total ?? 0
+      const pageCount = Math.max(1, Math.ceil(total / TRACK_PAGE_SIZE))
+      // Past the end: caller redirects
+      if (page > pageCount) return { reports: [], page, pageCount }
       const found = await trackedReports(
         tx,
-        eq(reports.userId, userId),
-        LIMIT + 1,
+        mine,
+        TRACK_PAGE_SIZE,
+        (page - 1) * TRACK_PAGE_SIZE,
       )
-      const capped = found.length > LIMIT
-      if (capped) found.length = LIMIT
-      return { reports: found, capped }
+      return { reports: found, page, pageCount }
     },
     { role: "reporter" },
   )

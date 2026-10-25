@@ -21,6 +21,7 @@ const item: ManagedItem = {
   position: 0,
   body: "Sub-tuntutan pertama",
   briefSummary: "Ringkasan lama",
+  briefUrl: null,
   version: 1,
   state: { response: "not_responded", fulfilment: "not_fulfilled" },
   briefs: [],
@@ -41,6 +42,7 @@ const demand: ManagedDemand = {
   summary: "Ringkasan",
   target: "Kementerian",
   raisedOn: "2026-09-01",
+  briefUrl: null,
   publishedAt: new Date("2026-09-02T03:00:00Z"),
   closedAt: null,
   hiddenAt: null,
@@ -142,6 +144,25 @@ describe("failed item forms", () => {
     const html = render("ubah", { body: "Teks yang diketik" })
     expect(openPanels(html)).toEqual(["ubah"])
     expect(html).toContain("Teks yang diketik")
+  })
+
+  test("the text form carries the brief link", () => {
+    const html = render("ubah", {
+      body: "Teks yang diketik",
+      briefUrl: "bukan tautan",
+    })
+    const text = html.slice(html.indexOf('id="ubah-'))
+    expect(text).toContain('name="briefUrl"')
+    expect(text).toContain('type="url"')
+    expect(text).toContain('inputMode="url"')
+    expect(text).toContain('value="bukan tautan"')
+    expect(text).toContain(m.demand_field_brief_url_hint())
+    expect(demandErrors(["item_brief_url"], ITEM)).toEqual([
+      {
+        fieldId: `item-brief-url-${ITEM}`,
+        message: m.demand_error_brief_url({ max: 500 }),
+      },
+    ])
   })
 
   test("the brief summary sits in the brief panel", () => {

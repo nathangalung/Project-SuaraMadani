@@ -1,14 +1,16 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm"
+import { and, eq, inArray, sql } from "drizzle-orm"
 import { sendJob } from "../../../db/jobs.server.ts"
-import { issueReports } from "../../../db/schema/issues.ts"
+import { auditLog } from "../../../db/schema/audit.ts"
+import { issueReports, issues } from "../../../db/schema/issues.ts"
 import { takedowns } from "../../../db/schema/moderation.ts"
 import { evidence } from "../../../db/schema/reports.ts"
 import type { Tx } from "../../../db/tenant.server.ts"
+import type { TakedownReason } from "../../../shared/complaints.ts"
 import { type PublicFile, publicFiles } from "../../../shared/evidence.ts"
-import type { PurgeStatus, TakedownAction } from "../../../shared/moderation.ts"
+import type { TakedownAction } from "../../../shared/moderation.ts"
 
 /** Published copies back to ready. */
-export async function withdrawEvidence(
+async function withdrawEvidence(
   tx: Tx,
   issueId: string,
   options: { only?: readonly string[]; withholdBy?: string } = {},
@@ -62,7 +64,6 @@ export async function withdrawEvidence(
 export type TakedownInput = {
   action: TakedownAction
   issueId: string | null
-  complaintId: string | null
   publicFiles: PublicFile[]
   evidenceIds: string[]
   actorId: string
@@ -80,7 +81,6 @@ export async function queueTakedown(
       orgId,
       action: input.action,
       issueId: input.issueId,
-      complaintId: input.complaintId,
       publicFiles: input.publicFiles,
       evidenceIds: input.evidenceIds,
       createdBy: input.actorId,
@@ -91,36 +91,47 @@ export async function queueTakedown(
   return row.id
 }
 
-export type TakedownView = {
-  id: string
-  action: TakedownAction
-  purgeStatus: PurgeStatus
-  createdAt: Date
-  doneAt: Date | null
-}
+export type WithdrawResult = { ok: true } | { ok: false; reason: "not_allowed" }
 
-/** Admin sees purge progress. */
-export function listTakedowns(
+/** Hide or take down. */
+export async function withdrawIssue(
   tx: Tx,
-  where: { issueId?: string; complaintId?: string },
-): Promise<TakedownView[]> {
-  return tx
-    .select({
-      id: takedowns.id,
-      action: takedowns.action,
-      purgeStatus: takedowns.purgeStatus,
-      createdAt: takedowns.createdAt,
-      doneAt: takedowns.doneAt,
+  orgId: string,
+  issue: { id: string; publishedAt: Date | null; takenDownAt: Date | null },
+  input: { remove: boolean; reason: TakedownReason; actorId: string },
+): Promise<WithdrawResult> {
+  if (issue.takenDownAt) return { ok: false, reason: "not_allowed" }
+  if (!input.remove && !issue.publishedAt) {
+    return { ok: false, reason: "not_allowed" }
+  }
+  const { remove, reason } = input
+  await tx
+    .update(issues)
+    .set({
+      publishedAt: null,
+      ...(remove ? { takenDownAt: sql`now()`, takedownReason: reason } : {}),
+      version: sql`${issues.version} + 1`,
+      updatedAt: sql`now()`,
     })
-    .from(takedowns)
-    .where(
-      and(
-        where.issueId ? eq(takedowns.issueId, where.issueId) : undefined,
-        where.complaintId
-          ? eq(takedowns.complaintId, where.complaintId)
-          : undefined,
-      ),
-    )
-    .orderBy(desc(takedowns.createdAt))
-    .limit(20)
+    .where(eq(issues.id, issue.id))
+  const files = await withdrawEvidence(tx, issue.id)
+  await tx.insert(auditLog).values({
+    orgId,
+    actorId: input.actorId,
+    action: remove ? "issue.take_down" : "issue.unpublish",
+    entityType: "issue",
+    entityId: issue.id,
+    changedColumns: remove
+      ? ["published_at", "taken_down_at", "version"]
+      : ["published_at", "version"],
+    reasonCode: reason,
+  })
+  await queueTakedown(tx, orgId, {
+    action: remove ? "take_down" : "unpublish",
+    issueId: issue.id,
+    publicFiles: files,
+    evidenceIds: [],
+    actorId: input.actorId,
+  })
+  return { ok: true }
 }

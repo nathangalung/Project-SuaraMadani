@@ -144,6 +144,7 @@ export function listAudit(
             eq(issues.id, auditLog.entityId),
           ),
         )
+        // Legacy rows, complaints removed
         .leftJoin(
           contentComplaints,
           and(

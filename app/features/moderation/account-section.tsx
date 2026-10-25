@@ -63,9 +63,7 @@ export function AccountSection({
       <h2 id="report-account" className="font-bold text-2xl">
         {m.manage_account_title()}
       </h2>
-      <p className="mt-2 mb-5 max-w-3xl text-ink-soft">
-        {m.manage_account_lead()}
-      </p>
+      <p className="mt-2 mb-5 text-ink-soft">{m.manage_account_lead()}</p>
       {account === undefined ? (
         <Form method="post">
           <input type="hidden" name="intent" value="show_account" />
@@ -78,10 +76,9 @@ export function AccountSection({
       ) : (
         <AccountFacts account={account} />
       )}
-      <p className="mt-6 max-w-3xl text-ink-soft">{m.manage_account_body()}</p>
       <Link
         to={`/kelola/laporan/${code}/tutup-akun`}
-        className="mt-2 inline-block font-semibold text-danger underline underline-offset-4"
+        className="mt-6 inline-block font-semibold text-danger underline underline-offset-4"
       >
         {m.manage_account_close_link()}
       </Link>

@@ -26,6 +26,7 @@ import {
   defaultFilesDir,
 } from "../../../server/files.server.ts"
 import { originFor } from "../../../server/origin.server.ts"
+import { pageNumber } from "../../../shared/canonical-query.ts"
 import {
   DEMAND_PAGE_SIZE,
   type DemandCategory,
@@ -47,7 +48,6 @@ import {
 import { briefUrl } from "./demand-href.ts"
 import { readCitizenRanking, readTopRanked } from "./ranking.server.ts"
 
-const MAX_PAGES = 50
 const SEARCH_MIN_LENGTH = 3
 const SUMMARY_EXCERPT = 240
 
@@ -66,6 +66,8 @@ type PublicItem = {
   response: ResponseStatus
   fulfilment: FulfilmentStatus
   briefSummary: string | null
+  // External brief, admin set
+  briefUrl: string | null
   brief: PublicBrief | null
 }
 
@@ -94,7 +96,7 @@ export type ListedDemand = DemandHead & {
 
 export type DemandListQuery = Partial<
   Record<
-    "lingkup" | "provinsi" | "kategori" | "status" | "q" | "kursor" | "urut",
+    "lingkup" | "provinsi" | "kategori" | "status" | "q" | "halaman" | "urut",
     string
   >
 >
@@ -104,10 +106,10 @@ export type DemandListResult =
       kind: "results"
       demands: ListedDemand[]
       page: number
-      nextCursor: string | null
-      capped: boolean
+      pageCount: number
+      total: number
     }
-  | { kind: "short_query" | "bad_cursor" }
+  | { kind: "short_query" }
 
 const headColumns = {
   id: demands.id,
@@ -138,32 +140,6 @@ function head(row: HeadRow): DemandHead & { id: string } {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-const UTC_KEY = /^[1-9]\d{3}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/
-
-type Cursor = { page: number; key: string; id: string }
-
-function encodeCursor(cursor: Cursor): string {
-  return Buffer.from(
-    JSON.stringify([cursor.page, cursor.key, cursor.id]),
-  ).toString("base64url")
-}
-
-function decodeCursor(value: string): Cursor | null {
-  try {
-    const parsed: unknown = JSON.parse(
-      Buffer.from(value, "base64url").toString("utf8"),
-    )
-    if (!Array.isArray(parsed) || parsed.length !== 3) return null
-    const [page, key, id] = parsed
-    if (!Number.isInteger(page) || page < 2 || page > MAX_PAGES) return null
-    if (typeof key !== "string" || !UTC_KEY.test(key)) return null
-    if (Number.isNaN(Date.parse(key))) return null
-    if (typeof id !== "string" || !UUID.test(id)) return null
-    return { page, key, id }
-  } catch {
-    return null
-  }
-}
 
 function filters(query: DemandListQuery, search: string | null): SQL[] {
   const where: SQL[] = [PUBLIC]
@@ -191,6 +167,7 @@ type ItemRow = {
   response: ResponseStatus
   fulfilment: FulfilmentStatus
   briefSummary: string | null
+  briefUrl: string | null
 }
 
 async function readItems(tx: Tx, demandIds: string[]): Promise<ItemRow[]> {
@@ -203,6 +180,7 @@ async function readItems(tx: Tx, demandIds: string[]): Promise<ItemRow[]> {
       response: demandItems.responseStatus,
       fulfilment: demandItems.fulfilmentStatus,
       briefSummary: demandItems.briefSummary,
+      briefUrl: demandItems.briefUrl,
     })
     .from(demandItems)
     .where(inArray(demandItems.demandId, demandIds))
@@ -233,7 +211,7 @@ async function readBriefs(
   return new Map(rows.map((row) => [row.itemId, row]))
 }
 
-/** Keyset paging on publish time. */
+/** Numbered pages, newest or ranked. */
 export async function listPublishedDemands(
   orgId: string,
   query: DemandListQuery,
@@ -242,16 +220,19 @@ export async function listPublishedDemands(
   if (search !== "" && search.length < SEARCH_MIN_LENGTH) {
     return { kind: "short_query" }
   }
-  const cursor = query.kursor ? decodeCursor(query.kursor) : null
-  if (query.kursor && !cursor) return { kind: "bad_cursor" }
-  const page = cursor?.page ?? 1
-  const where = filters(query, search || null)
-  if (cursor) {
-    where.push(
-      sql`(${demands.publishedAt}, ${demands.id}) < (${cursor.key}::timestamptz, ${cursor.id}::uuid)`,
-    )
-  }
+  const page = pageNumber(query.halaman)
+  const where = and(...filters(query, search || null))
   return withTenant(orgId, async (tx) => {
+    const [counted] = await tx
+      .select({ total: sql<number>`count(*)::int` })
+      .from(demands)
+      .where(where)
+    const total = counted?.total ?? 0
+    const pageCount = Math.max(1, Math.ceil(total / DEMAND_PAGE_SIZE))
+    // Past the end: caller redirects
+    if (page > pageCount) {
+      return { kind: "results", demands: [], page, pageCount, total }
+    }
     const ranking = await readCitizenRanking(tx)
     const placed = [...ranking.places.entries()]
       .filter(([, rank]) => rank.place !== null)
@@ -271,7 +252,6 @@ export async function listPublishedDemands(
       .select({
         ...headColumns,
         summary: sql<string>`left(${demands.summary}, ${SUMMARY_EXCERPT})`,
-        key: sql<string>`to_char(${demands.publishedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
         issueCount: sql<number>`(SELECT count(*)::int FROM ${demandIssues}
           JOIN ${issues} ON ${issues.orgId} = ${demandIssues.orgId}
             AND ${issues.id} = ${demandIssues.issueId}
@@ -281,25 +261,21 @@ export async function listPublishedDemands(
       .from(demands)
       .leftJoin(province, eq(province.code, demands.provinceCode))
       .leftJoin(regency, eq(regency.code, demands.regencyCode))
-      .where(and(...where))
+      .where(where)
       .orderBy(...rankOrder, desc(demands.publishedAt), desc(demands.id))
-      .limit(DEMAND_PAGE_SIZE + 1)
-    const more = rows.length > DEMAND_PAGE_SIZE
-    const shown = rows.slice(0, DEMAND_PAGE_SIZE)
+      .limit(DEMAND_PAGE_SIZE)
+      .offset((page - 1) * DEMAND_PAGE_SIZE)
     const items = await readItems(
       tx,
-      shown.map((row) => row.id),
+      rows.map((row) => row.id),
     )
     const briefs = await readBriefs(
       tx,
       items.map((item) => item.id),
     )
-    const last = shown.at(-1)
-    // Citizen order: one page
-    const capped = more && (byRank || page >= MAX_PAGES)
     return {
       kind: "results",
-      demands: shown.map(({ key: _key, issueCount, ...row }) => {
+      demands: rows.map(({ issueCount, ...row }) => {
         const own = items.filter((item) => item.demandId === row.id)
         const { id: _id, ...demand } = head(row)
         const first = own.findIndex((item) => briefs.has(item.id))
@@ -313,11 +289,8 @@ export async function listPublishedDemands(
         }
       }),
       page,
-      nextCursor:
-        more && !capped && !byRank && last
-          ? encodeCursor({ page: page + 1, key: last.key, id: last.id })
-          : null,
-      capped,
+      pageCount,
+      total,
     }
   })
 }
@@ -384,7 +357,7 @@ export type LatestDemand = Pick<
   briefs: number
 }
 
-export type NationalDemand = {
+type NationalDemand = {
   code: string
   title: string
   state: Exclude<DemandState, "draft">
@@ -597,6 +570,7 @@ export type DemandEvent = {
 
 export type DemandPage = DemandHead & {
   body: string
+  briefUrl: string | null
   version: number
   closedAt: Date | null
   progress: DemandProgress
@@ -615,6 +589,7 @@ async function readPublic(
   | (DemandHead & {
       id: string
       body: string
+      briefUrl: string | null
       version: number
       closedAt: Date | null
     })
@@ -624,6 +599,7 @@ async function readPublic(
     .select({
       ...headColumns,
       body: demands.body,
+      briefUrl: demands.briefUrl,
       version: demands.version,
       closedAt: demands.closedAt,
     })
@@ -633,8 +609,8 @@ async function readPublic(
     .where(and(eq(demands.publicCode, code), PUBLIC))
     .limit(1)
   if (!row) return null
-  const { body, version, closedAt, ...rest } = row
-  return { ...head(rest), body, version, closedAt }
+  const { body, briefUrl, version, closedAt, ...rest } = row
+  return { ...head(rest), body, briefUrl, version, closedAt }
 }
 
 /** Published or closed, else null. */
@@ -699,6 +675,7 @@ export function getDemandPage(
           response: item.response,
           fulfilment: item.fulfilment,
           briefSummary: item.briefSummary,
+          briefUrl: item.briefUrl,
           brief: brief
             ? { ...brief, url: briefUrl(demand.code, brief.id) }
             : null,

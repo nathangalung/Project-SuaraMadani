@@ -65,7 +65,7 @@ describe("map classes", () => {
     const keys = CATEGORY_FILTERS.flatMap((c) =>
       STATUS_FILTERS.map((s) => filterKey(c, s)),
     )
-    expect(new Set(keys).size).toBe(4 * 10)
+    expect(new Set(keys).size).toBe(4 * 6)
     expect(filterKey("all", "all")).toBe("all|all")
   })
 })

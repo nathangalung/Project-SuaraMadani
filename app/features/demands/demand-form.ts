@@ -1,4 +1,5 @@
 import {
+  BRIEF_URL_MAX,
   DEMAND_CATEGORIES,
   DEMAND_LENGTHS,
   DEMAND_SCOPES,
@@ -28,10 +29,12 @@ export type DemandErrorKey =
   | "target"
   | "raised_on"
   | "raised_after_updates"
+  | "brief_url"
   | "items"
   | "publish_items"
   | "issues_too_many"
   | "item_body"
+  | "item_brief_url"
   | "brief_summary"
   | "occurred_on"
   | "occurred_before_last"
@@ -55,6 +58,14 @@ type Failed = { ok: false; errors: DemandErrorKey[] }
 
 function pastDate(value: string, from: string, today: string): boolean {
   return isIsoDate(value) && value >= from && value <= today
+}
+
+/** Empty null, invalid false. */
+export function parseBriefUrl(value: string): string | null | false {
+  const raw = value.trim()
+  if (raw === "") return null
+  const url = parseSourceUrl(raw)
+  return url !== null && url.length <= BRIEF_URL_MAX ? url : false
 }
 
 /** Caller checks region rows. */
@@ -90,7 +101,11 @@ export function parseDemandFields(
   if (!within(summary, L.summary)) errors.push("summary")
   if (!within(target, L.target)) errors.push("target")
   if (!pastDate(raisedOn, EARLIEST, today)) errors.push("raised_on")
-  if (errors.length > 0 || !scope || !category) return { ok: false, errors }
+  const briefUrl = parseBriefUrl(text(form, "briefUrl"))
+  if (briefUrl === false) errors.push("brief_url")
+  if (errors.length > 0 || !scope || !category || briefUrl === false) {
+    return { ok: false, errors }
+  }
   return {
     ok: true,
     fields: {
@@ -103,6 +118,7 @@ export function parseDemandFields(
       summary,
       target,
       raisedOn,
+      briefUrl,
     },
   }
 }

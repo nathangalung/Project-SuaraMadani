@@ -22,6 +22,7 @@ import {
 } from "../../shared/complaints.ts"
 import {
   BRIEF_STATUSES,
+  BRIEF_URL_MAX,
   type BriefStatus,
   DEMAND_CATEGORIES,
   DEMAND_EVENT_ACTIONS,
@@ -52,6 +53,10 @@ import { issues } from "./issues.ts"
 import { organizations } from "./organizations.ts"
 import { regions } from "./regions.ts"
 
+const URL_MAX = sql.raw(String(BRIEF_URL_MAX)) // sql-raw-ok: constant
+const briefUrlCheck = (column: AnyPgColumn) =>
+  sql`${column} IS NULL OR (${column} ~ '^https?://' AND length(${column}) <= ${URL_MAX})`
+
 const at = (name: string) => timestamp(name, { withTimezone: true })
 const orgRef = () =>
   uuid("org_id")
@@ -78,6 +83,8 @@ export const demands = pgTable(
     summary: text("summary").notNull(),
     target: text("target").notNull(),
     raisedOn: date("raised_on").notNull(),
+    // External brief, e.g. Docs
+    briefUrl: text("brief_url"),
     state: text("state").$type<DemandState>().notNull().default("draft"),
     // Derived from items, never typed
     progress: text("progress")
@@ -140,6 +147,7 @@ export const demands = pgTable(
       sql`(${t.hiddenAt} IS NULL) = (${t.hiddenReason} IS NULL) AND (${t.hiddenReason} IS NULL OR ${oneOf(t.hiddenReason, STANDARD_REASONS)}) AND (${t.hiddenAt} IS NULL OR ${t.state} = 'draft')`,
     ),
     check("demands_version_check", sql`${t.version} > 0`),
+    check("demands_brief_url_check", briefUrlCheck(t.briefUrl)),
     tenantPolicy(),
   ],
 )
@@ -173,6 +181,7 @@ export const demandItems = pgTable(
       .default("not_fulfilled"),
     // Policy brief summary, public
     briefSummary: text("brief_summary"),
+    briefUrl: text("brief_url"),
     version: integer("version").notNull().default(1),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -196,6 +205,7 @@ export const demandItems = pgTable(
     ),
     check("demand_items_position_check", sql`${t.position} >= 0`),
     check("demand_items_version_check", sql`${t.version} > 0`),
+    check("demand_items_brief_url_check", briefUrlCheck(t.briefUrl)),
     tenantPolicy(),
   ],
 )
@@ -348,7 +358,8 @@ export const demandRankings = pgTable(
     index("demand_rankings_demand_idx").on(t.orgId, t.demandId),
     index("demand_rankings_user_idx").on(t.userId),
     demandRef("demand_rankings_demand_fk", t),
-    check("demand_rankings_position_check", sql`${t.position} BETWEEN 1 AND 5`),
+    // Full list, 25 Oct
+    check("demand_rankings_position_check", sql`${t.position} >= 1`),
     tenantPolicy(),
   ],
 )

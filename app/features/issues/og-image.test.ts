@@ -12,7 +12,7 @@ const card: OgCard = {
   title: "Atap ruang kelas SDN 3 Coblong runtuh dan siswa belajar di halaman",
   place: "Kota Bandung",
   label: "Terverifikasi",
-  siteName: "Sadar Bersuara · KM ITB",
+  siteName: "Sadar Bersuara - KM ITB",
 }
 
 describe("wrapTitle", () => {
@@ -75,7 +75,7 @@ describe("footer line", () => {
     ...card,
     code: "TUN-ITB-26-0004",
     place: "Daerah Khusus Ibukota Jakarta Raya dengan Nama Sangat Panjang",
-    detail: "Tuntutan Daerah · 1 dari 3 subtuntutan dipenuhi",
+    detail: "Tuntutan Daerah - 1 dari 3 subtuntutan dipenuhi",
   }
 
   test("place never reaches the site name", async () => {
@@ -90,7 +90,7 @@ describe("footer line", () => {
   test("progress sits on its own line", () => {
     const svg = ogSvg(long)
     expect(svg).toMatch(
-      /y="510"[^>]*>Tuntutan Daerah · 1 dari 3 subtuntutan dipenuhi</,
+      /y="510"[^>]*>Tuntutan Daerah - 1 dari 3 subtuntutan dipenuhi</,
     )
   })
 })

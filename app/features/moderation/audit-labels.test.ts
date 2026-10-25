@@ -29,7 +29,7 @@ describe("audit labels", () => {
 
   test("sub-tuntutan axes read as both labels", () => {
     expect(auditReasonText("responded/partially_fulfilled")).toBe(
-      "Direspons · Sebagian dipenuhi",
+      "Direspons, Sebagian dipenuhi",
     )
     expect(auditColumnText("fulfilment_status")).toBe("Pemenuhan")
   })

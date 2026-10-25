@@ -7,7 +7,7 @@ import {
   type StatusFilter,
 } from "../../../shared/dashboard.ts"
 import { formatNumber } from "../../../shared/format.ts"
-import { GOVERNMENT_TEXT } from "../issues/labels"
+import { STAGE_TEXT } from "../issues/labels"
 import { CATEGORY_SHORT_TEXT } from "../report/category-labels"
 
 export const HIDDEN_MAX = MIN_PUBLIC_N - 1
@@ -67,7 +67,7 @@ export function filterSummary(
   ]
   if (status !== "all") {
     parts.push(
-      m.data_status_suffix({ status: GOVERNMENT_TEXT[status]().toLowerCase() }),
+      m.data_status_suffix({ status: STAGE_TEXT[status]().toLowerCase() }),
     )
   }
   return parts.join(", ")

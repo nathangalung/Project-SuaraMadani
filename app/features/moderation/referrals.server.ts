@@ -1,5 +1,4 @@
 import { and, eq, isNotNull, sql } from "drizzle-orm"
-import { notifyFollowers } from "../../../db/notifications.server.ts"
 import { auditLog } from "../../../db/schema/audit.ts"
 import {
   issueEvents,
@@ -152,26 +151,15 @@ export async function applyIssueAction(
     responseId: linked.responseId,
     note: linked.note,
   })
-  const [event] = await tx
-    .insert(auditLog)
-    .values({
-      orgId,
-      actorId: input.actorId,
-      action: `issue.${input.action}`,
-      entityType: "issue",
-      entityId: input.issueId,
-      changedColumns: ["advocacy_status", "gov_status", "version"],
-      reasonCode: linked.reasonCode,
-    })
-    .returning({ id: auditLog.id })
-  if (event && input.notify !== false) {
-    await notifyFollowers(tx, {
-      orgId,
-      issueId: input.issueId,
-      eventId: event.id,
-      template: `issue_${input.action}`,
-    })
-  }
+  await tx.insert(auditLog).values({
+    orgId,
+    actorId: input.actorId,
+    action: `issue.${input.action}`,
+    entityType: "issue",
+    entityId: input.issueId,
+    changedColumns: ["advocacy_status", "gov_status", "version"],
+    reasonCode: linked.reasonCode,
+  })
   return { ok: true, code: row.code, version: row.version }
 }
 

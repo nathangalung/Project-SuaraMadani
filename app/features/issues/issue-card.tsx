@@ -1,4 +1,3 @@
-import { FileText, MapPin } from "lucide-react"
 import { Link } from "react-router"
 import { m } from "~/paraglide/messages.js"
 import { formatDate } from "../../../shared/format.ts"
@@ -29,7 +28,7 @@ export function issueMeta(
     m.issue_reports({ count: issue.reportCount }),
   ]
     .filter(Boolean)
-    .join(" · ")
+    .join(", ")
 }
 
 // Rounded card, pill statuses
@@ -37,16 +36,16 @@ export function IssueCard({ issue }: { issue: ListedIssue }) {
   const subcategory = labelOf(SUBCATEGORY_TEXT, issue.subcategoryId)
   return (
     <article className="group relative flex h-full flex-col rounded-2xl border border-line-subtle bg-surface-raised p-6 transition-[border-color,translate] duration-(--dur-hover) hover:-translate-y-0.5 hover:border-ink/40 has-[a:focus-visible]:outline-3 has-[a:focus-visible]:outline-focus has-[a:focus-visible]:outline-offset-3 has-[a:focus-visible]:outline-solid motion-reduce:hover:translate-y-0">
-      <div className="flex items-center justify-between gap-3">
-        <span className="inline-flex items-center rounded-full bg-surface px-3 py-1">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="inline-flex items-center rounded-full bg-surface px-3 py-1 text-sm">
           <CategoryMark categoryId={issue.categoryId} />
         </span>
-        <span className="font-ui text-ink-muted text-xs tabular-nums">
+        <span className="whitespace-nowrap font-semibold text-ink-soft tabular-nums">
           {issue.code}
         </span>
       </div>
       {subcategory ? (
-        <p className="mt-5 font-ui text-ink-muted text-sm">{subcategory}</p>
+        <p className="mt-5 text-ink-muted text-xs">{subcategory}</p>
       ) : null}
       <h3 className="mt-1 font-bold text-ink text-xl leading-snug">
         <Link
@@ -66,17 +65,8 @@ export function IssueCard({ issue }: { issue: ListedIssue }) {
           government={issue.govStatus}
         />
       </div>
-      <div className="mt-4 flex items-center justify-between gap-3 font-ui text-ink-soft text-sm">
-        <span className="flex min-w-0 items-center gap-1.5">
-          <MapPin aria-hidden="true" className="size-4 shrink-0 text-brand" />
-          <span className="truncate">{placeOf(issue)}</span>
-        </span>
-        <span className="flex shrink-0 items-center gap-1.5">
-          <FileText aria-hidden="true" className="size-4 text-brand" />
-          {m.issue_reports({ count: issue.reportCount })}
-        </span>
-      </div>
-      <p className="mt-1 font-ui text-ink-muted text-xs">
+      <p className="mt-4 truncate text-ink-soft text-sm">{placeOf(issue)}</p>
+      <p className="mt-1 text-ink-muted text-xs">
         {m.issue_last_activity({ date: formatDate(issue.lastActivityAt) })}
       </p>
     </article>

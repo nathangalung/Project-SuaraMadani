@@ -98,23 +98,23 @@ afterAll(async () => {
 })
 
 describe("reviewReport", () => {
-  test("start review moves submitted to in review with an audit row", async () => {
+  test("a submitted report is decided directly", async () => {
     const id = await seedReport("submitted")
     const result = await review(orgA, {
       reportId: id,
       from: "submitted",
-      action: "start_review",
+      action: "verify",
+      method: "document",
       actorId: moderator,
     })
-    expect(result).toEqual({ ok: true, status: "in_review" })
-    expect((await reportRow(id))?.status).toBe("in_review")
+    expect(result).toEqual({ ok: true, status: "verified" })
     const audit = await auditRows(id)
     expect(audit).toEqual([
       {
-        action: "report.start_review",
+        action: "report.verify",
         actor_id: moderator,
-        reason_code: null,
-        changed_columns: ["status"],
+        reason_code: "document",
+        changed_columns: ["status", "verified_at"],
       },
     ])
   })
@@ -163,7 +163,8 @@ describe("reviewReport", () => {
     await review(orgA, {
       reportId: id,
       from: "submitted",
-      action: "start_review",
+      action: "verify",
+      method: "document",
       actorId: moderator,
     })
     const { rows } = await su.query<{
@@ -181,7 +182,7 @@ describe("reviewReport", () => {
       {
         id: expect.any(String),
         user_id: reporter,
-        template: "report_in_review",
+        template: "report_verified",
         audited: true,
       },
     ])
@@ -203,7 +204,8 @@ describe("reviewReport", () => {
           {
             reportId: id,
             from: "submitted",
-            action: "start_review",
+            action: "verify",
+            method: "document",
             actorId: moderator,
           },
           { notify: false },
@@ -232,16 +234,16 @@ describe("reviewReport", () => {
   })
 
   test("an action the state machine forbids is refused", async () => {
-    const id = await seedReport("submitted")
+    const id = await seedReport("rejected")
     const result = await review(orgA, {
       reportId: id,
-      from: "submitted",
+      from: "rejected",
       action: "verify",
       method: "document",
       actorId: moderator,
     })
     expect(result).toEqual({ ok: false, reason: "not_allowed" })
-    expect((await reportRow(id))?.status).toBe("submitted")
+    expect((await reportRow(id))?.status).toBe("rejected")
   })
 
   test("concurrent verify of one report: only one wins", async () => {

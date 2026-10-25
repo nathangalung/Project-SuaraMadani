@@ -278,4 +278,15 @@ describe("signed /lacak link", () => {
     expect((await trackLoader(args("1.abc.def"))).link).toBe("invalid")
     expect((await trackLoader(args(null))).link).toBe(null)
   })
+
+  test("signed in, /lacak lists followed issues", async () => {
+    await su.query(
+      "INSERT INTO follows (org_id, issue_id, user_id) SELECT org_id, id, $1 FROM issues WHERE public_code = $2 ON CONFLICT DO NOTHING",
+      [user, OTHER],
+    )
+    const res = await trackLoader(args(null, "a", true))
+    expect(res.followed?.issues.map((i) => i.code)).toContain(OTHER)
+    // Signed out sees nothing
+    expect((await trackLoader(args(null))).followed).toBeNull()
+  })
 })

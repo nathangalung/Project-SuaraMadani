@@ -7,13 +7,10 @@ describe("returnPath", () => {
     expect(returnPath("/lacak")).toBe("/lacak")
   })
 
-  test("a tuntutan to follow, a complaint to read", () => {
-    for (const path of [
+  test("a tuntutan to follow", () => {
+    expect(returnPath("/tuntutan/TUN-ITB-26-0003")).toBe(
       "/tuntutan/TUN-ITB-26-0003",
-      "/aduan/ADU-ITB-26-ZEMX1",
-    ]) {
-      expect(returnPath(path)).toBe(path)
-    }
+    )
   })
 
   test("a staff invitation", () => {
@@ -30,7 +27,7 @@ describe("returnPath", () => {
       "/\\evil.example",
       "/isu/ISU-1/berhenti",
       "/tuntutan/TUN-1/laporkan",
-      "/aduan/<x>",
+      "/aduan/ADU-ITB-26-ZEMX1",
       "/kelola",
       "/isu/<script>",
       "/lacak?t=x",

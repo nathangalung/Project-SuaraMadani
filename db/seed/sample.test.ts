@@ -170,7 +170,11 @@ describe("sample seed", () => {
          JOIN organizations o ON o.id = r.org_id
          WHERE o.slug = '${slug}' GROUP BY 1`,
       )
-      expect(Object.keys(statuses).sort()).toEqual([...REPORT_STATUSES].sort())
+      // Legacy statuses, 25 Oct
+      const live = REPORT_STATUSES.filter(
+        (s) => !["forwarded", "in_review", "verified"].includes(s),
+      )
+      expect(Object.keys(statuses).sort()).toEqual([...live].sort())
     }
 
     // Counts and label match links
@@ -312,10 +316,9 @@ describe("sample seed", () => {
         (SELECT count(*) FROM reports r WHERE r.status IN ('rejected', 'unverifiable')
           AND NOT EXISTS (SELECT 1 FROM moderation_decisions d
             WHERE d.report_id = r.id AND d.reason_text IS NOT NULL))::int AS unexplained,
-        (SELECT count(*) FROM reports r WHERE r.status = 'forwarded'
-          AND NOT EXISTS (SELECT 1 FROM reports c
-            WHERE c.forwarded_from_report_id = r.id
-              AND c.org_id = r.forwarded_to_org_id))::int AS uncopied,
+        (SELECT count(*) FROM reports r
+          WHERE r.forwarded_from_report_id IS NOT NULL
+            OR r.status = 'forwarded')::int AS forwarded,
         (SELECT count(*) FROM issue_events)::int AS events,
         (SELECT count(*) FROM responses)::int AS responses`,
     )
@@ -324,58 +327,17 @@ describe("sample seed", () => {
       silent: 0,
       misdated: 0,
       unexplained: 0,
-      uncopied: 0,
+      forwarded: 0,
     })
     expect(records.rows[0]?.events).toBeGreaterThan(40)
     expect(records.rows[0]?.responses).toBeGreaterThan(5)
 
-    // Complaints through real paths
-    const complaints = await countBy(
-      `SELECT o.slug || ':' || c.status || ':' || coalesce(c.appeal_decision, c.decision, '-') AS k,
-         count(*)::int AS n
-       FROM content_complaints c JOIN organizations o ON o.id = c.org_id
-       GROUP BY 1`,
-    )
-    expect(complaints).toEqual({
-      "itb:open:-": 2,
-      "itb:decided:keep": 1,
-      "itb:decided:edit": 1,
-      "itb:decided:remove": 1,
-      "itb:appealed:keep": 1,
-      "itb:appeal_decided:hide": 1,
-      "ugm:open:-": 1,
-      "ugm:decided:keep": 1,
-    })
     const settled = await su.query<Record<string, number>>(
       `SELECT
-        (SELECT count(*) FROM content_complaints
-          WHERE appeal_decided_by = decided_by)::int AS same,
-        (SELECT count(*) FROM content_complaints c JOIN issues i ON i.id = c.issue_id
-          WHERE c.status = 'appeal_decided' AND i.published_at IS NOT NULL)::int AS visible,
-        (SELECT count(*) FROM content_complaints c JOIN issues i ON i.id = c.issue_id
-          WHERE c.decision = 'remove' AND i.taken_down_at IS NULL)::int AS standing,
-        (SELECT count(*) FROM content_complaints c JOIN issues i ON i.id = c.issue_id
-          WHERE c.decision = 'edit' AND (i.redacted_at IS NULL OR NOT EXISTS (
-            SELECT 1 FROM redaction_originals o WHERE o.issue_id = i.id)))::int AS unedited,
-        (SELECT count(*) FROM content_complaints c JOIN issues i ON i.id = c.issue_id
-          WHERE c.created_at < i.published_at OR c.created_at > now() - interval '1 hour'
-            OR c.decided_at < c.created_at OR c.appealed_at < c.decided_at
-            OR c.appeal_decided_at < c.appealed_at)::int AS misdated,
-        (SELECT count(*) FROM takedowns WHERE purge_status <> 'done')::int AS pending,
-        (SELECT count(*) FROM takedowns)::int AS takedowns,
-        (SELECT count(*) FROM pgboss.job WHERE name = 'takedown'
-          AND data->>'orgId' IN (SELECT id::text FROM organizations))::int AS jobs`,
+        (SELECT count(*) FROM content_complaints)::int AS complaints,
+        (SELECT count(*) FROM takedowns)::int AS takedowns`,
     )
-    expect(settled.rows[0]).toMatchObject({
-      same: 0,
-      visible: 0,
-      standing: 0,
-      unedited: 0,
-      misdated: 0,
-      pending: 0,
-      jobs: 0,
-    })
-    expect(settled.rows[0]?.takedowns).toBe(3)
+    expect(settled.rows[0]).toEqual({ complaints: 0, takedowns: 0 })
 
     const before = await sampleRows()
     const second = await seedSample({ migrator: migrator.db, filesDir })

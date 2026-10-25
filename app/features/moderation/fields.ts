@@ -23,7 +23,6 @@ export type ReviewErrorKey =
   | "reject_text"
   | "unverifiable_reason"
   | "unverifiable_text"
-  | "forward_target"
 
 export type IssueErrorKey =
   | "agency"
@@ -41,28 +40,10 @@ export type CloseErrorKey = "close_reason" | "close_confirm"
 
 export const QUEUE_STATUSES = [
   "submitted",
-  "in_review",
-  "verified",
   "unverifiable",
 ] as const satisfies readonly ReportStatus[]
 export type QueueStatus = (typeof QUEUE_STATUSES)[number]
 
 // Issue filter URL values
-export const ISSUE_NEEDS = [
-  "draf",
-  "belum-diteruskan",
-  "lewat-tenggat",
-  "klaim",
-] as const
+export const ISSUE_NEEDS = ["belum-diteruskan", "lewat-tenggat"] as const
 export type IssueNeed = (typeof ISSUE_NEEDS)[number]
-
-// Complaint queue URL values
-export const COMPLAINT_FILTERS = ["baru", "banding", "selesai"] as const
-export type ComplaintFilter = (typeof COMPLAINT_FILTERS)[number]
-
-export type DecideErrorKey =
-  | "decision_reason"
-  | "statement"
-  | "edit_title"
-  | "edit_summary"
-  | "confirm"

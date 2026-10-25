@@ -5,6 +5,7 @@ import {
   desc,
   eq,
   inArray,
+  isNotNull,
   isNull,
   notInArray,
   sql,
@@ -13,7 +14,6 @@ import { alias } from "drizzle-orm/pg-core"
 import { type MemberRole, members } from "../../../db/schema/auth.ts"
 import { issueReports, issues } from "../../../db/schema/issues.ts"
 import { moderationDecisions } from "../../../db/schema/moderation.ts"
-import { organizations } from "../../../db/schema/organizations.ts"
 import { regions } from "../../../db/schema/regions.ts"
 import {
   type EvidenceStatus,
@@ -25,10 +25,6 @@ import type {
   EvidenceDecision,
   EvidenceFailure,
 } from "../../../shared/evidence.ts"
-import {
-  type DecisionReason,
-  isDecisionReason,
-} from "../../../shared/moderation.ts"
 import type { EvidenceKind } from "../../../shared/report-fields.ts"
 import {
   type AdvocacyStatus,
@@ -51,8 +47,6 @@ export type QueueRow = {
   createdAt: Date
   files: number
   ready: number
-  // Campus that forwarded it
-  forwardedFrom: string | null
 }
 
 /** Oldest first, contacts never read. */
@@ -73,7 +67,6 @@ export function listQueue(
           createdAt: reports.createdAt,
           files: count(evidence.id),
           ready: sql<number>`count(*) FILTER (WHERE ${evidence.status} IN ('ready', 'published'))::int`,
-          forwardedFrom: organizations.campusName,
         })
         .from(reports)
         .leftJoin(
@@ -83,16 +76,12 @@ export function listQueue(
             eq(evidence.reportId, reports.id),
           ),
         )
-        .leftJoin(
-          organizations,
-          eq(organizations.id, reports.forwardedFromOrgId),
-        )
         .where(
           status
             ? eq(reports.status, status)
             : inArray(reports.status, QUEUE_STATUSES),
         )
-        .groupBy(reports.id, organizations.campusName)
+        .groupBy(reports.id)
         .orderBy(asc(reports.createdAt))
         .limit(QUEUE_LIMIT),
     { role },
@@ -119,21 +108,14 @@ type ReviewEvidence = {
   boxes: number
 }
 
-type ReviewDecisionView = {
-  reason: DecisionReason
-  text: string
-  decidedAt: Date
-}
+type ReviewDecisionView = { text: string; decidedAt: Date }
 
-export type ReviewReport = Omit<
-  NonNullable<Awaited<ReturnType<typeof readReport>>>,
-  "forwardedFromOrgId" | "forwardedToOrgId"
+export type ReviewReport = NonNullable<
+  Awaited<ReturnType<typeof readReport>>
 > & {
   evidence: ReviewEvidence[]
   issue: { code: string; title: string } | null
   decision: ReviewDecisionView | null
-  forwardedFrom: string | null
-  forwardedTo: { id: string; name: string } | null
 }
 
 async function readReport(tx: Tx, code: string) {
@@ -155,7 +137,6 @@ async function readReport(tx: Tx, code: string) {
       affectedCount: reports.affectedCount,
       ongoing: reports.ongoing,
       contactable: reports.contactable,
-      forwardConsent: sql<boolean>`${reports.consents} @> ARRAY['forward_to_agency']::text[]`,
       provinceName: province.name,
       regencyName: regency.name,
       regencyCode: reports.regencyCode,
@@ -164,8 +145,6 @@ async function readReport(tx: Tx, code: string) {
       point: reports.point,
       createdAt: reports.createdAt,
       verifiedAt: reports.verifiedAt,
-      forwardedFromOrgId: reports.forwardedFromOrgId,
-      forwardedToOrgId: reports.forwardedToOrgId,
     })
     .from(reports)
     .innerJoin(province, eq(province.code, reports.provinceCode))
@@ -236,33 +215,13 @@ export function getReviewReport(
         )
         .orderBy(desc(moderationDecisions.decidedAt))
         .limit(1)
-      const { forwardedFromOrgId, forwardedToOrgId, ...rest } = report
-      const campus = async (id: string | null) => {
-        if (!id) return null
-        const [org] = await tx
-          .select({ name: organizations.campusName })
-          .from(organizations)
-          .where(eq(organizations.id, id))
-        return org?.name ?? null
-      }
-      const toName = await campus(forwardedToOrgId)
       return {
-        ...rest,
+        ...report,
         evidence: files,
         issue: issue ?? null,
-        decision:
-          decision?.text && isDecisionReason(decision.reason)
-            ? {
-                reason: decision.reason,
-                text: decision.text,
-                decidedAt: decision.decidedAt,
-              }
-            : null,
-        forwardedFrom: await campus(forwardedFromOrgId),
-        forwardedTo:
-          forwardedToOrgId && toName
-            ? { id: forwardedToOrgId, name: toName }
-            : null,
+        decision: decision?.text
+          ? { text: decision.text, decidedAt: decision.decidedAt }
+          : null,
       }
     },
     { role },
@@ -314,6 +273,8 @@ export function listMergeTargets(
         .from(issues)
         .where(
           and(
+            // Verify publishes, so published only
+            isNotNull(issues.publishedAt),
             isNull(issues.takenDownAt),
             notInArray(issues.govStatus, [...TERMINAL_GOVERNMENT]),
             filter,
@@ -345,8 +306,7 @@ export type ManagedIssue = {
   publishedAt: Date | null
   takenDownAt: Date | null
   version: number
-  // forwardConsent: step 7 box
-  reports: { code: string; title: string; forwardConsent: boolean }[]
+  reports: { code: string; title: string }[]
   subcategoryId: string
   regencyCode: string
   record: IssueRecord
@@ -387,7 +347,6 @@ export function getManagedIssue(
         .select({
           code: reports.publicCode,
           title: reports.title,
-          forwardConsent: sql<boolean>`${reports.consents} @> ARRAY['forward_to_agency']::text[]`,
         })
         .from(issueReports)
         .innerJoin(
@@ -406,24 +365,6 @@ export function getManagedIssue(
       }
     },
     { role },
-  )
-}
-
-/** Copy at the receiving campus. */
-export function forwardCopyCode(
-  targetOrgId: string,
-  reportId: string,
-): Promise<string | null> {
-  return withTenant(
-    targetOrgId,
-    async (tx) => {
-      const [copy] = await tx
-        .select({ code: reports.publicCode })
-        .from(reports)
-        .where(eq(reports.forwardedFromReportId, reportId))
-      return copy?.code ?? null
-    },
-    { role: "admin" },
   )
 }
 

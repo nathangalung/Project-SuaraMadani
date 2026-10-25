@@ -1,4 +1,3 @@
-import { Ban, Check, CircleDashed, Contrast } from "lucide-react"
 import { cn } from "~/components/ui/cn"
 import type {
   FulfilmentStatus,
@@ -6,15 +5,16 @@ import type {
 } from "../../../shared/status.ts"
 import { FULFILMENT_TEXT, RESPONSE_TEXT } from "./labels"
 
-const MARK = "inline-flex items-center gap-1.5 font-semibold font-ui text-sm"
+const MARK =
+  "inline-flex items-center whitespace-nowrap rounded-full px-3 py-1 font-semibold text-sm"
 
-// Waiting is neutral, never red
-const FULFILMENT_MARK = {
-  not_fulfilled: { Icon: CircleDashed, tone: "text-ink-soft" },
-  partially_fulfilled: { Icon: Contrast, tone: "text-accent" },
-  fulfilled: { Icon: Check, tone: "text-success-ink" },
-  rejected: { Icon: Ban, tone: "text-ink" },
-} as const
+// Text pills, no symbols
+const FULFILMENT_TONE: Record<FulfilmentStatus, string> = {
+  not_fulfilled: "bg-chip text-ink",
+  partially_fulfilled: "bg-accent-soft text-ink",
+  fulfilled: "bg-success text-on-accent",
+  rejected: "bg-ink text-surface-raised",
+}
 
 export function ResponseMark({
   status,
@@ -23,16 +23,16 @@ export function ResponseMark({
   status: ResponseStatus
   className?: string
 }) {
-  const Icon = status === "responded" ? Check : CircleDashed
   return (
     <span
       className={cn(
         MARK,
-        status === "responded" ? "text-success-ink" : "text-ink-soft",
+        status === "responded"
+          ? "bg-success-soft text-success-ink"
+          : "bg-chip text-ink",
         className,
       )}
     >
-      <Icon aria-hidden="true" strokeWidth={3} className="size-4 shrink-0" />
       {RESPONSE_TEXT[status]()}
     </span>
   )
@@ -45,10 +45,8 @@ export function FulfilmentMark({
   status: FulfilmentStatus
   className?: string
 }) {
-  const { Icon, tone } = FULFILMENT_MARK[status]
   return (
-    <span className={cn(MARK, tone, className)}>
-      <Icon aria-hidden="true" strokeWidth={3} className="size-4 shrink-0" />
+    <span className={cn(MARK, FULFILMENT_TONE[status], className)}>
       {FULFILMENT_TEXT[status]()}
     </span>
   )
@@ -82,7 +80,7 @@ export function ProgressSquares({
           />
         ))}
       </span>
-      <span className="font-semibold font-ui text-sm">{label}</span>
+      <span className="font-semibold text-sm">{label}</span>
     </span>
   )
 }

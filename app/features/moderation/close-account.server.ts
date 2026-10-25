@@ -112,7 +112,6 @@ async function removeAtCampus(
   await queueTakedown(tx, orgId, {
     action: "remove_on_request",
     issueId: null,
-    complaintId: null,
     publicFiles: files.flatMap((row) => publicFiles(row.media)),
     evidenceIds: files.map((row) => row.id),
     actorId: input.actorId,

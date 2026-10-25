@@ -7,7 +7,6 @@ import { RankingForm, WithdrawRanking } from "~/features/demands/ranking-panel"
 import { useSiteTitle } from "~/features/report/page-title"
 import { SignIn } from "~/features/report/sign-in"
 import { m } from "~/paraglide/messages.js"
-import { RANKING_SIZE } from "../../../shared/demands.ts"
 import { sessionContext, signedInLabel, tenantContext } from "../../context.ts"
 import type { Route } from "./+types/rank"
 
@@ -59,8 +58,11 @@ export default function DemandRankPage({ loaderData }: Route.ComponentProps) {
         <h1 className="mt-5 font-bold font-heading text-[clamp(2rem,4.4vw,2.75rem)] text-ink leading-[1.1] [font-synthesis-weight:none]">
           {m.demand_rank_page_title()}
         </h1>
-        <p className="mt-3 max-w-2xl text-ink-soft text-lg leading-relaxed">
-          {m.demand_rank_page_lead({ size: RANKING_SIZE })}
+        <p className="mt-3 text-ink-soft text-lg leading-relaxed">
+          {m.demand_rank_page_lead()}
+        </p>
+        <p className="mt-2 text-ink-soft leading-relaxed">
+          {m.demand_rank_intro()}
         </p>
         <Card className="mt-8 rounded-xl p-5 sm:p-7">
           {choices.length === 0 ? (

@@ -122,7 +122,7 @@ export function EditIssueForm({
           defaultValue={issue.summary}
           rows={5}
         />
-        <div className="grid items-start gap-5 sm:grid-cols-2">
+        <div className="grid gap-5 sm:grid-cols-2 sm:items-end">
           <Select
             id={EDIT_FIELD.edit_subcategory}
             name="subcategoryId"

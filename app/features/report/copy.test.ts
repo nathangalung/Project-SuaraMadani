@@ -22,10 +22,6 @@ describe("report copy says what the slice does", () => {
     expect(m.contact_hint()).toContain("WhatsApp")
   })
 
-  test("consent hint says which boxes are required", () => {
-    expect(m.consent_hint()).toContain("wajib")
-  })
-
   test("paused copy names what a reload loses", () => {
     expect(m.report_paused_body()).toContain("berkas bukti")
     expect(m.report_paused_body()).not.toContain("nomor telepon")

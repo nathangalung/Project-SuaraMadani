@@ -27,6 +27,7 @@ import { issues } from "../schema/issues.ts"
 import { withTenant } from "../tenant.server.ts"
 import {
   type PlannedDemand,
+  SAMPLE_BRIEF_URL,
   SAMPLE_DEMANDS,
   SAMPLE_MARK,
 } from "./sample-demands-content.ts"
@@ -229,6 +230,7 @@ async function seedDemand(
       summary: plan.summary,
       target: plan.target,
       raisedOn: jakartaIsoDate(daysAgo(deps.now, plan.raisedDaysAgo)),
+      briefUrl: plan.briefLinks?.demand ? SAMPLE_BRIEF_URL : null,
     },
     items: plan.items,
     actorId: org.actorId,
@@ -237,6 +239,18 @@ async function seedDemand(
   if (!created.ok) throw new Error(`create: ${created.reason}`)
   const { code } = created
   await linkIssues(tenant, org, code, plan)
+  for (const index of plan.briefLinks?.items ?? []) {
+    const item = (await getManagedDemand(org.id, code))?.items[index]
+    if (!item) throw new Error(`brief link item ${index} missing`)
+    const linked = await editItem(tenant, {
+      code,
+      itemId: item.id,
+      version: item.version,
+      briefUrl: SAMPLE_BRIEF_URL,
+      actorId: org.actorId,
+    })
+    if (!linked.ok) throw new Error(`brief link: ${linked.reason}`)
+  }
   if (plan.publishDaysAgo === null) return
   const draft = await getManagedDemand(org.id, code)
   const published = await changeDemandState(tenant, {

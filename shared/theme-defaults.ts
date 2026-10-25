@@ -85,11 +85,10 @@ export const THEME_GROUPS = {
   font: ["fontBody", "fontHeading", "fontUi"],
 } as const
 
-export type ThemeGroup = keyof typeof THEME_GROUPS
+type ThemeGroup = keyof typeof THEME_GROUPS
 export type ThemeField = (typeof THEME_GROUPS)[ThemeGroup][number]
 
-export const SYSTEM_FONT =
-  'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
+const SYSTEM_FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
 
 // theme.server.ts holds fallbacks
 export const FONT_CHOICES = [
@@ -101,10 +100,3 @@ export const FONT_CHOICES = [
 
 export const kebabToken = (token: string): string =>
   token.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)
-
-/** Default value, fonts included. */
-export function defaultFor(token: ThemeField): string {
-  return token.startsWith("font")
-    ? SYSTEM_FONT
-    : (THEME_DEFAULTS[kebabToken(token)] ?? "")
-}

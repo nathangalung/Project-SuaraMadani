@@ -14,15 +14,14 @@ const BASE: TrackedReport = {
   merged: null,
   evidence: ["ready", "awaiting_upload"],
   decision: null,
-  forwardedTo: null,
   pendingUploads: [],
   uploadUntil: null,
 }
 
 function render(
   reports: TrackedReport[],
-  capped = false,
   canUpload = true,
+  pages: { page: number; pageCount: number } = { page: 1, pageCount: 1 },
 ): string {
   // Data router for useRevalidator
   const Stub = createRoutesStub([
@@ -31,10 +30,10 @@ function render(
       Component: () => (
         <TrackingResult
           campus="ITB"
-          tenant="KM ITB"
           reports={reports}
-          capped={capped}
           canUpload={canUpload}
+          {...pages}
+          pageHref={(page) => `/lacak?halaman=${page}`}
         />
       ),
     },
@@ -66,7 +65,7 @@ describe("pending uploads on /lacak", () => {
   })
 
   test("a signed link asks to sign in instead", () => {
-    const html = render([PENDING], false, false)
+    const html = render([PENDING], false)
     expect(html).toContain(m.track_upload_sign_in())
     expect(html).not.toContain('type="file"')
   })
@@ -77,29 +76,19 @@ describe("pending uploads on /lacak", () => {
 })
 
 describe("TrackingResult", () => {
-  test("a rejection shows the standard, guidance and its anchor", () => {
+  test("a decision shows only the admin's text", () => {
     const html = render([
       {
         ...BASE,
-        status: "rejected",
-        decision: { reason: "standard_3", text: "Laporkan layanannya." },
+        status: "unverifiable",
+        decision: { text: "Laporkan layanannya." },
       },
     ])
-    expect(html).toContain("Standar 3: Tidak menuduh orang")
+    expect(html).toContain(m.track_reason_text())
     expect(html).toContain("Laporkan layanannya.")
-    expect(html).toContain('href="/pedoman#standar-3"')
-  })
-
-  test("a forward links the other campus page", () => {
-    const html = render([
-      {
-        ...BASE,
-        status: "forwarded",
-        forwardedTo: { campus: "UGM", url: "http://ugm.localhost/lacak" },
-      },
-    ])
-    expect(html).toContain('href="http://ugm.localhost/lacak"')
-    expect(html).toContain("Laporan saya di UGM")
+    // Free text, no standards
+    expect(html).not.toContain("Standar")
+    expect(html).not.toContain("/pedoman#standar")
   })
 
   test("lists code, status label and received files", () => {
@@ -193,16 +182,17 @@ describe("TrackingResult", () => {
     expect(render([BASE])).not.toContain(m.track_merged_pending())
   })
 
-  test("a list ends with one report link and notes its cap", () => {
+  test("a list ends with one report link and pages", () => {
     const html = render([BASE])
     expect(html.match(/href="\/lapor"/g)).toHaveLength(1)
     expect(html.indexOf(m.track_closing())).toBeGreaterThan(
       html.lastIndexOf("</article>"),
     )
-    expect(html).not.toContain("laporan terbaru dari akun ini")
-    expect(render([BASE], true)).toContain(
-      "Menampilkan 1 laporan terbaru dari akun ini.",
-    )
+    expect(html).not.toContain(m.issues_next())
+    const paged = render([BASE], true, { page: 2, pageCount: 3 })
+    expect(paged).toContain(m.issues_page_of({ page: 2, pages: 3 }))
+    expect(paged).toContain('href="/lacak?halaman=1"')
+    expect(paged).toContain('href="/lacak?halaman=3"')
   })
 
   test("says when there are no reports", () => {

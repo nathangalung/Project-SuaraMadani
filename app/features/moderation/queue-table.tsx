@@ -15,10 +15,17 @@ function files(row: QueueRow): string {
     : m.manage_files({ ready: row.ready, total: row.files })
 }
 
-export function QueueTable({ rows }: { rows: QueueRow[] }) {
+export function QueueTable({
+  rows,
+  caption,
+}: {
+  rows: QueueRow[]
+  // Names the chosen tab
+  caption: string
+}) {
   if (rows.length === 0) return <p>{m.manage_queue_empty()}</p>
   return (
-    <Table caption={m.manage_queue_caption()}>
+    <Table caption={caption}>
       <thead>
         <tr>
           <Th>{m.manage_col_code()}</Th>
@@ -43,13 +50,10 @@ export function QueueTable({ rows }: { rows: QueueRow[] }) {
               {row.title}
               <span className="block text-ink-muted text-sm">
                 {labelOf(SUBCATEGORY_TEXT, row.subcategoryId)}
-                {row.forwardedFrom
-                  ? ` · ${m.manage_queue_from_campus({ campus: row.forwardedFrom })}`
-                  : null}
               </span>
               <PhoneMeta>
-                {formatDateTime(row.createdAt)} ·{" "}
-                {REPORT_STATUS_TEXT[row.status]()} · {files(row)}
+                {formatDateTime(row.createdAt)},{" "}
+                {REPORT_STATUS_TEXT[row.status]()}, {files(row)}
               </PhoneMeta>
             </Td>
             <Td wide className="whitespace-nowrap">

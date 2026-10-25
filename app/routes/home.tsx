@@ -15,7 +15,7 @@ import type { Route } from "./+types/home"
 
 export function meta({ matches }: Route.MetaArgs) {
   const site = matches[0]?.loaderData?.siteName
-  return [{ title: site ? `Sadar Bersuara · ${site}` : "Sadar Bersuara" }]
+  return [{ title: site ? `Sadar Bersuara - ${site}` : "Sadar Bersuara" }]
 }
 
 // Tenant hosts never load it

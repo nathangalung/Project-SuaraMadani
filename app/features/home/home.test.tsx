@@ -18,7 +18,7 @@ const issue = {
   title: "Jalan berlubang di Dago",
   regencyName: "Kota Bandung",
   districtName: "Coblong",
-  reportCount: 4,
+  advocacyStatus: "referred" as const,
   govStatus: "responded" as const,
 }
 
@@ -118,7 +118,11 @@ describe("IssueShowcase", () => {
     )
     expect(html).toContain(">Ditanggapi<")
     expect(html).toContain("bg-surface text-ink")
-    expect(html).toContain("Coblong, Kota Bandung · 4 laporan")
+    // Public stage, place, no count
+    expect(html).toContain(
+      '<p class="mt-1 mb-4 text-sm">Coblong, Kota Bandung</p>',
+    )
+    expect(html).not.toContain("laporan<")
     expect(html).toContain('<span aria-hidden="true"')
     expect(html).toContain('href="/isu"')
     expect(html).not.toContain("Belum ada isu.")
@@ -128,7 +132,7 @@ describe("IssueShowcase", () => {
     const done = { ...issue, govStatus: "confirmed_resolved" as const }
     const html = render(<IssueShowcase {...showcase} issues={[done]} />)
     expect(html).toContain("bg-success-soft text-success-ink")
-    expect(html).toContain(">Selesai terkonfirmasi<")
+    expect(html).toContain(">Selesai<")
   })
 
   test("short lists centre under the heading", () => {
@@ -183,9 +187,9 @@ describe("DemandStrip", () => {
       /<section aria-labelledby="tuntutan-terbaru" class="relative /,
     )
     expect(html).toContain("text-on-accent")
-    expect(html).toContain("Tuntutan Nasional · Pendidikan")
-    expect(html).toContain("0 dari 2 subtuntutan dipenuhi")
-    // Place only for citizen row
+    // Title and status only
+    expect(html).toContain(">Belum dipenuhi<")
+    expect(html).not.toContain("Kriteria penerima dibuka")
     expect(html).not.toContain("Peringkat 1")
     expect(html).not.toContain("Paling Penting Menurut Warga")
   })
@@ -204,7 +208,7 @@ describe("DemandStrip", () => {
       <DemandStrip latest={[demand, second]} important={[]} />,
     )
     const title = html.match(/<h4[^>]*>/)?.[0] ?? ""
-    expect(title).toContain("font-ui")
+    expect(title).not.toContain("font-ui")
     expect(html).toContain("<ol ")
     expect(html.indexOf(">01<")).toBeLessThan(html.indexOf(">02<"))
     expect(html).toMatch(/<span aria-hidden="true"[^>]*>01<\/span>/)
@@ -217,31 +221,15 @@ describe("DemandStrip", () => {
     const latest = html.indexOf(">Terbaru<")
     expect(important).toBeGreaterThan(0)
     expect(latest).toBeGreaterThan(important)
-    expect(html).toContain("Peringkat 1 menurut warga · dipilih 12 warga")
     // Row headings own the h3
     expect(html.match(/<h3 /g)).toHaveLength(2)
     expect(html.match(/<h4 /g)).toHaveLength(2)
   })
 
-  test("sub-tuntutan lettered, only changes named, rest counted", () => {
-    const subs = ["Satu", "Dua", "Tiga", "Empat", "Lima"].map(
-      (word) => `Subtuntutan ${word}`,
-    )
-    const many = {
-      ...demand,
-      subs,
-      marks: subs.map(() => "fulfilled" as const),
-    }
-    const html = render(<DemandStrip latest={[many]} important={[]} />)
-    expect(html).toContain("Subtuntutan Tiga")
-    expect(html).not.toContain("Subtuntutan Empat")
-    expect(html).toMatch(/<span aria-hidden="true"[^>]*>c\.<\/span>/)
-    expect(html).toContain(">Dipenuhi<")
-    expect(html).toContain("+2 subtuntutan lain")
-    const two = render(<DemandStrip latest={[demand]} important={[]} />)
-    expect(two).toContain("Kriteria penerima dibuka")
-    expect(two).not.toContain("Belum dipenuhi")
-    expect(two).not.toContain("subtuntutan lain")
+  test("no sub-tuntutan on the home card", () => {
+    const html = render(<DemandStrip latest={[demand]} important={[]} />)
+    expect(html).not.toContain("Kuota per kampus diumumkan")
+    expect(html).not.toContain("subtuntutan lain")
   })
 
   test("only citizen picks still render", () => {

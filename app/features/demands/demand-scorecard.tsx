@@ -12,7 +12,7 @@ import type { DemandListQuery, Scorecard } from "./demands.server"
 import { FulfilmentMark } from "./status-mark"
 
 // Plain figures, no tiles
-const BLOCK = "group flex w-full flex-col gap-2 py-1"
+const BLOCK = "group flex w-full flex-col items-center gap-2 py-1 text-center"
 
 function BlockBody({
   status,
@@ -27,11 +27,11 @@ function BlockBody({
     <>
       <FulfilmentMark status={status} />
       {/* Numbers align across a row */}
-      <span className="mt-auto flex flex-col gap-2">
+      <span className="mt-auto flex flex-col items-center gap-2">
         <span className="font-bold text-3xl tabular-nums decoration-2 underline-offset-4 group-hover:underline group-aria-[current=true]:text-brand group-aria-[current=true]:underline">
           {formatNumber(count)}
         </span>
-        <span className="font-ui text-ink-muted text-sm">
+        <span className="text-ink-muted text-sm">
           {m.demands_scorecard_share({ percent: sharePercent(count, total) })}
         </span>
       </span>
@@ -74,7 +74,7 @@ export function DemandScorecard({
                   to={demandsHref({
                     ...query,
                     status: active ? undefined : status,
-                    kursor: undefined,
+                    halaman: undefined,
                   })}
                   aria-current={active ? "true" : undefined}
                   className={BLOCK}

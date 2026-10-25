@@ -3,35 +3,30 @@ import { Link } from "react-router"
 import { BoxedHeading } from "~/components/layout/boxed-heading"
 import { useStagger } from "~/components/layout/use-reveal"
 import type { DigestDemand } from "~/features/demands/digest.server"
-import { demandPlace, FULFILMENT_TEXT } from "~/features/demands/labels"
+import { FulfilmentMark } from "~/features/demands/status-mark"
 import { m } from "~/paraglide/messages.js"
 
-// Starting Values: subs per card
-const HOME_SUBS = 3
-
-// Plain text card, no ornaments
+// Title and status only
 function DemandCard({
   demand,
   index,
-  scored,
 }: {
   demand: DigestDemand
   index: number
-  scored: boolean
 }) {
   return (
     <li
       style={{ "--i": index } as CSSProperties}
-      className="group relative flex min-h-52 w-full flex-col rounded-lg bg-surface-raised p-5 sm:w-[calc((100%-1rem)/2)] lg:w-[calc((100%-2rem)/3)] font-ui text-ink has-[a:focus-visible]:outline-3 has-[a:focus-visible]:outline-highlight has-[a:focus-visible]:outline-offset-3 has-[a:focus-visible]:outline-solid"
+      className="group relative flex w-full flex-col gap-3 rounded-2xl bg-surface-raised p-6 text-ink sm:w-[calc((100%-1rem)/2)] lg:w-[calc((100%-2rem)/3)] has-[a:focus-visible]:outline-3 has-[a:focus-visible]:outline-highlight has-[a:focus-visible]:outline-offset-3 has-[a:focus-visible]:outline-solid"
     >
       {/* Order comes from ol */}
       <span
         aria-hidden="true"
-        className="font-bold text-2xl text-accent tabular-nums"
+        className="font-heading text-2xl text-accent tabular-nums"
       >
         {String(index + 1).padStart(2, "0")}
       </span>
-      <h4 className="mt-2 font-bold font-ui text-xl leading-snug">
+      <h4 className="font-bold text-xl leading-snug">
         <Link
           to={`/tuntutan/${demand.code}`}
           className="decoration-2 underline-offset-4 after:absolute after:inset-0 after:content-[''] focus-visible:outline-none group-hover:underline"
@@ -39,58 +34,10 @@ function DemandCard({
           {demand.title}
         </Link>
       </h4>
-      <p className="mt-1 text-ink-muted text-sm">
-        {[demandPlace(demand), demand.categoryText].filter(Boolean).join(" · ")}
+      <p className="mt-auto pt-2">
+        <FulfilmentMark status={demand.progress.status} />
       </p>
-      <Subs demand={demand} />
-      <div className="mt-auto pt-5 text-sm">
-        <p className="border-line-subtle border-t pt-3">
-          {m.demand_progress_line({
-            done: demand.progress.fulfilled,
-            total: demand.progress.total,
-          })}
-        </p>
-        {/* Server text, see toDigest */}
-        {scored && demand.rankText ? (
-          <p className="mt-1 font-semibold">{demand.rankText}</p>
-        ) : null}
-      </div>
     </li>
-  )
-}
-
-// Lettered like a demand letter
-function Subs({ demand }: { demand: DigestDemand }) {
-  const more = demand.subs.length - HOME_SUBS
-  return (
-    <>
-      <ol className="mt-4 flex flex-col gap-2 text-sm leading-snug">
-        {demand.subs.slice(0, HOME_SUBS).map((body, index) => {
-          const status = demand.marks[index] ?? "not_fulfilled"
-          return (
-            <li key={body} className="flex gap-2">
-              <span aria-hidden="true" className="w-4 shrink-0 text-ink-muted">
-                {`${String.fromCharCode(97 + index)}.`}
-              </span>
-              <span>
-                <span className="line-clamp-2">{body}</span>
-                {/* Waiting needs no word */}
-                {status === "not_fulfilled" ? null : (
-                  <span className="font-semibold">
-                    {FULFILMENT_TEXT[status]()}
-                  </span>
-                )}
-              </span>
-            </li>
-          )
-        })}
-      </ol>
-      {more > 0 ? (
-        <p className="mt-2 text-ink-muted text-sm">
-          {m.home_demand_more_subs({ count: more })}
-        </p>
-      ) : null}
-    </>
   )
 }
 
@@ -98,12 +45,10 @@ function DemandRow({
   id,
   title,
   demands,
-  scored = false,
 }: {
   id: string
   title: string
   demands: DigestDemand[]
-  scored?: boolean
 }) {
   const list = useStagger<HTMLOListElement>()
   // Partial rows centre, like showcase
@@ -111,7 +56,7 @@ function DemandRow({
     <div className="mx-auto mt-10 max-w-6xl">
       <h3
         id={id}
-        className="text-center font-bold font-ui text-2xl text-on-accent"
+        className="text-center font-bold font-heading text-2xl text-on-accent"
       >
         {title}
       </h3>
@@ -121,12 +66,7 @@ function DemandRow({
         className="mt-5 flex flex-wrap justify-center gap-4"
       >
         {demands.map((demand, index) => (
-          <DemandCard
-            key={demand.code}
-            demand={demand}
-            index={index}
-            scored={scored}
-          />
+          <DemandCard key={demand.code} demand={demand} index={index} />
         ))}
       </ol>
     </div>
@@ -155,7 +95,6 @@ export function DemandStrip({
           id="tuntutan-penting"
           title={m.home_demands_important()}
           demands={important}
-          scored
         />
       ) : null}
       {latest.length > 0 ? (
@@ -168,7 +107,7 @@ export function DemandStrip({
       <p className="mt-10 text-center">
         <Link
           to="/tuntutan"
-          className="font-semibold font-ui text-lg text-on-accent underline underline-offset-4 hover:no-underline"
+          className="font-semibold text-lg text-on-accent underline underline-offset-4 hover:no-underline"
         >
           {m.data_demands_all()}
         </Link>

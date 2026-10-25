@@ -71,15 +71,15 @@ describe("issue filters", () => {
       issuesHref({
         q: "air",
         status: "responded",
-        kursor: "abc",
+        halaman: "3",
         kategori: "bansos",
       }),
-    ).toBe("/isu?kategori=bansos&kursor=abc&q=air&status=responded")
+    ).toBe("/isu?halaman=3&kategori=bansos&q=air&status=responded")
     const html = render(
-      <IssueFilters regions={REGIONS} query={{ q: "air", kursor: "abc" }} />,
+      <IssueFilters regions={REGIONS} query={{ q: "air", halaman: "3" }} />,
     )
     expect(html).toContain('href="/isu?kategori=bencana&amp;q=air"')
-    expect(html).not.toContain("kursor=abc")
+    expect(html).not.toContain("halaman=3")
   })
 
   test("phones fold the selects into one native disclosure", () => {
@@ -134,7 +134,7 @@ describe("issue filters", () => {
   })
 
   test("an active region is named and removable", () => {
-    const query = { wilayah: "32", status: "responded", kursor: "abc" }
+    const query = { wilayah: "32", status: "responded", halaman: "3" }
     const html = render(
       <IssueFilters regions={REGIONS} query={query} regionName="Jawa Barat" />,
     )
@@ -287,12 +287,12 @@ describe("Timeline", () => {
       },
     })
     expect(entries.map((entry) => entry.title)).toEqual([
-      "Isu diterbitkan",
+      "Isu dibuat dari laporan terverifikasi",
       "Diteruskan ke Dinas Pendidikan Kota Bandung via kanal pengaduan instansi",
       "Isu ditutup",
     ])
     expect(entries[1]).toMatchObject({
-      body: "Tiket ADU-42 · Tenggat 27 Oktober 2026",
+      body: "Tiket ADU-42, Tenggat 27 Oktober 2026",
       status: "Status berubah: Diteruskan ke instansi",
       actor: "Admin",
     })
@@ -332,7 +332,7 @@ describe("Timeline", () => {
       },
     })
     expect(entries.map((entry) => entry.title)).toEqual([
-      "Isu diterbitkan",
+      "Isu dibuat dari laporan terverifikasi",
       "3 laporan baru digabung ke isu ini",
       "Instansi mulai menangani",
       "Laporan baru digabung ke isu ini",

@@ -12,36 +12,77 @@ function form(values: Record<string, string | string[]>): FormData {
 const ISSUE_ID = "0199c2b0-1d2e-7000-8000-000000000001"
 
 describe("parseReviewForm", () => {
-  test("start review carries the status the admin saw", () => {
+  const CHECKLIST = [
+    "no_personal_data",
+    "region_matches",
+    "category_complete",
+    "label_checked",
+  ]
+  const NEW = {
+    target: "new",
+    title: "Jalan desa rusak sejak banjir",
+    summary: "Warga melaporkan jalan desa rusak.",
+  }
+
+  test("no review step, decide from Terkirim", () => {
     expect(
       parseReviewForm(form({ intent: "start_review", from: "submitted" })),
-    ).toEqual({ action: "start_review", from: "submitted" })
-  })
-
-  test("verify needs a method", () => {
-    expect(
-      parseReviewForm(form({ intent: "verify", from: "in_review" })),
-    ).toEqual({ errors: ["verify_method"], intent: "verify" })
-    expect(
-      parseReviewForm(
-        form({ intent: "verify", from: "in_review", method: "news_source" }),
-      ),
-    ).toEqual({ action: "verify", from: "in_review", method: "news_source" })
-  })
-
-  test("reporter contact verifies, contacts are readable", () => {
+    ).toBeNull()
     expect(
       parseReviewForm(
         form({
           intent: "verify",
-          from: "in_review",
-          method: "reporter_contact",
+          from: "submitted",
+          method: "document",
+          target: "existing",
+          issueId: ISSUE_ID,
         }),
       ),
     ).toEqual({
       action: "verify",
-      from: "in_review",
+      from: "submitted",
+      method: "document",
+      target: { kind: "existing", issueId: ISSUE_ID },
+    })
+  })
+
+  test("verify needs a method and an issue", () => {
+    expect(
+      parseReviewForm(form({ intent: "verify", from: "submitted" })),
+    ).toBeNull()
+    expect(
+      parseReviewForm(
+        form({ intent: "verify", from: "submitted", target: "existing" }),
+      ),
+    ).toEqual({ errors: ["verify_method", "merge_issue"], intent: "verify" })
+  })
+
+  test("a new issue publishes, so the checklist is required", () => {
+    expect(
+      parseReviewForm(
+        form({
+          intent: "verify",
+          from: "submitted",
+          method: "document",
+          ...NEW,
+        }),
+      ),
+    ).toEqual({ errors: ["checklist"], intent: "verify" })
+    expect(
+      parseReviewForm(
+        form({
+          intent: "verify",
+          from: "submitted",
+          method: "reporter_contact",
+          checklist: CHECKLIST,
+          ...NEW,
+        }),
+      ),
+    ).toEqual({
+      action: "verify",
+      from: "submitted",
       method: "reporter_contact",
+      target: { kind: "new", title: NEW.title, summary: NEW.summary },
     })
   })
 
@@ -84,54 +125,38 @@ describe("parseReviewForm", () => {
     })
   })
 
-  test("reject cites a standard and explains it", () => {
+  test("unverifiable needs only free text", () => {
     expect(
-      parseReviewForm(
-        form({ intent: "reject", from: "in_review", reason: "standard_99" }),
-      ),
-    ).toEqual({ errors: ["reject_reason", "reject_text"], intent: "reject" })
-    expect(
-      parseReviewForm(
-        form({
-          intent: "reject",
-          from: "in_review",
-          reason: "standard_4",
-          reasonText:
-            "Laporan menyebut nama pegawai.\r\nKirim ulang tanpa nama.",
-        }),
-      ),
-    ).toEqual({
-      action: "reject",
-      from: "in_review",
-      reason: "standard_4",
-      reasonText: "Laporan menyebut nama pegawai.\nKirim ulang tanpa nama.",
-    })
-  })
-
-  test("unverifiable has its own reasons", () => {
+      parseReviewForm(form({ intent: "mark_unverifiable", from: "submitted" })),
+    ).toEqual({ errors: ["unverifiable_text"], intent: "mark_unverifiable" })
+    // Legacy code field ignored
     expect(
       parseReviewForm(
         form({
           intent: "mark_unverifiable",
-          from: "in_review",
-          reason: "standard_4",
-          reasonText: "Belum ada bukti yang bisa diperiksa moderator.",
+          from: "submitted",
+          reason: "no_evidence",
+          reasonText: "Belum ada bukti.\r\nKirim foto lokasi.",
         }),
       ),
-    ).toEqual({ errors: ["unverifiable_reason"], intent: "mark_unverifiable" })
-  })
-
-  test("forward needs a campus id", () => {
-    expect(
-      parseReviewForm(form({ intent: "forward", targetOrgId: "itb" })),
-    ).toEqual({ errors: ["forward_target"], intent: "forward" })
-    expect(
-      parseReviewForm(form({ intent: "forward", targetOrgId: ISSUE_ID })),
-    ).toEqual({ action: "forward", targetOrgId: ISSUE_ID })
+    ).toEqual({
+      action: "mark_unverifiable",
+      from: "submitted",
+      reasonText: "Belum ada bukti.\nKirim foto lokasi.",
+    })
   })
 
   test.each<Record<string, string>>([
     { intent: "delete" },
+    // Campus forwarding removed 25 Oct
+    { intent: "forward" },
+    // Reject form removed
+    {
+      intent: "reject",
+      from: "submitted",
+      reason: "standard_4",
+      reasonText: "Laporan menyebut nama pegawai.",
+    },
     { intent: "start_review", from: "nonsense" },
     { intent: "merge", target: "other" },
   ])("rejects %p", (values) => {

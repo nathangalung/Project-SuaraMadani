@@ -70,7 +70,7 @@ export function Timeline({
                 : "top-1 -left-[calc(1.5rem+9px)] size-3.5",
             )}
           />
-          <p>
+          <p className="flex flex-wrap gap-x-3">
             <time
               dateTime={entry.at.toISOString()}
               className="text-ink-muted text-sm"
@@ -78,7 +78,7 @@ export function Timeline({
               {formatDate(entry.at)}
             </time>
             {entry.actor ? (
-              <span className="text-ink-muted text-sm"> · {entry.actor}</span>
+              <span className="text-ink-muted text-sm">{entry.actor}</span>
             ) : null}
           </p>
           <p className="mt-0.5 font-semibold text-ink">
@@ -153,7 +153,7 @@ function eventEntry(
         ? m.timeline_deadline({ date: formatIsoDate(referral.deadlineOn) })
         : null,
     ].filter((part) => part !== null)
-    body = parts.length > 0 ? parts.join(" · ") : undefined
+    body = parts.length > 0 ? parts.join(", ") : undefined
   } else if (event.action === "record_response" && response) {
     title = m.timeline_record_response({ agency: response.agency })
   } else {
@@ -174,7 +174,7 @@ function eventEntry(
     body: event.note ?? body,
     status:
       changed.length > 0
-        ? m.timeline_status({ status: changed.join(" · ") })
+        ? m.timeline_status({ status: changed.join(", ") })
         : undefined,
     tone: TONE[event.action] ?? "ink",
   }

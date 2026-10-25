@@ -3,10 +3,9 @@ import {
   count,
   desc,
   eq,
-  gt,
+  inArray,
   isNotNull,
-  isNull,
-  min,
+  ne,
   notInArray,
   type SQL,
   sql,
@@ -16,10 +15,12 @@ import { issues } from "../../../db/schema/issues.ts"
 import { reports } from "../../../db/schema/reports.ts"
 import { withTenant } from "../../../db/tenant.server.ts"
 import { jakartaIsoDate } from "../../../shared/format.ts"
-import type {
-  AdvocacyStatus,
-  GovernmentStatus,
-  VerificationLabel,
+import {
+  type AdvocacyStatus,
+  type GovernmentStatus,
+  type PublicStage,
+  STAGE_GOVERNMENT,
+  type VerificationLabel,
 } from "../../../shared/status.ts"
 import {
   ISSUE_NEEDS,
@@ -44,13 +45,6 @@ function overdue(today: string): SQL {
 function needFilter(need: IssueNeed, today: string): SQL | undefined {
   const published = isNotNull(issues.publishedAt)
   switch (need) {
-    case "draf":
-      // Removed issues never republish
-      return and(
-        isNull(issues.publishedAt),
-        isNull(issues.takenDownAt),
-        gt(issues.reportCount, 0),
-      )
     case "belum-diteruskan":
       return and(
         published,
@@ -59,15 +53,11 @@ function needFilter(need: IssueNeed, today: string): SQL | undefined {
       )
     case "lewat-tenggat":
       return and(published, overdue(today))
-    case "klaim":
-      return and(published, eq(issues.govStatus, "claimed_resolved"))
   }
 }
 
 export type ManageSummary = {
   counts: Record<QueueStatus, number>
-  oldestWaiting: Date | null
-  forwardedIn: number
   needs: Record<IssueNeed, number>
 }
 
@@ -91,19 +81,6 @@ export function readManageSummary(
           byStatus.find((row) => row.status === status)?.n ?? 0,
         ]),
       ) as Record<QueueStatus, number>
-      const [waiting] = await tx
-        .select({ at: min(reports.createdAt) })
-        .from(reports)
-        .where(sql`${reports.status} IN ('submitted', 'in_review')`)
-      const [forwardedIn] = await tx
-        .select({ n: count() })
-        .from(reports)
-        .where(
-          and(
-            isNotNull(reports.forwardedFromReportId),
-            sql`${reports.status} IN ('submitted', 'in_review')`,
-          ),
-        )
       const needs = {} as Record<IssueNeed, number>
       for (const need of ISSUE_NEEDS) {
         const [row] = await tx
@@ -114,8 +91,6 @@ export function readManageSummary(
       }
       return {
         counts,
-        oldestWaiting: waiting?.at ?? null,
-        forwardedIn: forwardedIn?.n ?? 0,
         needs,
       }
     },
@@ -136,11 +111,24 @@ export type ManagedIssueRow = {
 }
 
 /** Staff list, drafts included. */
+/** Same stages as Jelajah. */
+function stageFilter(stage: PublicStage): SQL | undefined {
+  const gov = inArray(issues.govStatus, [...STAGE_GOVERNMENT[stage]])
+  if (stage === "verified") {
+    return and(gov, eq(issues.advocacyStatus, "monitoring"))
+  }
+  if (stage === "referred") {
+    return and(gov, ne(issues.advocacyStatus, "monitoring"))
+  }
+  return gov
+}
+
 export function listManagedIssues(
   orgId: string,
   role: MemberRole,
   need: IssueNeed | null,
   now: Date,
+  stage: PublicStage | null = null,
 ): Promise<ManagedIssueRow[]> {
   return withTenant(
     orgId,
@@ -158,7 +146,12 @@ export function listManagedIssues(
           lastActivityAt: issues.lastActivityAt,
         })
         .from(issues)
-        .where(need ? needFilter(need, jakartaIsoDate(now)) : undefined)
+        .where(
+          and(
+            need ? needFilter(need, jakartaIsoDate(now)) : undefined,
+            stage ? stageFilter(stage) : undefined,
+          ),
+        )
         .orderBy(desc(issues.lastActivityAt), desc(issues.id))
         .limit(ISSUE_LIST_LIMIT),
     { role },

@@ -17,12 +17,12 @@ import {
 } from "../../../shared/status.ts"
 
 export type ReviewDecision =
-  | { action: "start_review" }
   | { action: "verify"; method: VerifyMethod }
   | { action: "reject"; reason: RejectReason; reasonText: string }
   | {
       action: "mark_unverifiable"
-      reason: UnverifiableReason
+      // Legacy seed codes only
+      reason?: UnverifiableReason
       reasonText: string
     }
 
@@ -41,12 +41,12 @@ export type NotifyOption = { notify?: boolean }
 
 function reasonOf(input: ReviewInput) {
   switch (input.action) {
-    case "start_review":
-      return null
     case "verify":
       return { code: input.method, text: null }
-    default:
+    case "reject":
       return { code: input.reason, text: input.reasonText }
+    default:
+      return { code: input.reason ?? null, text: input.reasonText }
   }
 }
 
@@ -89,7 +89,7 @@ export async function reviewReport(
     .returning({ id: reports.id })
   if (updated.length === 0) return { ok: false, reason: "changed" }
   const reason = reasonOf(input)
-  if (reason && input.action !== "start_review") {
+  if (reason) {
     await tx.insert(moderationDecisions).values({
       orgId,
       reportId: input.reportId,

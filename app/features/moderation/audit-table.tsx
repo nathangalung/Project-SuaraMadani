@@ -5,7 +5,7 @@ import { m } from "~/paraglide/messages.js"
 import { formatDateTime } from "../../../shared/format.ts"
 import type { AuditEntity } from "../../../shared/moderation.ts"
 import type { AuditRow } from "./audit.server"
-import { auditColumnText, auditReasonText } from "./audit-labels"
+import { auditColumnText } from "./audit-labels"
 import { AUDIT_ACTION_TEXT, ENTITY_TEXT, ROLE_TEXT } from "./labels"
 
 const LINK = "font-semibold text-accent underline underline-offset-4"
@@ -43,12 +43,9 @@ function Entity({ row }: { row: AuditRow }) {
   if (!row.entityCode) {
     return <span className="text-ink-muted">{m.manage_audit_deleted()}</span>
   }
-  const path =
-    row.entityType === "issue"
-      ? "isu"
-      : row.entityType === "complaint"
-        ? "aduan"
-        : "laporan"
+  // Legacy rows, complaints removed
+  if (row.entityType === "complaint") return row.entityCode
+  const path = row.entityType === "issue" ? "isu" : "laporan"
   return (
     <Link to={`/kelola/${path}/${row.entityCode}`} className={LINK}>
       {row.entityCode}
@@ -95,7 +92,6 @@ export function AuditTable({
           <Th>{m.manage_col_entity()}</Th>
           <Th wide>{m.manage_col_actor()}</Th>
           <Th wide>{m.manage_col_columns()}</Th>
-          <Th wide>{m.manage_col_reason()}</Th>
         </tr>
       </thead>
       <tbody>
@@ -109,13 +105,8 @@ export function AuditTable({
             <Td>
               {actionText(row.action)}
               <PhoneMeta>
-                {formatDateTime(row.createdAt)} · <Actor row={row} />
-                {row.changedColumns.length > 0
-                  ? ` · ${columnsText(row)}`
-                  : null}
-                {row.reasonCode
-                  ? ` · ${auditReasonText(row.reasonCode)}`
-                  : null}
+                {formatDateTime(row.createdAt)}, <Actor row={row} />
+                {row.changedColumns.length > 0 ? `, ${columnsText(row)}` : null}
               </PhoneMeta>
             </Td>
             <Td className="whitespace-nowrap tabular-nums">
@@ -126,9 +117,6 @@ export function AuditTable({
             </Td>
             <Td wide className="text-sm">
               {columnsText(row)}
-            </Td>
-            <Td wide className="text-sm">
-              {row.reasonCode ? auditReasonText(row.reasonCode) : ""}
             </Td>
           </tr>
         ))}

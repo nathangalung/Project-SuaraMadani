@@ -4,7 +4,7 @@ import { ReportButton, useNational } from "~/features/content/policy-page"
 import { useSiteTitle } from "~/features/report/page-title"
 import { m } from "~/paraglide/messages.js"
 
-const METHODS = [m.about_method_1, m.about_method_2, m.about_method_3]
+const METHODS = [m.about_method_1, m.about_method_2]
 
 function principles() {
   return [

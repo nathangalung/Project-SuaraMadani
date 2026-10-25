@@ -1,5 +1,4 @@
 import {
-  type AnyColumn,
   and,
   asc,
   desc,
@@ -17,9 +16,10 @@ import { issues } from "../../../db/schema/issues.ts"
 import { regions } from "../../../db/schema/regions.ts"
 import { pgError, type Tx, withTenant } from "../../../db/tenant.server.ts"
 import { originFor } from "../../../server/origin.server.ts"
-import type {
-  IssueRanking,
-  IssueSort,
+import {
+  type IssueRanking,
+  type IssueSort,
+  pageNumber,
 } from "../../../shared/canonical-query.ts"
 import { isCategoryId } from "../../../shared/categories.ts"
 import type {
@@ -42,8 +42,7 @@ import { type IssueRecord, readIssueRecord } from "./record.server.ts"
 import { createSlots, type Slots } from "./slots.ts"
 
 // Starting Values: search
-export const ISSUE_PAGE_SIZE = 20
-const ISSUE_MAX_PAGES = 50
+export const ISSUE_PAGE_SIZE = 15
 const SEARCH_MIN_LENGTH = 3
 const searchSlots = createSlots(2)
 
@@ -205,7 +204,7 @@ export type ShowcaseIssue = Pick<
   | "title"
   | "regencyName"
   | "districtName"
-  | "reportCount"
+  | "advocacyStatus"
   | "govStatus"
 >
 
@@ -220,7 +219,7 @@ export function listLatestIssues(orgId: string): Promise<ShowcaseIssue[]> {
         title: issues.title,
         regencyName: regency.name,
         districtName: district.name,
-        reportCount: issues.reportCount,
+        advocacyStatus: issues.advocacyStatus,
         govStatus: issues.govStatus,
       })
       .from(issues)
@@ -241,6 +240,7 @@ export type RankedIssue = Pick<
   | "code"
   | "title"
   | "categoryId"
+  | "advocacyStatus"
   | "govStatus"
   | "regencyName"
   | "districtName"
@@ -263,6 +263,7 @@ export function listIssueRanking(
         code: issues.publicCode,
         title: issues.title,
         categoryId: issues.categoryId,
+        advocacyStatus: issues.advocacyStatus,
         govStatus: issues.govStatus,
         regencyName: regency.name,
         districtName: district.name,
@@ -286,60 +287,8 @@ export function listIssueRanking(
   })
 }
 
-export type IssueCursor = {
-  page: number
-  sort: IssueSort
-  key: string
-  id: string
-}
-
-export function encodeCursor(cursor: IssueCursor): string {
-  return Buffer.from(
-    JSON.stringify([cursor.page, cursor.sort, cursor.key, cursor.id]),
-  ).toString("base64url")
-}
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-const INT_MAX = 2_147_483_647
-const UTC_KEY = /^[1-9]\d{3}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/
-
-// Postgres must accept the cast
-function validKey(sort: IssueSort, key: string): boolean {
-  if (sort === "laporan") {
-    return /^(0|[1-9]\d{0,9})$/.test(key) && Number(key) <= INT_MAX
-  }
-  if (!UTC_KEY.test(key)) return false
-  const seconds = `${key.slice(0, 19)}Z`
-  const date = new Date(seconds)
-  return (
-    !Number.isNaN(date.getTime()) &&
-    date.toISOString() === `${key.slice(0, 19)}.000Z`
-  )
-}
-
-function isSort(value: unknown): value is IssueSort {
-  return value === "terbaru" || value === "aktivitas" || value === "laporan"
-}
-
-export function decodeCursor(value: string): IssueCursor | null {
-  try {
-    const parsed: unknown = JSON.parse(
-      Buffer.from(value, "base64url").toString("utf8"),
-    )
-    if (!Array.isArray(parsed) || parsed.length !== 4) return null
-    const [page, sort, key, id] = parsed
-    if (!Number.isInteger(page) || page < 2) return null
-    if (!isSort(sort)) return null
-    if (typeof key !== "string" || !validKey(sort, key)) return null
-    if (typeof id !== "string" || !UUID.test(id)) return null
-    return { page, sort, key, id }
-  } catch {
-    return null
-  }
-}
-
 export type IssueListQuery = Partial<
-  Record<"kategori" | "status" | "wilayah" | "q" | "urut" | "kursor", string>
+  Record<"kategori" | "status" | "wilayah" | "q" | "urut" | "halaman", string>
 >
 
 export type IssueListResult =
@@ -347,31 +296,15 @@ export type IssueListResult =
       kind: "results"
       issues: ListedIssue[]
       page: number
-      nextCursor: string | null
-      capped: boolean
+      pageCount: number
+      total: number
     }
-  | { kind: "short_query" | "page_cap" | "bad_cursor" | "busy" }
-
-// Canonical UTC key, any session
-const utcKey = (column: AnyColumn) =>
-  sql<string>`to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
+  | { kind: "short_query" | "busy" }
 
 const SORT_COLUMN = {
-  terbaru: {
-    column: issues.publishedAt,
-    key: utcKey(issues.publishedAt),
-    cast: sql`timestamptz`,
-  },
-  aktivitas: {
-    column: issues.lastActivityAt,
-    key: utcKey(issues.lastActivityAt),
-    cast: sql`timestamptz`,
-  },
-  laporan: {
-    column: issues.reportCount,
-    key: sql<string>`${issues.reportCount}::text`,
-    cast: sql`int`,
-  },
+  terbaru: issues.publishedAt,
+  aktivitas: issues.lastActivityAt,
+  laporan: issues.reportCount,
 } as const
 
 function sortOf(value: string | undefined): IssueSort {
@@ -421,7 +354,7 @@ function filters(query: IssueListQuery, search: string | null): SQL[] {
   return where
 }
 
-/** Keyset paging, search slots. */
+/** Numbered pages, search slots. */
 export async function listPublishedIssues(
   orgId: string,
   query: IssueListQuery,
@@ -431,71 +364,56 @@ export async function listPublishedIssues(
   if (search !== "" && search.length < SEARCH_MIN_LENGTH) {
     return { kind: "short_query" }
   }
-  const sortName = sortOf(query.urut)
-  let cursor: IssueCursor | null = null
-  if (query.kursor) {
-    cursor = decodeCursor(query.kursor)
-    if (!cursor || cursor.sort !== sortName) return { kind: "bad_cursor" }
-    if (cursor.page > ISSUE_MAX_PAGES) return { kind: "page_cap" }
-  }
-  const page = cursor?.page ?? 1
-  const sort = SORT_COLUMN[sortName]
-  const where = filters(query, search || null)
-  if (cursor) {
-    where.push(
-      sql`(${sort.column}, ${issues.id}) < (${cursor.key}::${sort.cast}, ${cursor.id}::uuid)`,
-    )
-  }
+  const page = pageNumber(query.halaman)
+  const sort = SORT_COLUMN[sortOf(query.urut)]
+  const where = and(...filters(query, search || null))
   const read = () =>
     withTenant(orgId, async (tx) => {
       if (search) await tx.execute(sql`SET LOCAL statement_timeout = 1000`)
-      return tx
+      const [counted] = await tx
+        .select({ total: sql<number>`count(*)::int` })
+        .from(issues)
+        .where(where)
+      const total = counted?.total ?? 0
+      const pageCount = Math.max(1, Math.ceil(total / ISSUE_PAGE_SIZE))
+      // Past the end: caller redirects
+      if (page > pageCount) return { total, pageCount, rows: [] }
+      const rows = await tx
         .select({
           ...cardColumns,
           excerpt: sql<string>`left(${issues.summary}, ${EXCERPT_LENGTH})`,
-          key: sort.key,
         })
         .from(issues)
         .innerJoin(regency, eq(regency.code, issues.regencyCode))
         .leftJoin(district, eq(district.code, issues.districtCode))
-        .where(and(...where))
-        .orderBy(desc(sort.column), desc(issues.id))
-        .limit(ISSUE_PAGE_SIZE + 1)
+        .where(where)
+        .orderBy(desc(sort), desc(issues.id))
+        .limit(ISSUE_PAGE_SIZE)
+        .offset((page - 1) * ISSUE_PAGE_SIZE)
+      return { total, pageCount, rows }
     })
-  let rows: Awaited<ReturnType<typeof read>>
+  let listing: Awaited<ReturnType<typeof read>>
   try {
     if (search) {
       const slot = await (deps.searchSlots ?? searchSlots).tryRun(read)
       if (!slot.ran) return { kind: "busy" }
-      rows = slot.value
+      listing = slot.value
     } else {
-      rows = await read()
+      listing = await read()
     }
   } catch (error) {
     // statement_timeout: overload, not a bug
     if (pgError(error)?.code === "57014") return { kind: "busy" }
     throw error
   }
-  const more = rows.length > ISSUE_PAGE_SIZE
-  const shown = rows.slice(0, ISSUE_PAGE_SIZE)
-  const last = shown.at(-1)
-  const capped = more && page >= ISSUE_MAX_PAGES
   return {
     kind: "results",
-    issues: shown.map(({ id: _id, key: _key, ...row }) => ({
+    issues: listing.rows.map(({ id: _id, ...row }) => ({
       ...row,
       publishedAt: published(row),
     })),
     page,
-    nextCursor:
-      more && !capped && last
-        ? encodeCursor({
-            page: page + 1,
-            sort: sortName,
-            key: last.key,
-            id: last.id,
-          })
-        : null,
-    capped,
+    pageCount: listing.pageCount,
+    total: listing.total,
   }
 }

@@ -1,5 +1,4 @@
 import { and, eq, gt, isNull, sql } from "drizzle-orm"
-import { notifyFollowers } from "../../../db/notifications.server.ts"
 import { auditLog } from "../../../db/schema/audit.ts"
 import { issues } from "../../../db/schema/issues.ts"
 import { type Tx, withTenant } from "../../../db/tenant.server.ts"
@@ -17,7 +16,7 @@ export type PublishResult =
   | { ok: false; reason: "changed" }
 
 /** Sets published_at once, bumps version. */
-async function publishIssue(
+export async function publishIssue(
   tx: Tx,
   orgId: string,
   input: PublishInput,
@@ -42,27 +41,16 @@ async function publishIssue(
     )
     .returning({ code: issues.publicCode, version: issues.version })
   if (!row) return { ok: false, reason: "changed" }
-  const [event] = await tx
-    .insert(auditLog)
-    .values({
-      orgId,
-      actorId: input.actorId,
-      action: "issue.publish",
-      entityType: "issue",
-      entityId: input.issueId,
-      changedColumns: ["published_at", "version"],
-    })
-    .returning({ id: auditLog.id })
+  await tx.insert(auditLog).values({
+    orgId,
+    actorId: input.actorId,
+    action: "issue.publish",
+    entityType: "issue",
+    entityId: input.issueId,
+    changedColumns: ["published_at", "version"],
+  })
   // Earlier approvals go public now
   await queueIssueEvidence(tx, orgId, input.issueId)
-  if (event && input.notify !== false) {
-    await notifyFollowers(tx, {
-      orgId,
-      issueId: input.issueId,
-      eventId: event.id,
-      template: "issue_published",
-    })
-  }
   return { ok: true, code: row.code, version: row.version }
 }
 

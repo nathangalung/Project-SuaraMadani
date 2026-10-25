@@ -3,12 +3,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises"
 import { dirname } from "node:path"
 import { and, eq, inArray, like, type SQL, sql } from "drizzle-orm"
 import sharp from "sharp"
-import {
-  appealComplaint,
-  submitComplaint,
-} from "../../app/features/issues/complaint.server.ts"
 import { runPublish } from "../../app/features/issues/publish.server.ts"
-import { decideComplaint } from "../../app/features/moderation/complaints.server.ts"
 import { decideEvidence } from "../../app/features/moderation/evidence.server.ts"
 import { runMerge } from "../../app/features/moderation/merge.server.ts"
 import {
@@ -19,7 +14,6 @@ import {
   type ReviewDecision,
   reviewReport,
 } from "../../app/features/moderation/verify.server.ts"
-import { forwardReport } from "../../app/features/report/forward.server.ts"
 import {
   defaultFilesDir,
   derivedPath,
@@ -38,7 +32,6 @@ import { createPublishHandler } from "../../worker/evidence-publish.ts"
 import { createVideoHandler } from "../../worker/evidence-video.ts"
 import { simplePdf, videoFixture } from "../../worker/fixtures.ts"
 import { localStore } from "../../worker/media-store.ts"
-import { createTakedownHandler } from "../../worker/takedown.ts"
 import {
   createDatabase,
   type Db,
@@ -48,7 +41,7 @@ import {
 import { auditLog } from "../schema/audit.ts"
 import { members, users } from "../schema/auth.ts"
 import { issueReports, issues } from "../schema/issues.ts"
-import { contentComplaints, takedowns } from "../schema/moderation.ts"
+import { takedowns } from "../schema/moderation.ts"
 import { follows } from "../schema/notifications.ts"
 import { organizations, orgCounters } from "../schema/organizations.ts"
 import { regions } from "../schema/regions.ts"
@@ -62,8 +55,6 @@ import {
 } from "./sample-demands.ts"
 import {
   buildSamplePlan,
-  type PlannedComplaint,
-  type PlannedDecision,
   type PlannedIssue,
   type PlannedReport,
   type PlannedStep,
@@ -230,7 +221,6 @@ async function sampleState(org: Org, plan: SamplePlan): Promise<SampleState> {
       moved: number
       follows: number
       orphans: number
-      complaints: number
     }>(sql`
       SELECT count(*)::int AS reports,
         count(ir.report_id)::int AS links,
@@ -253,10 +243,7 @@ async function sampleState(org: Org, plan: SamplePlan): Promise<SampleState> {
           WHERE fu.email LIKE ${SAMPLE_EMAIL_PATTERN}) AS follows,
         (SELECT count(*)::int FROM follows f
           WHERE NOT EXISTS (SELECT 1 FROM members m
-            WHERE m.organization_id = f.org_id AND m.user_id = f.user_id)) AS orphans,
-        (SELECT count(*)::int FROM content_complaints c
-          JOIN users cu ON cu.id = c.user_id
-          WHERE cu.email LIKE ${SAMPLE_EMAIL_PATTERN}) AS complaints
+            WHERE m.organization_id = f.org_id AND m.user_id = f.user_id)) AS orphans
       FROM reports r
       JOIN users u ON u.id = r.user_id
       LEFT JOIN issue_reports ir ON ir.org_id = r.org_id AND ir.report_id = r.id
@@ -266,13 +253,7 @@ async function sampleState(org: Org, plan: SamplePlan): Promise<SampleState> {
   })
   if (!row || row.reports === 0) return "empty"
   const merged = plan.reports.filter((r) => r.issue !== null).length
-  // Complaints hide or remove some
-  const hidden = plan.complaints.filter((c) =>
-    [c.first?.decision, c.appeal?.decision?.decision].some(
-      (d) => d === "hide" || d === "remove",
-    ),
-  ).length
-  const published = plan.issues.filter((i) => i.publishedAt).length - hidden
+  const published = plan.issues.filter((i) => i.publishedAt).length
   const moved = plan.issues.filter(
     (i) =>
       i.state.advocacy !== INITIAL_ISSUE_STATE.advocacy ||
@@ -285,7 +266,6 @@ async function sampleState(org: Org, plan: SamplePlan): Promise<SampleState> {
     ),
   ).size
   const complete =
-    row.complaints === plan.complaints.length &&
     row.follows === reporterFollows + plan.follows.length &&
     row.orphans === 0 &&
     row.reports === plan.reports.length &&
@@ -298,7 +278,7 @@ async function sampleState(org: Org, plan: SamplePlan): Promise<SampleState> {
   return complete ? "complete" : "partial"
 }
 
-const SAMPLE_ACCOUNT = /^sampel\.([a-z]+)\.(\d+|admin)@/
+const SAMPLE_ACCOUNT = /^sampel\.([a-z]+)\.(\d+)@/
 const ORG_DIGIT: Record<string, string> = { itb: "1", ugm: "2" }
 
 /** Fictional +62 8110 block. */
@@ -306,15 +286,13 @@ function samplePhone(email: string): string {
   const [, slug = "", n = ""] = SAMPLE_ACCOUNT.exec(email) ?? []
   const digit = ORG_DIGIT[slug]
   if (!digit) throw new Error(`no sample number for ${email}`)
-  const index = n === "admin" ? "999999" : n.padStart(6, "0")
-  return `+628110${digit}${index}`
+  return `+628110${digit}${n.padStart(6, "0")}`
 }
 
 /** Marked sample, never a person. */
 function sampleName(email: string): string {
   const [, slug = "", n = ""] = SAMPLE_ACCOUNT.exec(email) ?? []
-  const who = n === "admin" ? "Admin" : `Warga ${n}`
-  return `${who} Sampel ${slug.toUpperCase()}`
+  return `Warga ${n} Sampel ${slug.toUpperCase()}`
 }
 
 async function insertReporters(plan: SamplePlan): Promise<string[]> {
@@ -510,7 +488,7 @@ async function insertReports(
   )
 }
 
-/** Real review paths, forwards after. */
+/** Real review paths. */
 async function applyReviews(org: Org, plan: SamplePlan, ids: string[]) {
   await withTenant(
     org.id,
@@ -519,7 +497,7 @@ async function applyReviews(org: Org, plan: SamplePlan, ids: string[]) {
         const reportId = ids[index] as string
         let status: ReportStatus = "submitted"
         for (const step of r.steps) {
-          if (step.action === "merge" || step.action === "forward") continue
+          if (step.action === "merge") continue
           const result = await reviewReport(
             tx,
             org.id,
@@ -538,8 +516,6 @@ async function applyReviews(org: Org, plan: SamplePlan, ids: string[]) {
 
 function decision(step: PlannedStep): ReviewDecision {
   switch (step.action) {
-    case "start_review":
-      return { action: step.action }
     case "verify":
       return { action: step.action, method: step.method ?? "document" }
     case "reject":
@@ -556,30 +532,6 @@ function decision(step: PlannedStep): ReviewDecision {
     }
     default:
       throw new Error(`no review path for ${step.action}`)
-  }
-}
-
-/** Real cross-campus forward path. */
-async function applyForwards(
-  org: Org,
-  target: Org,
-  plan: SamplePlan,
-  ids: string[],
-  filesDir: string,
-) {
-  for (const [index, r] of plan.reports.entries()) {
-    if (!r.steps.some((step) => step.action === "forward")) continue
-    const result = await forwardReport({
-      source: { id: org.id, campusCode: org.campusCode },
-      reportId: ids[index] as string,
-      targetOrgId: target.id,
-      actorId: org.actorId,
-      filesDir,
-      // Copy code year follows history
-      now: r.steps.find((step) => step.action === "forward")?.at,
-      notify: false,
-    })
-    if (!result.ok) throw new Error(`forward ${result.reason}`)
   }
 }
 
@@ -784,7 +736,7 @@ function issueEventTimes(plan: SamplePlan) {
 async function backdate(
   migrator: Db,
   org: Org,
-  target: Org | undefined,
+  _target: Org | undefined,
   plan: SamplePlan,
   ids: string[],
   refs: IssueRef[],
@@ -882,27 +834,6 @@ async function backdate(
     },
     { db: migrator },
   )
-  const forwarded = plan.reports.flatMap((r, i) => {
-    const step = r.steps.find((item) => item.action === "forward")
-    return step
-      ? [
-          sql`(${ids[i]}::uuid, ${iso(step.at)}::timestamptz, ${iso(r.createdAt)}::timestamptz)`,
-        ]
-      : []
-  })
-  if (target && forwarded.length > 0) {
-    // Copies live at target
-    await withTenant(
-      target.id,
-      (tx) =>
-        tx.execute(sql`
-          UPDATE reports r SET created_at = v.at, updated_at = v.at,
-            consented_at = v.consented
-          FROM (VALUES ${values(forwarded)}) AS v(id, at, consented)
-          WHERE r.forwarded_from_report_id = v.id`),
-      { db: migrator },
-    )
-  }
   // Global table, no tenant
   await migrator.execute(sql`
     UPDATE members m SET created_at = v.at
@@ -1051,252 +982,6 @@ async function publishSampleEvidence(
   return published
 }
 
-const PASSING_CAPTCHA = async () => ({ ok: true }) as const
-
-/** Second decider for appeals. */
-async function sampleSecondAdmin(org: Org): Promise<string> {
-  const db = database().db
-  const email = `sampel.${org.slug}.admin@contoh.test`
-  await db
-    .insert(users)
-    .values({
-      name: sampleName(email),
-      email,
-      emailVerified: true,
-      phoneNumber: samplePhone(email),
-      phoneVerified: true,
-      ageDeclaredAt: sql`now()`,
-      ageConsentVersion: AGE_CONSENT_VERSION,
-    })
-    // Older seeds left numbers unproven
-    .onConflictDoUpdate({
-      target: users.email,
-      set: { phoneVerified: true },
-      setWhere: sql`${users.phoneNumber} IS NOT NULL`,
-    })
-  const [user] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, email))
-  if (!user) throw new Error(`${email} missing`)
-  await db
-    .insert(members)
-    .values({ organizationId: org.id, userId: user.id, role: "admin" })
-    .onConflictDoNothing({ target: [members.organizationId, members.userId] })
-  return user.id
-}
-
-async function decide(
-  org: Org,
-  complaintId: string,
-  issueId: string,
-  stage: "first" | "appeal",
-  planned: PlannedDecision,
-  actorId: string,
-) {
-  const [issue] = await withTenant(org.id, (tx) =>
-    tx
-      .select({ version: issues.version, title: issues.title })
-      .from(issues)
-      .where(eq(issues.id, issueId)),
-  )
-  if (!issue) throw new Error("complaint issue missing")
-  const result = await decideComplaint(
-    { id: org.id, host: org.host },
-    {
-      complaintId,
-      stage,
-      decision: planned.decision,
-      reason: planned.reason,
-      statement: planned.statement,
-      actorId,
-      subjectVersion: issue.version,
-      ...(planned.summary
-        ? {
-            edit: {
-              title: issue.title,
-              summary: planned.summary,
-              withdraw: [],
-            },
-          }
-        : {}),
-      notify: false,
-    },
-  )
-  if (!result.ok) throw new Error(`complaint ${stage}: ${result.reason}`)
-}
-
-/** Real submit, decide, appeal. */
-async function applyComplaints(
-  org: Org,
-  plan: SamplePlan,
-  refs: IssueRef[],
-  userIds: string[],
-  deps: { filesDir: string; migrator: Db },
-) {
-  if (plan.complaints.length === 0) return
-  const second = await sampleSecondAdmin(org)
-  if (!jobsStarted) {
-    await database().boss.start()
-    jobsStarted = true
-  }
-  const tenant = {
-    id: org.id,
-    slug: org.slug,
-    host: org.host,
-    name: org.slug,
-    campusCode: org.campusCode,
-    campusName: org.slug,
-    theme: {},
-    settings: {},
-  }
-  const done: { complaint: PlannedComplaint; id: string }[] = []
-  for (const complaint of plan.complaints) {
-    const ref = refs[complaint.issue]
-    const userId = userIds[complaint.complainant]
-    if (!ref || !userId) throw new Error("complaint target missing")
-    const form = new FormData()
-    form.set("submissionId", complaint.submissionId)
-    form.set("reason", complaint.reason)
-    form.set("part", complaint.part)
-    form.set("explanation", complaint.explanation)
-    form.set("goodFaith", "yes")
-    const at = complaint.submittedAt
-    const sent = await submitComplaint({
-      tenant,
-      session: {
-        user: {
-          id: userId,
-          email: plan.reporters[complaint.complainant]?.email ?? "",
-          emailVerified: true,
-          phoneVerified: true,
-          name: "",
-          twoFactorEnabled: false,
-          updatedAt: at,
-        },
-        session: { id: "sample", createdAt: at, expiresAt: at },
-      },
-      subject: { kind: "issue", code: ref.code },
-      form,
-      remoteIp: null,
-      deps: { now: () => at, verifyCaptcha: PASSING_CAPTCHA },
-      notify: false,
-    })
-    if (!("code" in sent.body)) throw new Error("complaint not stored")
-    const code = sent.body.code
-    const [row] = await withTenant(org.id, (tx) =>
-      tx
-        .select({ id: contentComplaints.id })
-        .from(contentComplaints)
-        .where(eq(contentComplaints.publicCode, code)),
-    )
-    if (!row) throw new Error("complaint row missing")
-    if (complaint.first) {
-      await decide(org, row.id, ref.id, "first", complaint.first, org.actorId)
-    }
-    if (complaint.appeal) {
-      const appealed = await appealComplaint(org.id, {
-        code,
-        userId,
-        text: complaint.appeal.text,
-        now: complaint.appeal.at,
-      })
-      if (!appealed.ok) throw new Error(`appeal: ${appealed.reason}`)
-      if (complaint.appeal.decision) {
-        await decide(
-          org,
-          row.id,
-          ref.id,
-          "appeal",
-          complaint.appeal.decision,
-          second,
-        )
-      }
-    }
-    done.push({ complaint, id: row.id })
-  }
-  await finishTakedowns(org, deps)
-  await backdateComplaints(deps.migrator, org, done)
-}
-
-/** Worker step inline, no purge. */
-async function finishTakedowns(
-  org: Org,
-  deps: { filesDir: string; migrator: Db },
-) {
-  const rows = await withTenant(org.id, (tx) =>
-    tx
-      .select({ id: takedowns.id })
-      .from(takedowns)
-      .where(sql`${takedowns.purgeStatus} <> 'done'`),
-  )
-  if (rows.length === 0) return
-  const store = localStore(() => deps.filesDir)
-  const handle = createTakedownHandler({
-    filesDir: deps.filesDir,
-    purge: {
-      purgeUrls: async () => ({ skipped: true }),
-      purgeHosts: async () => ({ skipped: true }),
-    },
-    mediaHost: null,
-    deleteVideo: store.deleteVideo,
-    // Dev has no CDN
-    requirePurge: false,
-  })
-  for (const row of rows) await handle({ orgId: org.id, takedownId: row.id })
-  await deps.migrator.execute(sql`
-    DELETE FROM pgboss.job WHERE name = 'takedown'
-      AND data->>'takedownId' IN (${sql.join(
-        rows.map((row) => sql`${row.id}`),
-        sql`, `,
-      )})`)
-}
-
-async function backdateComplaints(
-  migrator: Db,
-  org: Org,
-  done: { complaint: PlannedComplaint; id: string }[],
-) {
-  const at = (date: Date | undefined) => (date ? iso(date) : null)
-  const rows = done.map(
-    ({ complaint: c, id }) =>
-      sql`(${id}::uuid, ${iso(c.submittedAt)}::timestamptz, ${at(c.first?.at)}::timestamptz, ${at(c.appeal?.at)}::timestamptz, ${at(c.appeal?.decision?.at)}::timestamptz)`,
-  )
-  await withTenant(
-    org.id,
-    async (tx) => {
-      await tx.execute(sql`
-        UPDATE content_complaints c SET created_at = v.created,
-          decided_at = v.decided, appealed_at = v.appealed,
-          appeal_decided_at = v.final,
-          updated_at = coalesce(v.final, v.appealed, v.decided, v.created)
-        FROM (VALUES ${values(rows)}) AS v(id, created, decided, appealed, final)
-        WHERE c.id = v.id`)
-      // Dated by the deciding step
-      await tx.execute(sql`
-        UPDATE takedowns t SET created_at = d.at, done_at = d.at + interval '2 minutes'
-        FROM (
-          SELECT c.id, coalesce(c.appeal_decided_at, c.decided_at) AS at
-          FROM content_complaints c
-        ) d
-        WHERE t.complaint_id = d.id`)
-      await tx.execute(sql`
-        UPDATE issues i SET redacted_at = t.created_at
-        FROM takedowns t
-        WHERE t.issue_id = i.id AND t.action = 'redact'`)
-      await tx.execute(sql`
-        UPDATE issues i SET taken_down_at = t.created_at
-        FROM takedowns t
-        WHERE t.issue_id = i.id AND t.action = 'take_down'`)
-      await tx.execute(sql`
-        UPDATE redaction_originals o SET created_at = t.created_at
-        FROM takedowns t
-        WHERE t.complaint_id = o.complaint_id AND t.action = 'redact'`)
-    },
-    { db: migrator },
-  )
-}
-
 async function seedOrg(
   org: Org,
   target: Org | undefined,
@@ -1311,14 +996,11 @@ async function seedOrg(
   const extras = await extraBytes()
   const ids = await insertReports(org, plan, userIds, images, extras)
   await applyReviews(org, plan, ids)
-  if (target) await applyForwards(org, target, plan, ids, deps.filesDir)
   const refs = await replayIssues(org, plan, ids)
   await insertFollows(org, plan, refs, userIds)
   await processEvidence(org, plan, { ...deps, extras: async () => extras })
   await publishSampleEvidence(org, plan, deps)
   await backdate(deps.migrator, org, target, plan, ids, refs, userIds)
-  // After backdate, which republishes
-  await applyComplaints(org, plan, refs, userIds, deps)
 }
 
 export type SampleSummary = Record<

@@ -16,24 +16,15 @@ import {
 import { CATEGORY_IDS } from "../../../shared/categories.ts"
 import {
   type Count,
-  DEMAND_MAP_CLASSES,
   MAP_CLASSES,
   type MapClass,
-  type MapClasses,
   MIN_PUBLIC_N,
   mapClass,
 } from "../../../shared/dashboard.ts"
-import { formatNumber } from "../../../shared/format.ts"
-import {
-  FULFILMENT_STATUSES,
-  type FulfilmentStatus,
-  GOVERNMENT_STATUSES,
-} from "../../../shared/status.ts"
-import { demandsHref } from "../demands/demand-href"
-import { FulfilmentMark } from "../demands/status-mark"
-import { GOVERNMENT_TEXT } from "../issues/labels"
+import { PUBLIC_STAGES } from "../../../shared/status.ts"
+import { STAGE_TEXT } from "../issues/labels"
 import { CATEGORY_SHORT_TEXT } from "../report/category-labels"
-import { DEMAND_FILL, MAP_FILL } from "./chart-theme"
+import { MAP_FILL } from "./chart-theme"
 import type { MapView, RegionRow } from "./dashboard.server"
 import { barWidth, countText, filterSummary, HIDDEN_MAX } from "./format"
 // Hashed asset, cached immutable
@@ -42,15 +33,11 @@ import { SectionLink } from "./section-link"
 
 type Params = Record<string, string | undefined>
 
-type ReportMap = Extract<MapView, { layer: "laporan" }>
-type DemandMap = Extract<MapView, { layer: "tuntutan" }>
-
 /** Every /data param, defaults dropped. */
 export function paramsOf(map: MapView): Params {
   return {
     kategori: map.category === "all" ? undefined : map.category,
     status: map.status === "all" ? undefined : map.status,
-    lapisan: map.layer,
     tampilan: map.view,
     peringkat: map.ranking,
   }
@@ -74,7 +61,6 @@ export function dataHref(params: Params): string {
 
 /** Region click opens its list. */
 function regionHref(map: MapView, code: string): string {
-  if (map.layer === "tuntutan") return demandsHref({ provinsi: code })
   return href(
     "/isu",
     {
@@ -89,61 +75,8 @@ function regionHref(map: MapView, code: string): string {
 const SEGMENT =
   "flex items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm transition-colors"
 
-const LAYERS = [
-  { id: "laporan", label: m.data_layer_reports },
-  { id: "tuntutan", label: m.data_layer_demands },
-] as const
-
-// Link pair, works without JS
-function LayerSwitch({ map }: { map: MapView }) {
-  const params = paramsOf(map)
-  return (
-    <nav aria-label={m.data_layer_label()}>
-      <p
-        aria-hidden="true"
-        className="mb-1.5 font-semibold text-sm text-surface-raised/85"
-      >
-        {m.data_layer_label()}
-      </p>
-      <ul className="flex w-fit gap-1 rounded-full bg-surface-raised p-1">
-        {LAYERS.map(({ id, label }) => {
-          const active = map.layer === id
-          return (
-            <li key={id}>
-              <SectionLink
-                section={MAP_SECTION}
-                // Report filters stay behind
-                to={dataHref(
-                  id === "tuntutan"
-                    ? {
-                        ...params,
-                        kategori: undefined,
-                        status: undefined,
-                        lapisan: id,
-                      }
-                    : { ...params, lapisan: id },
-                )}
-                aria-current={active ? "true" : undefined}
-                className={cn(
-                  SEGMENT,
-                  active
-                    ? "bg-ink font-semibold text-surface-raised"
-                    : "text-ink hover:bg-surface",
-                )}
-              >
-                {active && <Check aria-hidden="true" className="size-4" />}
-                {label()}
-              </SectionLink>
-            </li>
-          )
-        })}
-      </ul>
-    </nav>
-  )
-}
-
 // Mockup MapFilters, works without JS
-function MapFilters({ map }: { map: ReportMap }) {
+function MapFilters({ map }: { map: MapView }) {
   const navigate = useNavigate()
   const params = paramsOf(map)
   const form = useRef<HTMLFormElement>(null)
@@ -155,10 +88,7 @@ function MapFilters({ map }: { map: ReportMap }) {
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
       <div className="min-w-0">
-        <p
-          id="peta-kategori"
-          className="mb-1.5 font-semibold text-sm text-surface-raised/85"
-        >
+        <p id="peta-kategori" className="mb-1.5 font-semibold text-ink text-sm">
           {m.data_filter_category()}
         </p>
         <ul
@@ -213,7 +143,7 @@ function MapFilters({ map }: { map: ReportMap }) {
         <div className="flex w-full flex-col gap-1.5 sm:w-64">
           <label
             htmlFor="peta-status"
-            className="font-semibold text-sm text-surface-raised/85"
+            className="font-semibold text-ink text-sm"
           >
             {m.data_filter_status()}
           </label>
@@ -223,9 +153,9 @@ function MapFilters({ map }: { map: ReportMap }) {
             defaultValue={params.status ?? ""}
           >
             <option value="">{m.data_filter_all_status()}</option>
-            {GOVERNMENT_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {GOVERNMENT_TEXT[status]()}
+            {PUBLIC_STAGES.map((stage) => (
+              <option key={stage} value={stage}>
+                {STAGE_TEXT[stage]()}
               </option>
             ))}
           </SelectControl>
@@ -244,13 +174,10 @@ function MapFilters({ map }: { map: ReportMap }) {
   )
 }
 
-function classLabel(id: MapClass, classes: MapClasses): string {
+function classLabel(id: MapClass): string {
   if (id === "none") return m.data_class_none()
-  // Hidden range, report layer only
-  if (id === "few" && classes === MAP_CLASSES) {
-    return m.data_hidden_range({ max: HIDDEN_MAX })
-  }
-  const list: readonly { id: string; min: number }[] = classes
+  if (id === "few") return m.data_hidden_range({ max: HIDDEN_MAX })
+  const list: readonly { id: string; min: number }[] = MAP_CLASSES
   const index = list.findIndex((step) => step.id === id)
   const step = list[index]
   const next = list[index + 1]
@@ -263,40 +190,24 @@ function classLabel(id: MapClass, classes: MapClasses): string {
 
 type Cell = { code: string; name: string; count: Count | undefined }
 
-/** Per layer: classes, colours, words. */
-function layerOf(map: MapView) {
-  return map.layer === "tuntutan"
-    ? {
-        classes: DEMAND_MAP_CLASSES,
-        fill: DEMAND_FILL as Record<MapClass, string>,
-        count: (n: Count | undefined) =>
-          m.data_demand_count({ n: countText(n) }),
-        label: m.data_demand_map_label(),
-        legend: m.data_demand_legend_title(),
-      }
-    : {
-        classes: MAP_CLASSES,
-        fill: MAP_FILL,
-        count: (n: Count | undefined) =>
-          m.data_verified_count({ n: countText(n) }),
-        label: m.data_map_label({
-          filter: filterSummary(map.category, map.status),
-        }),
-        legend: m.data_legend_title(),
-      }
+function verifiedCount(n: Count | undefined): string {
+  return m.data_verified_count({ n: countText(n) })
 }
 
 function ChoroplethSvg({ map }: { map: MapView }) {
-  const layer = layerOf(map)
   const regions: Cell[] = map.regions
   const hasGap = regions.some((region) => region.count === undefined)
   return (
-    <div className="min-w-[36rem]">
+    <div className="w-full min-w-[36rem]">
       <svg
         viewBox={`0 0 ${map.width} ${map.height}`}
         className="block h-auto w-full"
       >
-        <title>{layer.label}</title>
+        <title>
+          {m.data_map_label({
+            filter: filterSummary(map.category, map.status),
+          })}
+        </title>
         {hasGap && (
           <defs>
             <pattern
@@ -331,12 +242,12 @@ function ChoroplethSvg({ map }: { map: MapView }) {
                   value:
                     region.count === undefined
                       ? m.data_no_data()
-                      : layer.count(region.count),
+                      : verifiedCount(region.count),
                 })}
               </title>
               <use
                 href={`${provincesUrl}#p-${region.code}`}
-                fill={layer.fill[mapClass(region.count, layer.classes)]}
+                fill={MAP_FILL[mapClass(region.count)]}
               />
             </a>
           ))}
@@ -347,22 +258,21 @@ function ChoroplethSvg({ map }: { map: MapView }) {
 }
 
 function Legend({ map }: { map: MapView }) {
-  const layer = layerOf(map)
-  const ids: MapClass[] = layer.classes.map((step) => step.id)
+  const ids: MapClass[] = MAP_CLASSES.map((step) => step.id)
   const regions: Cell[] = map.regions
   if (regions.some((region) => region.count === undefined)) {
     ids.push("none")
   }
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-line-subtle border-t px-4 py-3 text-xs sm:px-5">
-      <span className="font-semibold">{layer.legend}</span>
+      <span className="font-semibold">{m.data_legend_title()}</span>
       <ul className="flex flex-wrap gap-x-3 gap-y-1.5">
         {ids.map((id) => (
           <li key={id} className="flex items-center gap-1.5">
             <svg aria-hidden="true" viewBox="0 0 12 12" className="size-3">
-              <rect width="12" height="12" fill={layer.fill[id]} />
+              <rect width="12" height="12" fill={MAP_FILL[id]} />
             </svg>
-            {classLabel(id, layer.classes)}
+            {classLabel(id)}
           </li>
         ))}
       </ul>
@@ -379,18 +289,11 @@ function sorted<T extends Cell>(regions: T[]): T[] {
   )
 }
 
-const STATUS_COLUMN: Record<FulfilmentStatus, () => string> = {
-  not_fulfilled: m.data_col_not_fulfilled,
-  partially_fulfilled: m.data_col_partially_fulfilled,
-  fulfilled: m.data_col_fulfilled,
-  rejected: m.data_col_rejected,
-}
-
 function ProvinceName({ map, region }: { map: MapView; region: Cell }) {
   return (
     <th
       scope="row"
-      className="border-line-subtle border-b px-3 py-2 text-left font-semibold"
+      className="border-line-subtle border-r border-b px-4 py-3 text-left font-semibold"
     >
       <Link
         to={regionHref(map, region.code)}
@@ -402,42 +305,7 @@ function ProvinceName({ map, region }: { map: MapView; region: Cell }) {
   )
 }
 
-function DemandTable({ map }: { map: DemandMap }) {
-  return (
-    <div className="p-4 sm:p-5">
-      <Table caption={m.data_demand_province_caption()} className=" text-sm">
-        <thead>
-          <tr>
-            <Th>{m.data_col_province()}</Th>
-            <Th numeric>{m.data_col_demands()}</Th>
-            {FULFILMENT_STATUSES.map((status) => (
-              <Th key={status} numeric>
-                {STATUS_COLUMN[status]()}
-              </Th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {sorted(map.regions).map((region) => (
-            <tr key={region.code}>
-              <ProvinceName map={map} region={region} />
-              <Td numeric className="font-semibold">
-                {formatNumber(region.count)}
-              </Td>
-              {FULFILMENT_STATUSES.map((status) => (
-                <Td key={status} numeric>
-                  {formatNumber(region.byStatus[status])}
-                </Td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </Table>
-    </div>
-  )
-}
-
-function ProvinceTable({ map }: { map: ReportMap }) {
+function ProvinceTable({ map }: { map: MapView }) {
   return (
     <div className="p-4 sm:p-5">
       <Table caption={m.data_province_caption()} className=" text-sm">
@@ -473,7 +341,7 @@ function ProvinceTable({ map }: { map: ReportMap }) {
 }
 
 // PLAN §5.9 search, no JS
-function RegionSearch({ map }: { map: ReportMap }) {
+function RegionSearch({ map }: { map: MapView }) {
   const params = paramsOf(map)
   const regions = [...map.regions].sort((a, b) => a.name.localeCompare(b.name))
   return (
@@ -512,7 +380,7 @@ function RegionSearch({ map }: { map: ReportMap }) {
   )
 }
 
-function TopProvinces({ map }: { map: ReportMap }) {
+function TopProvinces({ map }: { map: MapView }) {
   const top = sorted(map.regions)
     .filter((region) => typeof region.count === "number" && region.count > 0)
     .slice(0, 5)
@@ -559,86 +427,12 @@ function TopProvinces({ map }: { map: ReportMap }) {
         </ol>
       )}
       <RegionSearch map={map} />
-      <div className="mt-auto flex flex-col gap-2 text-ink-soft text-xs leading-relaxed">
-        <p>{m.data_map_note()}</p>
-        <p>{m.data_coverage()}</p>
-      </div>
     </aside>
   )
 }
 
 const ASIDE =
   "focus-light flex flex-col gap-4 rounded-2xl bg-brand-soft p-5 text-ink"
-
-// Beside the map
-function NationalDemands({ map }: { map: DemandMap }) {
-  // Small provinces barely show
-  const provinces = sorted(map.regions)
-    .filter((region) => typeof region.count === "number" && region.count > 0)
-    .slice(0, 6)
-  return (
-    <aside aria-labelledby="tuntutan-nasional" className={ASIDE}>
-      {provinces.length > 0 ? (
-        <div>
-          <h3 id="tuntutan-provinsi" className="font-bold text-xl">
-            {m.data_demand_provinces_title()}
-          </h3>
-          <ul
-            aria-labelledby="tuntutan-provinsi"
-            className="mt-2 flex flex-col border-ink border-t-2"
-          >
-            {provinces.map((region) => (
-              <li key={region.code} className="border-ink/15 border-b">
-                <Link
-                  to={regionHref(map, region.code)}
-                  className="flex items-baseline justify-between gap-2 py-2 text-sm hover:underline"
-                >
-                  {region.name}
-                  <span className="font-semibold tabular-nums">
-                    {countText(region.count)}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      <div>
-        <h3 id="tuntutan-nasional" className="font-bold text-xl">
-          {m.data_national_title()}
-        </h3>
-        <p className=" text-ink-soft text-sm">
-          {m.data_national_lead({ n: formatNumber(map.nationalTotal) })}
-        </p>
-      </div>
-      {map.national.length === 0 ? (
-        <p className="text-sm">{m.data_national_none()}</p>
-      ) : (
-        <>
-          <ul className="flex flex-col border-ink border-t-2">
-            {map.national.map((demand) => (
-              <li key={demand.code} className="border-ink/15 border-b py-3">
-                <Link
-                  to={`/tuntutan/${demand.code}`}
-                  className="block font-semibold leading-snug underline-offset-2 hover:underline"
-                >
-                  {demand.title}
-                </Link>
-                <FulfilmentMark status={demand.status} className="mt-1" />
-              </li>
-            ))}
-          </ul>
-          <Link
-            to={demandsHref({ lingkup: "nasional" })}
-            className="font-semibold text-accent text-sm underline underline-offset-4 hover:no-underline"
-          >
-            {m.data_national_all()}
-          </Link>
-        </>
-      )}
-    </aside>
-  )
-}
 
 const VIEWS = [
   { id: "peta", label: m.data_view_map, Icon: MapIcon },
@@ -648,23 +442,15 @@ const VIEWS = [
 // Mockup MapExplorer, server SVG
 export function MapExplorer({ map }: { map: MapView }) {
   const params = paramsOf(map)
-  const layer = layerOf(map)
   return (
     <div className="flex flex-col gap-6">
-      <LayerSwitch map={map} />
-      {map.layer === "laporan" && <MapFilters map={map} />}
-      <div className="grid gap-6 lg:grid-cols-[1fr_300px] lg:items-start">
-        <div className="focus-light min-w-0 overflow-hidden rounded-2xl border border-ink/12 bg-surface-raised text-ink">
+      <MapFilters map={map} />
+      <div className="grid gap-6 lg:grid-cols-[1fr_300px]">
+        <div className="focus-light flex min-w-0 flex-col overflow-hidden rounded-2xl border border-ink/12 bg-surface-raised text-ink">
           <div className="flex flex-wrap items-center justify-between gap-3 border-ink border-b-2 px-4 py-3 sm:px-5">
-            <p className="flex items-center gap-2 text-sm">
-              <span
-                aria-hidden="true"
-                className="size-3 rounded-full"
-                style={{ background: layer.fill.mid }}
-              />
-              {layer.count(map.total)}
-              {map.layer === "laporan" &&
-                ` · ${filterSummary(map.category, map.status)}`}
+            <p className="text-sm">
+              {verifiedCount(map.total)}
+              {`, ${filterSummary(map.category, map.status)}`}
             </p>
             <nav
               aria-label={m.data_view_label()}
@@ -701,18 +487,12 @@ export function MapExplorer({ map }: { map: MapView }) {
               <p className="px-4 pt-3 text-ink-muted text-xs md:hidden">
                 {m.data_map_scroll()}
               </p>
-              <div className="scroll-shadow-x overflow-x-auto p-2 sm:p-4">
+              {/* Grows to the aside height */}
+              <div className="scroll-shadow-x flex flex-1 items-center overflow-x-auto p-2 sm:p-4">
                 <ChoroplethSvg map={map} />
               </div>
               <Legend map={map} />
-              {map.layer === "tuntutan" && (
-                <p className="px-4 pb-3 text-ink-soft text-xs leading-relaxed sm:px-5">
-                  {m.data_demand_map_note()}
-                </p>
-              )}
             </>
-          ) : map.layer === "tuntutan" ? (
-            <DemandTable map={map} />
           ) : (
             <ProvinceTable map={map} />
           )}
@@ -737,11 +517,7 @@ export function MapExplorer({ map }: { map: MapView }) {
             . {m.data_attr_codes()}
           </p>
         </div>
-        {map.layer === "tuntutan" ? (
-          <NationalDemands map={map} />
-        ) : (
-          <TopProvinces map={map} />
-        )}
+        <TopProvinces map={map} />
       </div>
     </div>
   )

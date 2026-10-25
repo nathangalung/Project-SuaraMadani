@@ -17,6 +17,7 @@ import {
 import {
   type DemandErrorKey,
   lastStatusOn,
+  parseBriefUrl,
   parseDemandFields,
   parseItemLines,
   parseItemUpdate,
@@ -119,6 +120,7 @@ const FORM_KEYS = [
   "summary",
   "target",
   "raisedOn",
+  "briefUrl",
   "items",
   "briefSummary",
 ] as const
@@ -278,19 +280,44 @@ export async function demandEditorAction({
   }
   if (intent === "add_item") {
     const body = text(form, "body")
-    if (!within(body, L.item)) return { errors: ["item_body"], intent }
-    return outcome(intent, await addItem(tenant, { code, body, actorId }))
+    const briefUrl = parseBriefUrl(text(form, "briefUrl"))
+    const errors: DemandErrorKey[] = []
+    if (!within(body, L.item)) errors.push("item_body")
+    if (briefUrl === false) errors.push("item_brief_url")
+    if (errors.length > 0 || briefUrl === false) {
+      return {
+        errors,
+        intent,
+        values: { body, briefUrl: text(form, "briefUrl") },
+      }
+    }
+    return outcome(
+      intent,
+      await addItem(tenant, { code, body, briefUrl, actorId }),
+    )
   }
   if (intent === "edit_item") {
     const seen = version(form)
     if (seen === null) throw data(null, { status: 400 })
     const body = text(form, "body")
-    if (!within(body, L.item)) {
-      return { errors: ["item_body"], intent, itemId, values: { body } }
+    const briefUrl = parseBriefUrl(text(form, "briefUrl"))
+    const errors: DemandErrorKey[] = []
+    if (!within(body, L.item)) errors.push("item_body")
+    if (briefUrl === false) errors.push("item_brief_url")
+    if (errors.length > 0 || briefUrl === false) {
+      const values = { body, briefUrl: text(form, "briefUrl") }
+      return { errors, intent, itemId, values }
     }
     return outcome(
       intent,
-      await editItem(tenant, { code, itemId, version: seen, body, actorId }),
+      await editItem(tenant, {
+        code,
+        itemId,
+        version: seen,
+        body,
+        briefUrl,
+        actorId,
+      }),
       itemId,
     )
   }

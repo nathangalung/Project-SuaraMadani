@@ -1,9 +1,10 @@
 import { Link } from "react-router"
 import { Badge } from "~/components/ui/badge"
 import { PhoneMeta, Table, Td, Th } from "~/components/ui/table"
-import { ADVOCACY_TEXT, GOVERNMENT_TEXT } from "~/features/issues/labels"
+import { StageMark } from "~/features/issues/issue-status"
+import { STAGE_TEXT } from "~/features/issues/labels"
 import { requireAdmin } from "~/features/moderation/access.server"
-import { ISSUE_NEEDS, type IssueNeed } from "~/features/moderation/fields"
+import { ISSUE_NEEDS } from "~/features/moderation/fields"
 import { FilterTabs } from "~/features/moderation/filter-tabs"
 import { oneOf } from "~/features/moderation/form-values"
 import {
@@ -11,25 +12,20 @@ import {
   listManagedIssues,
 } from "~/features/moderation/overview.server"
 import { useSiteTitle } from "~/features/report/page-title"
+import { REPORT_STATUS_TEXT } from "~/features/report/public-labels"
 import { m } from "~/paraglide/messages.js"
 import { formatDate, formatNumber } from "../../../shared/format.ts"
+import { PUBLIC_STAGES, publicStage } from "../../../shared/status.ts"
 import type { Route } from "./+types/issues"
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { tenant, role } = await requireAdmin(context)
-  const need = oneOf(
-    ISSUE_NEEDS,
-    new URL(request.url).searchParams.get("perlu") ?? "",
-  )
-  const rows = await listManagedIssues(tenant.id, role, need, new Date())
-  return { need, rows, capped: rows.length === ISSUE_LIST_LIMIT }
-}
-
-const NEED_LABEL: Record<IssueNeed, () => string> = {
-  draf: m.manage_need_draft,
-  "belum-diteruskan": m.manage_need_unreferred,
-  "lewat-tenggat": m.manage_need_overdue,
-  klaim: m.manage_need_claimed,
+  const params = new URL(request.url).searchParams
+  // Perlu Tindakan links keep working
+  const need = oneOf(ISSUE_NEEDS, params.get("perlu") ?? "")
+  const stage = oneOf(PUBLIC_STAGES, params.get("tahap") ?? "")
+  const rows = await listManagedIssues(tenant.id, role, need, new Date(), stage)
+  return { need, stage, rows, capped: rows.length === ISSUE_LIST_LIMIT }
 }
 
 const LINK = "font-semibold text-accent underline underline-offset-4"
@@ -42,19 +38,27 @@ function status(row: Row): string {
       ? m.manage_issue_taken_down()
       : m.manage_issue_unpublished()
   }
-  return `${ADVOCACY_TEXT[row.advocacyStatus]()}, ${GOVERNMENT_TEXT[row.govStatus]().toLowerCase()}`
+  return STAGE_TEXT[
+    publicStage({ advocacy: row.advocacyStatus, government: row.govStatus })
+  ]()
 }
 
 export default function ManageIssues({ loaderData }: Route.ComponentProps) {
-  const { rows, need, capped } = loaderData
+  const { rows, need, stage, capped } = loaderData
   const title = m.manage_issues_title()
+  // Jelajah stages, plus admin-only
   const tabs = [
     { key: "", label: m.manage_filter_all(), to: "/kelola/isu" },
-    ...ISSUE_NEEDS.map((key) => ({
+    ...PUBLIC_STAGES.map((key) => ({
       key,
-      label: NEED_LABEL[key](),
-      to: `/kelola/isu?perlu=${key}`,
+      label: STAGE_TEXT[key](),
+      to: `/kelola/isu?tahap=${key}`,
     })),
+    {
+      key: "unverifiable",
+      label: REPORT_STATUS_TEXT.unverifiable(),
+      to: "/kelola/antrean?status=unverifiable",
+    },
   ]
   return (
     <div>
@@ -66,7 +70,7 @@ export default function ManageIssues({ loaderData }: Route.ComponentProps) {
       <FilterTabs
         label={m.manage_issues_filter_label()}
         tabs={tabs}
-        current={need ?? ""}
+        current={stage ?? (need ? "-" : "")}
       />
       <div className="mt-6">
         {rows.length === 0 ? (
@@ -95,21 +99,19 @@ export default function ManageIssues({ loaderData }: Route.ComponentProps) {
                   <Td>
                     {row.title}
                     <PhoneMeta>
-                      {status(row)} ·{" "}
+                      {status(row)},{" "}
                       {m.issue_reports({
                         count: formatNumber(row.reportCount),
-                      })}{" "}
-                      · {formatDate(row.lastActivityAt)}
+                      })}
+                      , {formatDate(row.lastActivityAt)}
                     </PhoneMeta>
                   </Td>
                   <Td wide className="text-sm">
                     {row.published ? (
-                      <>
-                        {ADVOCACY_TEXT[row.advocacyStatus]()}
-                        <span className="block text-ink-muted">
-                          {GOVERNMENT_TEXT[row.govStatus]()}
-                        </span>
-                      </>
+                      <StageMark
+                        advocacy={row.advocacyStatus}
+                        government={row.govStatus}
+                      />
                     ) : (
                       <Badge>
                         {row.takenDown

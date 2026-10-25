@@ -1,6 +1,6 @@
 import { CATEGORY_IDS, type CategoryId } from "./categories.ts"
 import type { RejectReason, UnverifiableReason } from "./moderation.ts"
-import { GOVERNMENT_STATUSES, type GovernmentStatus } from "./status.ts"
+import { PUBLIC_STAGES, type PublicStage } from "./status.ts"
 
 // Starting Values: public suppression
 export const MIN_PUBLIC_N = 5
@@ -11,7 +11,7 @@ export const VERIFY_WINDOW_DAYS = 90
 // PLAN §5.10 queue banner
 export const QUEUE_SLOW_AT = 50
 const TREND_MONTHS = 12
-export const SNAPSHOT_VERSION = 6
+export const SNAPSHOT_VERSION = 8
 
 /** Null hides 1 to 4. */
 export type Count = number | null
@@ -26,16 +26,14 @@ export function publicShare(part: number, whole: number): number | null {
 }
 
 export type CategoryFilter = CategoryId | "all"
-export type StatusFilter = GovernmentStatus | "all"
+// Public stages, like Jelajah
+export type StatusFilter = PublicStage | "all"
 
 export const CATEGORY_FILTERS: readonly CategoryFilter[] = [
   "all",
   ...CATEGORY_IDS,
 ]
-export const STATUS_FILTERS: readonly StatusFilter[] = [
-  "all",
-  ...GOVERNMENT_STATUSES,
-]
+export const STATUS_FILTERS: readonly StatusFilter[] = ["all", ...PUBLIC_STAGES]
 
 export function filterKey(
   category: CategoryFilter,
@@ -146,20 +144,13 @@ export type DashboardSnapshot = {
   }
   verifyTime: { n: number; medianHours: number | null; p90Hours: number | null }
   // Current status, no history
-  resolution: {
-    pending: Count
-    confirmed: Count
-    reopened: Count
-    claimTotal: Count
-    // Confirmed over checked claims
-    checked: Count
-    confirmedShare: number | null
-  }
+  // Done issues over published
+  resolution: { done: Count; published: Count; share: number | null }
   trend: TrendPoint[]
   // Reports in the trend window
   trendTotal: number
   categories: Record<CategoryId, Count>
-  statuses: Record<GovernmentStatus, Count>
+  statuses: Record<PublicStage, Count>
   // Verified reports in published issues
   verifiedProvinces: Record<string, ProvinceCounts>
   verifiedProvinceTotals: Record<string, Count>

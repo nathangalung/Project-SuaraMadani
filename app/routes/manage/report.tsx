@@ -7,27 +7,21 @@ import { AccountSection } from "~/features/moderation/account-section"
 import { ActionPanel } from "~/features/moderation/action-panel"
 import type { ReporterContact } from "~/features/moderation/contact.server"
 import {
-  forwardCopyCode,
   getReviewReport,
   listMergeTargets,
 } from "~/features/moderation/queue.server"
-import { decisionReasonText } from "~/features/moderation/reason-labels"
 import {
   EvidenceList,
   ReportDetails,
 } from "~/features/moderation/report-details"
 import { reportPageAction } from "~/features/moderation/review-actions.server"
 import {
-  ForwardForm,
   MergeForm,
-  RejectForm,
   ReviewNotices,
   reviewErrors,
-  StartReviewForm,
   UnverifiableForm,
   VerifyForm,
 } from "~/features/moderation/review-forms"
-import { listForwardTargets } from "~/features/report/forward.server"
 import { METHOD_TEXT } from "~/features/report/labels"
 import { useSiteTitle } from "~/features/report/page-title"
 import { REPORT_STATUS_TEXT } from "~/features/report/public-labels"
@@ -45,20 +39,15 @@ export async function loader({ params, context, request }: Route.LoaderArgs) {
     report,
     actions,
     search,
-    targets: actions.includes("merge")
-      ? await listMergeTargets(tenant.id, role, {
-          regencyCode: report.regencyCode,
-          title: report.title,
-          query: search,
-        })
-      : [],
-    campuses: actions.includes("forward")
-      ? await listForwardTargets(tenant.id)
-      : [],
-    // Finish check for a forward
-    copyCode: report.forwardedTo
-      ? await forwardCopyCode(report.forwardedTo.id, report.id)
-      : null,
+    // Verify picks the issue too
+    targets:
+      actions.includes("merge") || actions.includes("verify")
+        ? await listMergeTargets(tenant.id, role, {
+            regencyCode: report.regencyCode,
+            title: report.title,
+            query: search,
+          })
+        : [],
   }
 }
 
@@ -113,14 +102,14 @@ export default function ManageReport({
   loaderData,
   actionData,
 }: Route.ComponentProps) {
-  const { report, actions, targets, campuses, copyCode } = loaderData
+  const { report, actions, targets } = loaderData
   const failed = actionData && "errors" in actionData ? actionData : undefined
   const errors = failed ? reviewErrors(failed.errors) : []
   const conflict = Boolean(actionData && "conflict" in actionData)
   const title = m.manage_report_title({ code: report.code })
   const pageTitle = useSiteTitle(title)
   const opened = (intent: string) => failed?.intent === intent
-  const decided = actions.length > 0 || report.issue || report.forwardedTo
+  const decided = actions.length > 0 || report.issue
   return (
     <div>
       <title>{errorTitle(pageTitle, errors.length > 0 || conflict)}</title>
@@ -131,11 +120,6 @@ export default function ManageReport({
       <p className="mt-2 font-semibold">
         {REPORT_STATUS_TEXT[report.status]()}
       </p>
-      {report.forwardedFrom ? (
-        <p className="mt-1 text-ink-muted">
-          {m.manage_forwarded_from({ campus: report.forwardedFrom })}
-        </p>
-      ) : null}
 
       <section aria-labelledby="report-content" className="mt-8">
         <h2 id="report-content" className={H2}>
@@ -177,23 +161,8 @@ export default function ManageReport({
         </h2>
         {report.decision ? (
           <Note>
-            <p className="font-semibold">
-              {m.manage_decision_reason({
-                reason: decisionReasonText(report.decision.reason),
-              })}
-            </p>
-            <p className="mt-1">{m.manage_decision_text()}</p>
-            <p className="whitespace-pre-line">{report.decision.text}</p>
-          </Note>
-        ) : null}
-        {report.forwardedTo ? (
-          <Note>
-            <p>{m.manage_forwarded_to({ campus: report.forwardedTo.name })}</p>
-            <p>
-              {copyCode
-                ? m.manage_forward_copy({ code: copyCode })
-                : m.manage_forward_missing()}
-            </p>
+            <p className="font-semibold">{m.manage_decision_text()}</p>
+            <p className="mt-1 whitespace-pre-line">{report.decision.text}</p>
           </Note>
         ) : null}
         {report.issue ? (
@@ -204,20 +173,20 @@ export default function ManageReport({
             </Link>
           </p>
         ) : null}
-        {actions.includes("start_review") ? (
-          <StartReviewForm from={report.status} />
-        ) : null}
         <div className="flex flex-col gap-3">
           {actions.includes("verify") ? (
             <ActionPanel
               id="aksi-verify"
               title={m.manage_verify()}
-              open={opened("verify")}
+              open={opened("verify") || loaderData.search !== ""}
             >
               <VerifyForm
                 from={report.status}
                 contactable={report.contactable}
                 errors={errors}
+                defaultTitle={report.title}
+                targets={targets}
+                search={loaderData.search}
               />
             </ActionPanel>
           ) : null}
@@ -242,27 +211,6 @@ export default function ManageReport({
               open={opened("mark_unverifiable")}
             >
               <UnverifiableForm from={report.status} errors={errors} />
-            </ActionPanel>
-          ) : null}
-          {actions.includes("reject") ? (
-            <ActionPanel
-              id="aksi-reject"
-              title={m.manage_action_reject()}
-              open={opened("reject")}
-            >
-              <RejectForm from={report.status} errors={errors} />
-            </ActionPanel>
-          ) : null}
-          {actions.includes("forward") || (report.forwardedTo && !copyCode) ? (
-            <ActionPanel
-              id="aksi-forward"
-              title={m.manage_action_forward()}
-              open={opened("forward")}
-            >
-              <ForwardForm
-                targets={report.forwardedTo ? [report.forwardedTo] : campuses}
-                errors={errors}
-              />
             </ActionPanel>
           ) : null}
         </div>

@@ -87,6 +87,7 @@ function fieldsOf(demand: Route.ComponentProps["loaderData"]["demand"]) {
     summary,
     target: demand.target,
     raisedOn: demand.raisedOn,
+    briefUrl: demand.briefUrl,
   }
 }
 
@@ -327,6 +328,9 @@ export default function ManageDemand({
               <AddItemForm
                 key={demand.items.length}
                 errors={failed?.intent === "add_item" ? errors : []}
+                values={
+                  failed?.intent === "add_item" ? failed.values : undefined
+                }
               />
               <EditorNote notice={at("add")} className="mt-5" />
             </ActionPanel>

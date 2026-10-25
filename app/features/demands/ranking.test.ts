@@ -51,6 +51,7 @@ const FIELDS: DemandFields = {
   summary: "Kuota dan kriteria bantuan biaya kuliah dibuka per kampus.",
   target: "Kementerian Pendidikan Tinggi",
   raisedOn: "2026-09-01",
+  briefUrl: null,
 }
 
 const pass: RankDeps = { verifyCaptcha: async () => ({ ok: true }) }
@@ -200,14 +201,21 @@ describe("rankDemands", () => {
     })
   })
 
-  test("an empty or doubled order is a field error", async () => {
+  test("an empty, gapped or doubled order is a field error", async () => {
     const a = await make()
     const b = await make()
     const user = await citizen(30)
     expect(await rank(user, [])).toEqual({
       status: 400,
-      body: { errors: ["empty"] },
+      body: { errors: ["missing"] },
     })
+    // Blank place, or past N
+    for (const value of ["", "3"]) {
+      expect(await rank(user, [a], { [`rank-${b}`]: value })).toEqual({
+        status: 400,
+        body: { errors: ["missing"] },
+      })
+    }
     const twice = form([a])
     twice.set(`rank-${b}`, "1")
     const result = await rankDemands({
@@ -241,17 +249,42 @@ describe("rankDemands", () => {
     expect(result).toEqual({ status: 404, body: { error: "not_found" } })
   })
 
+  test("every published tuntutan must be placed", async () => {
+    const a = await make()
+    const b = await make()
+    const user = await citizen(30)
+    await rank(user, [a, b])
+    // Partial list keeps old one
+    expect(await rank(user, [b])).toEqual({
+      status: 404,
+      body: { error: "not_found" },
+    })
+    expect((await ownPosition(itb.id, b, user)).position).toBe(2)
+    // New ones need places
+    const c = await make()
+    expect((await rank(user, [b, a])).status).toBe(404)
+    const page = await rankingPage(itb.id, user)
+    expect(
+      page.choices.map((choice) => [choice.code, choice.position]),
+    ).toEqual([
+      [a, 1],
+      [b, 2],
+      [c, null],
+    ])
+  })
+
   test("saving replaces the list; withdraw clears it", async () => {
     const a = await make()
     const b = await make()
     const user = await citizen(30)
     await rank(user, [a, b])
     expect((await ownPosition(itb.id, b, user)).position).toBe(2)
-    await rank(user, [b])
-    expect((await ownPosition(itb.id, a, user)).position).toBeNull()
+    await rank(user, [b, a])
+    expect((await ownPosition(itb.id, a, user)).position).toBe(2)
     expect((await ownPosition(itb.id, b, user)).position).toBe(1)
     const page = await rankingPage(itb.id, user)
     expect(page.saved).toBe(true)
+    expect(page.choices.map((choice) => choice.code)).toEqual([b, a])
     await rank(user, [], { intent: "withdraw" })
     expect((await ownPosition(itb.id, b, user)).saved).toBe(false)
   })
@@ -268,11 +301,11 @@ describe("citizen ranking on public pages", () => {
     expect(page?.ranking.shown).toBe(false)
     expect(page?.rank.place).toBeNull()
     expect(await importantDemands(itb.id, 3)).toEqual([])
-    await crowd(1, [a])
+    await crowd(1, [a, b])
     page = await getDemandPage(itb.id, b)
     expect(page?.ranking.rankers).toBe(RANKING_MIN_RANKERS)
-    // b 45 points, a 41
-    expect(page?.rank).toEqual({ place: 1, rankers: RANKING_MIN_RANKERS - 1 })
+    // b 19 points, a 11
+    expect(page?.rank).toEqual({ place: 1, rankers: RANKING_MIN_RANKERS })
     expect((await importantDemands(itb.id, 3)).map((d) => d.code)).toEqual([
       b,
       a,
@@ -280,6 +313,26 @@ describe("citizen ranking on public pages", () => {
     const sorted = await listPublishedDemands(itb.id, { urut: "peringkat" })
     if (sorted.kind !== "results") throw new Error(sorted.kind)
     expect(sorted.demands.map((d) => d.code)).toEqual([b, a])
+  })
+
+  test("each list scores against its own length", async () => {
+    const a = await make()
+    const b = await make()
+    const c = await make()
+    await crowd(5, [b, a, c])
+    // Old top-five lists, partial
+    for (let i = 0; i < 5; i++) {
+      await su.query(
+        `INSERT INTO demand_rankings (org_id, user_id, demand_id, position)
+         SELECT org_id, $1, id, 1 FROM demands WHERE public_code = $2`,
+        [await citizen(30), c],
+      )
+    }
+    // Points: b15 c10 a10
+    const sorted = await listPublishedDemands(itb.id, { urut: "peringkat" })
+    if (sorted.kind !== "results") throw new Error(sorted.kind)
+    expect(sorted.demands.map((d) => d.code)).toEqual([b, c, a])
+    expect(sorted.demands.map((d) => d.rank.place)).toEqual([1, 2, 3])
   })
 
   test("a closed tuntutan leaves the ranking", async () => {

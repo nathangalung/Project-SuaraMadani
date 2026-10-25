@@ -225,17 +225,20 @@ describe("admin routes", () => {
     expect(page.intakePaused).toBe(true)
   })
 
-  test("a theme failing contrast is returned, not saved", async () => {
-    const result = await settingsAction(
-      routeArgs(
-        post("/kelola/pengaturan", {
-          intent: "theme",
-          brand: "#ffd400",
-        }),
-        context("a", admin(), "admin"),
-      ),
-    )
-    expect(result).toMatchObject({ error: "theme", invalid: [] })
+  test("theme and logo are no longer editable", async () => {
+    for (const intent of ["theme", "logo", "logo_remove"]) {
+      const refused = await settingsAction(
+        routeArgs(
+          post("/kelola/pengaturan", { intent, brand: "#ffd400" }),
+          context("a", admin(), "admin"),
+        ),
+      ).then(
+        () => 0,
+        (error: unknown) =>
+          (error as { init?: { status?: number } }).init?.status,
+      )
+      expect(refused).toBe(400)
+    }
     const { rows } = await su.query(
       "SELECT theme FROM organizations WHERE id = $1",
       [orgs.a],

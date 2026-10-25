@@ -299,7 +299,7 @@ describe("public issue pages", () => {
   test("the list is a rounded card grid with a site title", async () => {
     const html = await (await get(`${ITB}/isu`)).text()
     expect(html).toContain(
-      "<title>Jelajah · Sadar Bersuara · KM itbpub</title>",
+      "<title>Jelajah - Sadar Bersuara - KM itbpub</title>",
     )
     expect(html).toMatch(
       /<ul class="mt-6 grid[^"]*"><li><article class="[^"]*rounded-2xl/,
@@ -337,16 +337,17 @@ describe("public issue pages", () => {
     const order = [
       '<h1 id="issue-title"',
       `>${m.issue_stage_label()}</dt>`,
-      ">Terbit<",
+      ">Dibuat<",
       "Warga melaporkan lubang besar",
-      ">Di Halaman Ini<",
       'id="tanggapan-title"',
       'id="status-title"',
       'id="riwayat-title"',
     ].map((text) => html.indexOf(text))
     expect(order.every((at) => at > 0)).toBe(true)
     expect([...order].sort((a, b) => a - b)).toEqual(order)
-    expect(html).toContain('href="#tanggapan"')
+    // No page nav, 25 Oct
+    expect(html).not.toContain(">Di Halaman Ini<")
+    expect(html).not.toContain('href="#tanggapan"')
     expect(html.match(/aria-current="step"/g)).toHaveLength(1)
     expect(html).toContain("Belum ada tanggapan resmi.")
     // Root scroll-padding covers the header
@@ -354,32 +355,30 @@ describe("public issue pages", () => {
     expect(html).toContain(m.issue_advocacy_note())
   })
 
-  test("the issue page links to the complaint form", async () => {
+  test("the issue page offers no complaint form", async () => {
     const page = await (await get(`${ITB}/isu/${PUBLISHED}`)).text()
-    expect(page).toMatch(
-      new RegExp(
-        `href="/isu/${PUBLISHED}/laporkan"[^>]*>${m.issue_complaint_link()}<`,
-      ),
-    )
-    expect(page).not.toContain(m.issue_redacted())
+    expect(page).not.toContain("/laporkan")
+    expect(page).not.toContain("Disunting admin")
+    expectNotFound(await get(`${ITB}/isu/${PUBLISHED}/laporkan`))
+    expectNotFound(await get(`${ITB}/aduan/ADU-ITB-26-7K3QX`))
   })
 
-  test("a redacted issue says so with standard and date", async () => {
+  test("a redacted issue says so with its date", async () => {
     const page = await (await get(`${ITB}/isu/${EDITED}`)).text()
     const main = page.slice(page.indexOf("<main"))
-    expect(main).toContain(m.issue_redacted())
-    expect(main).toMatch(/href="\/pedoman#standar-3"[^>]*>Standar 3</)
-    expect(main).toContain("13 Oktober 2026")
+    expect(main).toContain("Disunting admin pada 13 Oktober 2026")
+    expect(main).not.toContain("/pedoman#standar")
   })
 
-  test("a taken-down issue answers 410 with the standard", async () => {
+  test("a taken-down issue answers 410 with the guidelines", async () => {
     const res = await get(`${ITB}/isu/${TAKEN}`)
     expect(res.status).toBe(410)
     expect(res.headers.get("Cache-Control")).toBe("no-store")
     const html = await res.text()
     expect(html).toContain(m.issue_taken_down_title())
     expect(html).toContain("14 Oktober 2026")
-    expect(html).toContain('href="/pedoman#standar-11"')
+    expect(html).toContain('href="/pedoman"')
+    expect(html).not.toContain("/pedoman#standar")
     expect(html).not.toContain("Isu yang sudah diturunkan")
     // Other campuses still 404
     expectNotFound(await get(`${UGM}/isu/${TAKEN}`))
@@ -390,7 +389,7 @@ describe("public issue pages", () => {
     expectNotFound(res)
     const html = await res.text()
     expect(html).toContain("Isu Tidak Ditemukan")
-    expect(html).toContain("<title>Isu Tidak Ditemukan · Sadar Bersuara")
+    expect(html).toContain("<title>Isu Tidak Ditemukan - Sadar Bersuara")
     expect(html).not.toContain("Draf belum terbit")
     // Static import keeps it inline
     expect(html).not.toMatch(/\$RC|<template/)
@@ -418,7 +417,7 @@ describe("public issue pages", () => {
     expect(res.status).toBe(403)
     const html = await res.text()
     expect(html).toContain(
-      "<title>Akses Ditolak · Sadar Bersuara · KM itbpub</title>",
+      "<title>Akses Ditolak - Sadar Bersuara - KM itbpub</title>",
     )
     expect(html).toContain("<footer")
     expect(html).toMatch(/© \d{4} KM itbpub/)
@@ -429,19 +428,21 @@ describe("public issue pages", () => {
     )
   })
 
-  test("a forged or cross-sort cursor redirects to page 1", async () => {
-    const forged = (sort: string, key: string) =>
-      Buffer.from(JSON.stringify([2, sort, key, crypto.randomUUID()])).toString(
-        "base64url",
-      )
-    const cases: [string, string][] = [
-      [`?kursor=${forged("laporan", "5")}`, "/isu"],
-      [`?kursor=${forged("laporan", "abc")}&urut=laporan`, "/isu?urut=laporan"],
-      [`?kursor=${forged("terbaru", "5")}`, "/isu"],
+  test("an invalid or out-of-range page redirects", async () => {
+    const cases: [string, number, string][] = [
+      ["?halaman=0", 301, "/isu"],
+      ["?halaman=1&urut=laporan", 301, "/isu?urut=laporan"],
+      ["?halaman=abc&kursor=x", 301, "/isu"],
+      // Data-dependent, not cached
+      ["?halaman=9", 302, "/isu"],
+      ["?halaman=9&status=done", 302, "/isu?status=done"],
     ]
-    for (const [search, location] of cases) {
+    for (const [search, status, location] of cases) {
       const res = await get(`${ITB}/isu${search}`)
-      expect([res.status, res.headers.get("Location")]).toEqual([301, location])
+      expect([res.status, res.headers.get("Location")]).toEqual([
+        status,
+        location,
+      ])
     }
   })
 
@@ -473,8 +474,27 @@ describe("public issue pages", () => {
     }))
     await suDb.insert(issues).values(extra)
     try {
-      const html = await (await get(`${ITB}/isu`)).text()
-      expect(html).toContain('<nav aria-label="Halaman hasil"')
+      const html = await (await get(`${ITB}/isu?urut=laporan`)).text()
+      const nav = html.slice(html.indexOf('<nav aria-label="Halaman hasil"'))
+      expect(nav).toMatch(/^<nav aria-label="Halaman hasil"/)
+      expect(nav).toContain("Halaman 1 dari 2")
+      expect(nav).not.toContain("Sebelumnya")
+      expect(nav).toMatch(
+        /<a [^>]*href="\/isu\?halaman=2&amp;urut=laporan"[^>]*>Berikutnya<\/a>/,
+      )
+      const second = await (
+        await get(`${ITB}/isu?halaman=2&urut=laporan`)
+      ).text()
+      expect(second).toContain("Daftar Isu, Halaman 2")
+      const last = second.slice(second.indexOf('aria-label="Halaman hasil"'))
+      expect(last).toContain("Halaman 2 dari 2")
+      expect(last).toMatch(
+        /<a [^>]*href="\/isu\?urut=laporan"[^>]*>Sebelumnya<\/a>/,
+      )
+      expect(last.slice(0, last.indexOf("</nav>"))).not.toContain("Berikutnya")
+      const past = await get(`${ITB}/isu?halaman=5&urut=laporan`)
+      expect(past.status).toBe(302)
+      expect(past.headers.get("Location")).toBe("/isu?halaman=2&urut=laporan")
     } finally {
       await su.query("DELETE FROM issues WHERE number >= 100")
     }
@@ -522,9 +542,7 @@ describe("home", () => {
     const html = await res.text()
     expect(html).toContain(`href="/isu/${PUBLISHED}"`)
     // UGM has nothing published
-    expect(await (await get(`${UGM}/`)).text()).toContain(
-      "Belum ada isu yang terbit.",
-    )
+    expect(await (await get(`${UGM}/`)).text()).toContain("Belum ada isu.")
     expect(html).not.toContain("Baru Ditanggapi Instansi")
     expect(html).not.toContain("Selesai Terkonfirmasi")
     expect(html).not.toContain("/km-itb/")
@@ -557,11 +575,14 @@ describe("home", () => {
         expect(list).toContain(`href="/isu/ISU-2026-10-${number}"`)
       }
       expect(html).not.toContain("ISU-2026-10-303")
-      expect(list).toContain(">Selesai terkonfirmasi<")
-      expect(html).toContain("Kota Bandung · 3 laporan")
+      expect(list).toContain(">Selesai<")
+      expect(list).toContain(">Ditanggapi<")
+      // Place only, no count
+      expect(list).toContain('<p class="mt-1 mb-4 text-sm">Kota Bandung</p>')
+      expect(list).not.toContain("3 laporan")
       const other = await (await get(`${UGM}/`)).text()
       expect(other).not.toContain("ISU-2026-10-30")
-      expect(other).toContain("Belum ada isu yang terbit.")
+      expect(other).toContain("Belum ada isu.")
     } finally {
       await su.query("DELETE FROM issues WHERE number >= 300")
     }
@@ -656,12 +677,12 @@ describe("content pages", () => {
     expect(footer).toContain('href="/pedoman"')
   })
 
-  test("the issue privacy box links the policy", async () => {
+  test("the issue page has no privacy box", async () => {
     const html = await (await get(`${ITB}/isu/${PUBLISHED}`)).text()
-    const main = html.slice(0, html.indexOf("<footer"))
-    expect(main).toMatch(
-      /cukup laporan\.(?:<!-- -->)? <a[^>]*href="\/privasi"[^>]*>Kebijakan privasi<\/a>/,
-    )
+    const main = html.slice(html.indexOf("<main"), html.indexOf("</main>"))
+    // Removed 25 Oct
+    expect(main).not.toContain("cukup laporan.")
+    expect(main).not.toContain('href="/privasi"')
   })
 
   test("About states purpose, operator and one next step", async () => {
@@ -705,15 +726,10 @@ describe("content pages", () => {
     expect(guide).toContain('id="pemeriksaan"')
   })
 
-  test("Privacy publishes the decided retention periods", async () => {
+  test("Privacy keeps age, location and contact", async () => {
     const html = await (await get(`${ITB}/privasi`)).text()
-    for (const period of [
-      "90 hari setelah ditolak",
-      "Sekitar 2 sampai 3 minggu",
-      "3 bulan",
-    ]) {
-      expect(html).toContain(period)
-    }
+    expect(html).not.toContain('id="masa-simpan"')
+    expect(html).not.toContain('id="pihak-lain"')
     expect(html).toContain("18 tahun atau lebih")
     expect(html).toContain("minimal 5 laporan")
     // No email: operator fallback
@@ -729,12 +745,6 @@ describe("content pages", () => {
       true,
     )
     expect(html).not.toContain("belum berjalan")
-    // Brevo sends more than codes
-    expect(html).toContain("kabar perubahan status laporan")
-    expect(html).toMatch(/<th[^>]*>Masa Simpan<\/th>/)
-    expect(html).toMatch(
-      /<caption[^>]*><span class="sr-only">Masa Simpan per Jenis Data<\/span>/,
-    )
     for (const unbuilt of [
       "menutup akun",
       "disunting moderator",
@@ -752,17 +762,15 @@ describe("content pages", () => {
     expect(html).toContain("disetujui admin")
   })
 
-  test("Guidelines number every standard for citing", async () => {
+  test("Guidelines keep scope and review, no standards", async () => {
     const html = await (await get(`${ITB}/pedoman`)).text()
-    for (let n = 1; n <= 13; n++) expect(html).toContain(`id="standar-${n}"`)
-    expect(html).not.toContain('id="standar-14"')
-    // Numbers are text, 4.5:1
-    const list = html.match(/<ol class="([^"]*)"[^>]*><li[^>]*id="standar-1"/)
-    expect(list?.[1]).toContain("marker:text-accent")
-    expect(list?.[1]).not.toContain("marker:text-brand")
+    expect(html).not.toContain('id="standar"')
+    expect(html).not.toContain("Standar Konten")
     expect(html).toContain("Judul dan ringkasan tidak memuat data pribadi")
     expect(html).toContain("Status laporan Anda di halaman Laporan saya")
-    expect(html.match(/Hubungi pengurus/g)).toHaveLength(1)
+    expect(html).not.toContain("Hubungi pengurus")
+    expect(html).not.toContain('id="nonpartisan"')
+    expect(html).not.toContain('id="perintah"')
   })
 })
 
@@ -807,19 +815,16 @@ describe("OG image", () => {
 
 // Worker output shape, small-n applied
 function snapshot(): DashboardSnapshot {
+  // Public stages, sum 26
   const zeroStatuses = {
-    awaiting_response: 12,
+    verified: 10,
+    referred: 2,
     responded: 6,
-    in_progress: 0,
-    claimed_resolved: 2,
-    confirmed_resolved: 5,
-    reopened: 3,
-    not_competent: 0,
-    not_followed_up: 0,
-    closed: 0,
+    in_progress: 3,
+    done: 5,
   }
   return {
-    v: 6,
+    v: 8,
     firstReportAt: "2026-03-02",
     reports: {
       total: 64,
@@ -830,14 +835,7 @@ function snapshot(): DashboardSnapshot {
     },
     issues: { published: 26, mergedReports: 40, reportsPerIssue: 1.5 },
     verifyTime: { n: 40, medianHours: 20, p90Hours: 70 },
-    resolution: {
-      pending: 2,
-      confirmed: 5,
-      reopened: 3,
-      claimTotal: 10,
-      checked: 8,
-      confirmedShare: 0.625,
-    },
+    resolution: { done: 5, published: 8, share: 0.625 },
     trend: [
       { month: "2025-11", received: 0, verified: 0 },
       { month: "2025-12", received: 0, verified: 0 },
@@ -940,31 +938,37 @@ describe("dashboard", () => {
     const res = await get(`${ITB}/data`)
     expectPublic(res)
     const html = await res.text()
-    // Freshness stated once
-    expect(html.split("Terakhir diperbarui")).toHaveLength(2)
-    expect(html.split("Pembaruan berikutnya")).toHaveLength(2)
+    // No data notes, 25 Oct
+    expect(html).not.toContain("Terakhir diperbarui")
+    expect(html).not.toContain('id="angka-utama"')
     expect(html).not.toContain("Pembaruan angka tertunda")
-    // Note, counts, then quality
+    // Note, figures, map, responses, ranking
     const low = html.indexOf("Baru 64 laporan")
-    const key = html.indexOf('id="angka-utama"')
+    const figures = html.indexOf('id="angka-laporan"')
+    const demandFigures = html.indexOf(">Angka Tuntutan</h2>")
+    const map = html.indexOf('id="peta-isu"')
+    const responses = html.indexOf('id="tanggapan-instansi"')
+    const ranking = html.indexOf('id="peringkat-isu"')
     expect(low).toBeGreaterThan(0)
-    expect(key).toBeGreaterThan(low)
-    expect(html.indexOf(m.data_resolution_label())).toBeGreaterThan(key)
-    expect(html.indexOf(m.data_moderation_title())).toBeGreaterThan(key)
+    expect(figures).toBeGreaterThan(low)
+    expect(demandFigures).toBeGreaterThan(figures)
+    expect(map).toBeGreaterThan(demandFigures)
+    expect(responses).toBeGreaterThan(map)
+    expect(ranking).toBeGreaterThan(responses)
     // Under 100 reports
     expect(html).toContain("Baru 64 laporan sejak 2 Maret 2026")
-    expect(html).toContain("62,5")
-    expect(html).toContain("dari 8 klaim yang sudah dicek")
-    expect(html).toContain("Dari 10 isu yang diklaim selesai")
-    // Exact parts beside the share
-    expect(html).toMatch(/Masih menunggu konfirmasi<\/dt><dd[^>]*>2<\/dd>/)
-    expect(html).toMatch(/<h3[^>]*>Klaim Selesai yang Terkonfirmasi<\/h3>/)
-    // Failed claims shown, exact
-    expect(html).toMatch(/<dt>Dibuka kembali<\/dt><dd[^>]*>3<\/dd>/)
-    // Small months shown exactly
-    expect(html).toMatch(/>Maret 2026<\/th><td[^>]*>3</)
-    expect(html).toContain("80% dari 50 laporan yang sudah diperiksa")
-    expect(html).toContain("20 jam")
+    // Verified reports per stage
+    const reports = html.slice(figures, demandFigures)
+    expect(reports).toContain(">Angka Laporan</h2>")
+    expect(reports).toMatch(/>Laporan terverifikasi<\/span><\/dt><dd[^>]*>26</)
+    expect(reports).toMatch(/>Diteruskan ke instansi<\/span><\/dt><dd[^>]*>0</)
+    expect(reports).toMatch(/>Selesai<\/span><\/dt><dd[^>]*>0</)
+    // Removed 25 Oct, team request
+    expect(html).not.toMatch(/<h3[^>]*>Isu Selesai<\/h3>/)
+    expect(html).not.toContain("Kinerja Moderasi")
+    expect(html).not.toContain("Tren Laporan dan Sebaran Isu")
+    expect(html).not.toContain('id="grafik"')
+    expect(html).not.toContain("Tuntutan Publik")
     // PLAN §5.8 response metrics
     expect(html).toMatch(/<h2[^>]*id="tanggapan-instansi"[^>]*>/)
     expect(html).toContain("62,5")
@@ -982,24 +986,10 @@ describe("dashboard", () => {
     expect(html).toMatch(
       /<a [^>]*href="\/isu\?status=awaiting_response"[^>]*>Lihat isu yang belum ditanggapi<\/a>/,
     )
-    // PLAN §5.10 counts per reason
-    expect(html).toMatch(
-      />Standar 2: Duplikat dari laporan lain<\/th><td[^>]*>6</,
-    )
-    // Under moderation, title before lead
-    const reasons = html.indexOf(m.data_reasons_caption())
-    expect(reasons).toBeLessThan(html.indexOf('id="tanggapan-instansi"'))
-    expect(reasons).toBeLessThan(html.indexOf(m.data_reasons_lead()))
-    expect(html).toMatch(/>Standar 3: [^<]+<\/th><td[^>]*>1–4</)
-    expect(html).not.toMatch(/>Standar 1: /)
-    // Only the capita map left
-    const pending = html.match(
-      new RegExp(`>${m.data_pending_title()}</h3><ul[^>]*>([\\s\\S]*?)</ul>`),
-    )?.[1]
-    expect(pending).toContain(m.data_pending_capita())
-    // PLAN §5.9 drill-down, deferred
-    expect(pending).toContain(m.data_pending_regency())
-    expect(pending).not.toContain("tanggapan")
+    // No Standar anywhere, 25 Oct
+    expect(html).not.toContain("Standar")
+    // No Tentang Data, 25 Oct
+    expect(html).not.toContain('id="tentang-data"')
     // Every province links its issues
     expect(html.match(/<a href="\/isu\?wilayah=\d\d"/g)).toHaveLength(38)
     // Geometry from the cached sprite
@@ -1011,11 +1001,6 @@ describe("dashboard", () => {
     expect(html).toMatch(/<button type="submit"[^>]*>Terapkan<\/button>/)
     expect(html).not.toContain('name="tampilan" value="peta"')
     expect(html).toContain(m.data_top_title())
-    expect(html).toMatch(/<h2[^>]*id="grafik"[^>]*>/)
-    // Fixed label, chart named hidden
-    expect(html).toMatch(
-      /aria-pressed="false"[^>]*>(?:<svg[\s\S]*?<\/svg>)?Tabel<span class="sr-only"> [^<]+<\/span><\/button>/,
-    )
     expect(html).not.toMatch(
       /<a href="\/isu\?wilayah=[^"]*" class="[^"]*outline-none/,
     )
@@ -1025,27 +1010,11 @@ describe("dashboard", () => {
       "Daerah Istimewa Yogyakarta: 1–4 laporan terverifikasi",
     )
     expect(html).toContain("Aceh: 0 laporan terverifikasi")
-    // Layer switch, Laporan first
-    expect(html).toMatch(
-      /<a aria-current="true"[^>]*href="\/data#peta-isu"[^>]*>(?:<svg[\s\S]*?<\/svg>)?Laporan<\/a>/,
-    )
-    expect(html).toMatch(
-      /<a class="[^"]*" href="\/data\?lapisan=tuntutan#peta-isu"[^>]*>Tuntutan<\/a>/,
-    )
+    // Report layer only, 25 Oct
+    expect(html).toContain(">Peta Laporan</h2>")
+    expect(html).not.toContain("lapisan=")
     expect(html).toContain("OpenStreetMap contributors")
     expect(html).toContain("Open Database License (ODbL)")
-    // No-JS twin of every chart
-    for (const caption of [
-      m.data_trend_caption(),
-      m.data_category_caption(),
-      m.data_status_caption(),
-    ]) {
-      expect(html).toMatch(
-        new RegExp(
-          `class="hidden noscript:block"><section[^>]*><table[^>]*><caption[^>]*>${caption}<`,
-        ),
-      )
-    }
     expect(html).not.toContain("recharts")
   })
 
@@ -1080,11 +1049,12 @@ describe("dashboard", () => {
     )
     expect(ranking).toContain(`href="/isu/${PUBLISHED}"`)
     expect(ranking).not.toContain(DRAFT)
-    expect(ranking).toMatch(/>1<\/span>[\s\S]*>laporan</)
-    // Ranking before the data notes
-    expect(html.indexOf('id="peringkat-isu"')).toBeLessThan(
-      html.indexOf('id="tentang-data"'),
+    // Ruled table, count column
+    expect(ranking).toMatch(
+      new RegExp(`<th[^>]*>${m.data_ranking_col_reports()}</th>`),
     )
+    expect(ranking).toMatch(/<td[^>]*>1<\/td><\/tr>/)
+    expect(html).not.toContain('id="tentang-data"')
     // No banned tabs
     expect(ranking).not.toMatch(/kepuasan|didukung|terdampak|mendesak/i)
     const oldest = await (
@@ -1095,7 +1065,7 @@ describe("dashboard", () => {
       /<a [^>]*aria-current="true"[^>]*>Terlama Belum Selesai<\/a>/,
     )
     expect(tab).toContain(`href="/isu/${PUBLISHED}"`)
-    expect(tab).toContain(m.data_ranking_unit_days())
+    expect(tab).toContain(`>${m.data_ranking_col_days()}</th>`)
     // Map links keep the tab
     expect(oldest).toContain('href="/data?peringkat=terlama#peta-isu"')
     expect(oldest).toContain(
@@ -1130,6 +1100,7 @@ describe("tuntutan on the dashboard, home and apex", () => {
     summary: "Waktu pemulihan suplai air dan kewajiban tangki air bantuan.",
     target: "Pemerintah Provinsi Jawa Barat",
     raisedOn: "2026-07-30",
+    briefUrl: null,
   }
   const NATIONAL_TITLE = "Transparansi data penerima bantuan sosial nasional"
   const DRAFT_TITLE = "Tuntutan draf yang belum terbit"
@@ -1232,81 +1203,36 @@ describe("tuntutan on the dashboard, home and apex", () => {
     }
   })
 
-  test("/data counts them in Angka Utama and lists the latest", async () => {
+  test("/data counts tuntutan above the map, no list", async () => {
     const html = await (await get(`${ITB}/data`)).text()
-    const key = html.slice(
-      html.indexOf('id="angka-utama"'),
-      html.indexOf("</section>", html.indexOf('id="angka-utama"')),
-    )
-    for (const [label, value] of [
-      [m.data_key_demands(), "3"],
-      [m.data_key_demands_active(), "3"],
-      [m.data_key_demands_fulfilled(), "0"],
-      [m.data_key_items_fulfilled(), "1"],
-    ]) {
-      expect(key).toMatch(
-        new RegExp(
-          `>${label}<span[^>]*>[^<]*</span></dt><dd[^>]*>${value}</dd>`,
-        ),
-      )
-    }
-    expect(key).toContain("1 nasional, 2 daerah")
-    const section = html.slice(html.indexOf('id="tuntutan-publik"'))
-    expect(section).toContain(m.data_demands_title())
-    expect(section).toContain(`href="/tuntutan/${codes[2]}"`)
-    expect(section).toContain(NATIONAL_TITLE)
-    expect(section).toContain("Sebagian dipenuhi")
-    expect(section).toMatch(/href="\/tuntutan"[^>]*>Lihat semua tuntutan</)
+    const start = html.indexOf(">Angka Tuntutan</h2>")
+    const figures = html.slice(start, html.indexOf('id="peta-isu"'))
+    expect(start).toBeGreaterThan(html.indexOf('id="angka-laporan"'))
+    // Three public, one draft
+    expect(figures).toMatch(/>Total tuntutan<\/span><\/dt><dd[^>]*>3</)
+    expect(figures).toMatch(/>Tuntutan dalam proses<\/span><\/dt><dd[^>]*>3</)
+    expect(figures).toMatch(/>Tuntutan dipenuhi<\/span><\/dt><dd[^>]*>0</)
+    expect(figures).toContain("dari 6 subtuntutan")
+    // Section removed 25 Oct
+    expect(html).not.toContain('id="tuntutan-publik"')
+    expect(html).not.toContain(`href="/tuntutan/${codes[2]}"`)
+    expect(html).not.toContain(NATIONAL_TITLE)
     expect(html).not.toContain(DRAFT_TITLE)
-    // After agency answers, before map
-    expect(html.indexOf('id="tuntutan-publik"')).toBeGreaterThan(
-      html.indexOf('id="tanggapan-instansi"'),
-    )
-    expect(html.indexOf('id="tuntutan-publik"')).toBeLessThan(
-      html.indexOf('id="peta-isu"'),
-    )
+    // Figures, map, answers, ranking
+    const order = [
+      'id="angka-laporan"',
+      'id="peta-isu"',
+      'id="tanggapan-instansi"',
+      'id="peringkat-isu"',
+    ].map((marker) => html.indexOf(marker))
+    expect(order.every((at) => at > 0)).toBe(true)
+    expect([...order].sort((a, b) => a - b)).toEqual(order)
   })
 
-  test("the Tuntutan layer colours provinces by tuntutan daerah", async () => {
-    const html = await (await get(`${ITB}/data?lapisan=tuntutan`)).text()
-    expect(html).toMatch(
-      /<a aria-current="true"[^>]*href="\/data\?lapisan=tuntutan#peta-isu"/,
-    )
-    expect(html.match(/<a href="\/tuntutan\?provinsi=\d\d"/g)).toHaveLength(38)
-    expect(html).not.toMatch(/<a href="\/isu\?wilayah=/)
-    expect(html).toContain("Jawa Barat: 2 tuntutan daerah")
-    expect(html).toContain("Aceh: 0 tuntutan daerah")
-    // Jawa Barat two: step low
-    expect(html).toMatch(
-      /<a href="\/tuntutan\?provinsi=32"[^>]*><title>[^<]*<\/title><use [^>]*fill="#8a6bd8"/,
-    )
-    // Exact counts, no hidden class
-    const legend = html.slice(html.indexOf(m.data_demand_legend_title()))
-    expect(legend.slice(0, 600)).not.toContain("1–4")
-    expect(legend.slice(0, 600)).not.toContain(m.data_class_none())
-    // No report filters here
-    expect(html).not.toContain('href="/data?kategori=')
-    expect(html).not.toContain(">Terapkan</button>")
-    // National beside the map
-    const aside = html.slice(html.indexOf('id="tuntutan-nasional"'))
-    expect(aside).toContain(NATIONAL_TITLE)
-    expect(aside).toContain(`href="/tuntutan/${codes[2]}"`)
-    expect(aside).toContain('href="/tuntutan?lingkup=nasional"')
-  })
-
-  test("its table reads exact counts per fulfilment status", async () => {
-    const html = await (
-      await get(`${ITB}/data?lapisan=tuntutan&tampilan=tabel`)
-    ).text()
-    expect(html).not.toContain("<svg viewBox")
-    expect(html).toContain(m.data_demand_province_caption())
-    const cells = html
-      .split(">Jawa Barat</a></th>")[1]
-      ?.match(/<td[^>]*>([^<]*)<\/td>/g)
-      ?.slice(0, 5)
-      .map((cell) => cell.replace(/<[^>]+>/g, ""))
-    // Total, then the four statuses
-    expect(cells).toEqual(["2", "1", "1", "0", "0"])
+  test("the old Tuntutan map layer redirects", async () => {
+    const res = await get(`${ITB}/data?lapisan=tuntutan&tampilan=tabel`)
+    expect(res.status).toBe(301)
+    expect(res.headers.get("Location")).toBe("/data?tampilan=tabel")
   })
 
   test("home shows the latest before the issue lists", async () => {
@@ -1339,7 +1265,7 @@ describe("tuntutan on the dashboard, home and apex", () => {
       expect(done.ok).toBe(true)
     }
     const html = await (await get(`${ITB}/tuntutan/${code}`)).text()
-    const hero = html.slice(0, html.indexOf('id="demand-on-page"'))
+    const hero = html.slice(0, html.indexOf('id="sub-tuntutan"'))
     expect(hero).toContain("Halte bus layak")
     expect(hero).not.toContain("Alasan penutupan yang sudah lama.")
     expect(hero).not.toContain("Ditutup")
@@ -1357,7 +1283,8 @@ describe("tuntutan on the dashboard, home and apex", () => {
       html.indexOf('id="sub-1"'),
       html.indexOf('id="sub-2"'),
     )
-    expect(item).toContain("Direspons")
+    // Fulfilment only, no response
+    expect(item).not.toContain("Direspons")
     expect(item).toContain("Pemerintah provinsi menerbitkan standar")
   })
 
@@ -1365,6 +1292,44 @@ describe("tuntutan on the dashboard, home and apex", () => {
     const html = await (await get(`${ITB}/tuntutan`)).text()
     expect(html).toContain("Halte bus layak")
     expect(html).not.toContain("0 isu terkait")
+  })
+
+  test("ranking starts on the list, not the detail page", async () => {
+    const html = await (await get(`${ITB}/tuntutan`)).text()
+    const panel = html.indexOf('id="susun-peringkat"')
+    // Above scorecard and filters
+    expect(panel).toBeGreaterThan(0)
+    expect(panel).toBeLessThan(html.indexOf('action="/tuntutan"'))
+    const block = html.slice(panel, html.indexOf("</section>", panel))
+    expect(block).toContain(m.demands_rank_cta_lead())
+    expect(block).not.toMatch(/lima/i)
+    expect(block).toMatch(
+      /<a [^>]*href="\/tuntutan\/peringkat"[^>]*>Susun peringkat Anda<\/a>/,
+    )
+    const detail = await (await get(`${ITB}/tuntutan/${codes[0]}`)).text()
+    expect(detail).not.toContain('id="peringkat-warga"')
+    expect(detail).not.toContain('href="/tuntutan/peringkat"')
+  })
+
+  test("the register is a card grid", async () => {
+    const html = await (await get(`${ITB}/tuntutan`)).text()
+    const main = html.slice(html.indexOf("<main"), html.indexOf("</main>"))
+    expect(main).not.toContain("<table")
+    const cards = main.match(/<article[\s\S]*?<\/article>/g) ?? []
+    expect(cards).toHaveLength(3)
+    const card = cards.find((one) => one.includes(codes[0] ?? "-")) ?? ""
+    expect(card).toContain(">Infrastruktur dan Transportasi</span>")
+    expect(card).toMatch(
+      new RegExp(
+        `<a [^>]*href="/tuntutan/${codes[0]}"[^>]*>${FIELDS.title}</a>`,
+      ),
+    )
+    expect(card).toContain(">Sebagian dipenuhi</span>")
+    expect(card).toContain("1 dari 2 subtuntutan dipenuhi")
+    expect(card).toContain("Diajukan 30 Juli 2026")
+    expect(card).not.toContain("·")
+    expect(card).not.toContain("<svg")
+    expect(card).not.toContain("font-ui")
   })
 
   test("the apex counts public tuntutan exactly", async () => {
@@ -1431,7 +1396,7 @@ describe("apex national view", () => {
       const res = await get(`${APEX}${path}`)
       expect(res.status).toBe(200)
       const html = await res.text()
-      expect(html).toContain('href="/#kampus"')
+      if (path === "/tentang") expect(html).toContain('href="/#kampus"')
       expect(html).not.toContain('href="/lapor"')
     }
   })

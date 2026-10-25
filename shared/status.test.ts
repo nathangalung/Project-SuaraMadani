@@ -48,13 +48,11 @@ describe("report lifecycle", () => {
     expect(REPORT_STATUSES).toContain("forwarded")
   })
 
-  test("verify only from in review or unverifiable", () => {
-    expect(transitionReport("in_review", "verify").next).toBe("verified")
+  test("verify straight from Terkirim or unverifiable", () => {
+    expect(transitionReport("submitted", "verify").next).toBe("verified")
     expect(transitionReport("unverifiable", "verify").next).toBe("verified")
-    expect(canTransitionReport("submitted", "verify")).toBe(false)
-    expect(() => transitionReport("submitted", "verify")).toThrow(
-      TransitionError,
-    )
+    expect(canTransitionReport("rejected", "verify")).toBe(false)
+    expect(() => transitionReport("merged", "verify")).toThrow(TransitionError)
   })
 
   test("merge needs a verified report", () => {
@@ -65,10 +63,9 @@ describe("report lifecycle", () => {
     expect(canTransitionReport("rejected", "merge")).toBe(false)
   })
 
-  test("triage can reject or forward early", () => {
+  test("triage can reject early, never forward", () => {
     expect(transitionReport("submitted", "reject").next).toBe("rejected")
-    expect(transitionReport("submitted", "forward").next).toBe("forwarded")
-    expect(transitionReport("in_review", "forward").next).toBe("forwarded")
+    expect(REPORT_ACTIONS).not.toContain("forward")
   })
 
   test("terminal statuses allow nothing", () => {
@@ -80,7 +77,10 @@ describe("report lifecycle", () => {
   test("every status is reachable or initial", () => {
     const reached = new Set(REPORT_ACTIONS.map((a) => REPORT_TRANSITIONS[a].to))
     for (const status of REPORT_STATUSES) {
-      if (status !== "submitted") expect(reached.has(status)).toBe(true)
+      // Legacy statuses never reached
+      const legacy = status === "forwarded" || status === "in_review"
+      if (status === "submitted" || legacy) continue
+      expect(reached.has(status)).toBe(true)
     }
   })
 
@@ -125,17 +125,16 @@ describe("issue lifecycle", () => {
     })
   })
 
-  test("claimed resolved exits only to confirmed or reopened", () => {
-    const claimed = transitionIssue(referred, "claim_resolved").next
-    expect(claimed.government).toBe("claimed_resolved")
-    expect(allowedIssueActions(claimed).sort()).toEqual([
-      "confirm_resolved",
-      "reopen",
-    ])
-    expect(transitionIssue(claimed, "reopen").next.government).toBe("reopened")
-    expect(transitionIssue(claimed, "confirm_resolved").next.government).toBe(
+  test("admin marks done in one step, no claim", () => {
+    expect(ISSUE_ACTIONS).not.toContain("claim_resolved")
+    const working = transitionIssue(referred, "mark_in_progress").next
+    expect(transitionIssue(working, "confirm_resolved").next.government).toBe(
       "confirmed_resolved",
     )
+    // Legacy claims still settle
+    const legacy = { ...referred, government: "claimed_resolved" as const }
+    expect(allowedIssueActions(legacy)).toContain("confirm_resolved")
+    expect(transitionIssue(legacy, "reopen").next.government).toBe("reopened")
   })
 
   test("not competent leads to a new referral", () => {
@@ -150,7 +149,7 @@ describe("issue lifecycle", () => {
       transitionIssue(escalated, "mark_not_competent").next,
       transitionIssue(escalated, "mark_not_followed_up").next,
       transitionIssue(
-        transitionIssue(escalated, "claim_resolved").next,
+        { ...escalated, government: "claimed_resolved" },
         "reopen",
       ).next,
     ]

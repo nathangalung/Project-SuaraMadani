@@ -42,6 +42,6 @@ export function demandPlace(demand: {
     .filter((part) => part !== null)
     .join(", ")
   return region
-    ? `${m.demand_scope_regional()} · ${region}`
+    ? m.demand_scope_regional_in({ region })
     : m.demand_scope_regional()
 }

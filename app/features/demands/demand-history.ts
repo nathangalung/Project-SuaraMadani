@@ -1,7 +1,7 @@
 import type { TimelineEntry } from "~/features/issues/timeline"
 import { m } from "~/paraglide/messages.js"
 import type { DemandEvent } from "./demands.server"
-import { FULFILMENT_TEXT, RESPONSE_TEXT } from "./labels"
+import { FULFILMENT_TEXT } from "./labels"
 
 // Dates are days, noon WIB
 function dayOf(iso: string): Date {
@@ -51,9 +51,9 @@ export function demandHistory(
           undefined
         : undefined,
     status:
-      event.action === "status" && event.response && event.fulfilment
+      event.action === "status" && event.fulfilment
         ? m.demand_event_status_to({
-            status: `${RESPONSE_TEXT[event.response]()} · ${FULFILMENT_TEXT[event.fulfilment]()}`,
+            status: FULFILMENT_TEXT[event.fulfilment](),
           })
         : undefined,
     tone:

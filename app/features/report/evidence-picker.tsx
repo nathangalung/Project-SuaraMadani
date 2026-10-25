@@ -87,7 +87,7 @@ function fileMeta(file: File): string {
         ? KIND_TEXT[kind]()
         : ""
   return label
-    ? `${label} · ${formatFileSize(file.size)}`
+    ? `${label}, ${formatFileSize(file.size)}`
     : formatFileSize(file.size)
 }
 

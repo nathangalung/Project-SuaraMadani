@@ -42,12 +42,10 @@ export default function Audit({ loaderData }: Route.ComponentProps) {
       <h1 className="font-bold font-heading text-3xl [font-synthesis-weight:none]">
         {title}
       </h1>
-      <p className="mt-2 mb-6 max-w-3xl text-ink-muted">
-        {m.manage_audit_lead()}
-      </p>
+      <p className="mt-2 mb-6 text-ink-muted">{m.manage_audit_lead()}</p>
       <Form
         method="get"
-        className="grid gap-4 border border-line-subtle bg-surface-raised/60 p-5 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_auto] lg:items-end"
+        className="grid gap-4 rounded-2xl border border-line-subtle bg-surface-raised p-6 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_auto] lg:items-end"
       >
         <Select
           id="audit-action"

@@ -4,6 +4,7 @@ import {
   DATA_QUERY,
   DEMAND_LIST_QUERY,
   ISSUE_LIST_QUERY,
+  pageNumber,
   querySpecFor,
   readQuery,
 } from "./canonical-query.ts"
@@ -62,11 +63,18 @@ describe("canonicalizeSearch", () => {
     expect(canonicalizeSearch("?q=ab", list).search).toBe("?q=ab")
   })
 
-  test("cursor shape", () => {
-    expect(canonicalizeSearch("?kursor=MjA6YWJj_-", list).search).toBe(
-      "?kursor=MjA6YWJj_-",
-    )
-    expect(canonicalizeSearch("?kursor=a%3Cb", list).search).toBe("")
+  test("page numbers, page 1 omitted", () => {
+    expect(canonicalizeSearch("?halaman=2", list).search).toBe("?halaman=2")
+    for (const bad of ["1", "0", "-2", "02", "2.5", "abc", "1234567"]) {
+      expect(canonicalizeSearch(`?halaman=${bad}`, list).search).toBe("")
+    }
+    expect(canonicalizeSearch("?kursor=MjA6YWJj_-", list).search).toBe("")
+  })
+
+  test("pageNumber reads canonical values", () => {
+    expect(pageNumber(undefined)).toBe(1)
+    expect(pageNumber("4")).toBe(4)
+    expect(pageNumber("x")).toBe(1)
   })
 
   test("React Router parameters are junk on cacheable GETs", () => {
@@ -87,7 +95,7 @@ describe("canonicalizeSearch", () => {
       "?q=Air%20Bersih&kategori=program.air_bersih&urut=laporan",
       "?status=referred&status=closed&wilayah=11",
       "?q=a+b&q=c&fbclid=1&utm_medium=2",
-      "?kursor=abc&urut=aktivitas&kategori=bansos.ketepatan_sasaran",
+      "?halaman=3&urut=aktivitas&kategori=bansos.ketepatan_sasaran",
       "?q=%F0%9F%98%80%20banjir",
       "?",
     ]
@@ -152,9 +160,13 @@ describe("querySpecFor", () => {
       "?kategori=pendidikan&status=fulfilled",
     )
     expect(canonical("?kategori=olahraga")).toBe("")
+    expect(canonical("?halaman=2&lingkup=daerah")).toBe(
+      "?halaman=2&lingkup=daerah",
+    )
+    expect(canonical("?halaman=1&kursor=abc")).toBe("")
   })
 
-  test("dashboard keeps top categories, government statuses and the view", () => {
+  test("dashboard keeps top categories, public stages and the view", () => {
     const canonical = (search: string) =>
       canonicalizeSearch(search, DATA_QUERY).search
     expect(canonical("?tampilan=tabel&kategori=bencana&utm_source=x")).toBe(
@@ -162,17 +174,18 @@ describe("querySpecFor", () => {
     )
     expect(canonical("?tampilan=peta")).toBe("")
     expect(canonical("?kategori=bencana.banjir")).toBe("")
-    expect(canonical("?status=referred")).toBe("")
-    expect(canonical("?status=confirmed_resolved")).toBe(
-      "?status=confirmed_resolved",
-    )
+    // Public stages, like Jelajah
+    expect(canonical("?status=confirmed_resolved")).toBe("")
+    expect(canonical("?status=referred")).toBe("?status=referred")
+    expect(canonical("?status=done")).toBe("?status=done")
   })
 
-  test("dashboard keeps the map layer", () => {
+  test("dashboard has only the report layer", () => {
     const canonical = (search: string) =>
       canonicalizeSearch(search, DATA_QUERY).search
+    // Tuntutan layer removed 25 Oct
     expect(canonical("?lapisan=tuntutan&tampilan=tabel")).toBe(
-      "?lapisan=tuntutan&tampilan=tabel",
+      "?tampilan=tabel",
     )
     expect(canonical("?lapisan=laporan")).toBe("")
     expect(canonical("?lapisan=isu")).toBe("")

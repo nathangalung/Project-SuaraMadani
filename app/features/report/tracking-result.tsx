@@ -5,15 +5,13 @@ import { Badge, type BadgeTone } from "~/components/ui/badge"
 import { ButtonLink } from "~/components/ui/button"
 import { Card } from "~/components/ui/card"
 import { Note } from "~/components/ui/note"
+import { Pagination } from "~/components/ui/pagination"
 import { m } from "~/paraglide/messages.js"
 import { formatDate } from "../../../shared/format.ts"
-import { isRejectReason, standardAnchor } from "../../../shared/moderation.ts"
 import type { ReportStatus } from "../../../shared/status.ts"
 import { Timeline, type TimelineEntry } from "../issues/timeline"
-import { decisionReasonText } from "../moderation/reason-labels"
 import { PendingUploads } from "./pending-uploads"
 import { REPORT_STATUS_TEXT } from "./public-labels"
-import { ReportLabel } from "./report-label"
 import type { TrackedReport } from "./tracking.server"
 
 // Still waiting for a file
@@ -58,51 +56,26 @@ function historyOf(report: TrackedReport): TimelineEntry[] {
   return entries
 }
 
-const LINK =
-  "font-semibold text-accent underline underline-offset-4 hover:no-underline"
-
 // PLAN §5.10: reason reaches reporter
 function Outcome({ report }: { report: TrackedReport }) {
-  const { decision, forwardedTo } = report
+  const { decision } = report
   if (decision) {
     return (
       <Note className="mt-4 bg-surface-raised">
-        <p className="font-semibold">
-          {m.track_reason({ reason: decisionReasonText(decision.reason) })}
-        </p>
-        <p className="mt-1">{m.track_reason_text()}</p>
-        <p className="whitespace-pre-line">{decision.text}</p>
-        {isRejectReason(decision.reason) ? (
-          <Link
-            to={`/pedoman#${standardAnchor(decision.reason)}`}
-            className={`mt-2 inline-block ${LINK}`}
-          >
-            {m.track_standard_link()}
-          </Link>
-        ) : null}
-      </Note>
-    )
-  }
-  if (forwardedTo) {
-    return (
-      <Note className="mt-4 bg-surface-raised">
-        <p>{m.track_forwarded_to({ campus: forwardedTo.campus })}</p>
-        <a href={forwardedTo.url} className={`mt-2 inline-block ${LINK}`}>
-          {m.track_forwarded_link({ campus: forwardedTo.campus })}
-        </a>
+        <p className="font-semibold">{m.track_reason_text()}</p>
+        <p className="mt-1 whitespace-pre-line">{decision.text}</p>
       </Note>
     )
   }
   return null
 }
 
+// Compact rounded card, like IssueCard
 function ReportCard({
   report,
-  tenant,
   canUpload,
 }: {
   report: TrackedReport
-  tenant: string
   canUpload: boolean
 }) {
   const merged = report.merged
@@ -114,91 +87,82 @@ function ReportCard({
     until: report.uploadUntil,
   })
   return (
-    <Card variant="pastel" className="rounded-xl">
-      <article aria-labelledby={titleId}>
-        <div className="px-6 pt-6 sm:px-8 sm:pt-8">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <ReportLabel
-              code={report.code}
-              tenant={tenant}
-              rows={[
-                {
-                  label: m.report_label_sent(),
-                  value: formatDate(report.createdAt),
-                },
-                {
-                  label: m.track_files_label(),
-                  value: filesText(report.evidence),
-                },
-              ]}
-            />
-            <Badge tone={STATUS_TONE[report.status]}>
-              {REPORT_STATUS_TEXT[report.status]()}
-            </Badge>
+    <article
+      aria-labelledby={titleId}
+      className="rounded-2xl border border-line-subtle bg-surface-raised p-6"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-semibold text-ink-soft tabular-nums">
+          {report.code}
+        </span>
+        <Badge tone={STATUS_TONE[report.status]}>
+          {REPORT_STATUS_TEXT[report.status]()}
+        </Badge>
+      </div>
+      <h2 id={titleId} className="mt-3 font-bold text-xl leading-snug">
+        {report.title}
+      </h2>
+      <dl className="mt-3 flex flex-wrap gap-x-8 gap-y-2 text-sm">
+        <div>
+          <dt className="text-ink-muted">{m.report_label_sent()}</dt>
+          <dd className="font-semibold">{formatDate(report.createdAt)}</dd>
+        </div>
+        <div>
+          <dt className="text-ink-muted">{m.track_files_label()}</dt>
+          <dd className="font-semibold">{filesText(report.evidence)}</dd>
+        </div>
+      </dl>
+      <Outcome report={report} />
+      {pending.items.length > 0 && pending.until ? (
+        <PendingUploads
+          items={pending.items}
+          until={pending.until}
+          canUpload={canUpload}
+          titleId={`${titleId}-upload`}
+          reportTitleId={titleId}
+        />
+      ) : null}
+      <div
+        className={`mt-5 grid gap-6 border-line-subtle border-t pt-5 ${merged ? "md:grid-cols-[1fr_16rem]" : ""}`}
+      >
+        <section aria-labelledby={`${titleId}-history ${titleId}`}>
+          <h3 id={`${titleId}-history`} className="font-bold">
+            {m.track_history_title()}
+          </h3>
+          <Timeline entries={historyOf(report)} className="mt-4 ml-1.5" />
+        </section>
+        {issueCode ? (
+          <div className="self-start rounded-xl bg-surface p-4">
+            <p className="text-ink-soft text-sm">{m.track_merged_note()}</p>
+            <p className="mt-1 font-bold text-lg tabular-nums">{issueCode}</p>
+            <Link
+              to={`/isu/${issueCode}`}
+              className="mt-2 inline-block font-semibold text-accent text-sm underline underline-offset-4 hover:no-underline"
+            >
+              {m.track_merged_link()}
+            </Link>
           </div>
-          <h2 id={titleId} className="mt-5 font-semibold text-2xl leading-snug">
-            {report.title}
-          </h2>
-          <Outcome report={report} />
-          {pending.items.length > 0 && pending.until ? (
-            <PendingUploads
-              items={pending.items}
-              until={pending.until}
-              canUpload={canUpload}
-              titleId={`${titleId}-upload`}
-              reportTitleId={titleId}
-            />
-          ) : null}
-        </div>
-        <div
-          className={`mt-6 grid gap-8 border-ink/15 border-t p-6 sm:p-8 ${merged ? "md:grid-cols-[1fr_16rem]" : ""}`}
-        >
-          <section aria-labelledby={`${titleId}-history ${titleId}`}>
-            <h3 id={`${titleId}-history`} className="font-bold text-xl">
-              {m.track_history_title()}
-            </h3>
-            <Timeline
-              entries={historyOf(report)}
-              on="pastel"
-              className="mt-5 ml-1.5"
-            />
-          </section>
-          {issueCode ? (
-            <div className="self-start bg-ink p-5 text-surface-raised">
-              <p className="text-sm">{m.track_merged_note()}</p>
-              <p className="mt-1 font-bold text-2xl tabular-nums">
-                {issueCode}
-              </p>
-              <Link
-                to={`/isu/${issueCode}`}
-                className="mt-3 inline-block font-semibold text-sm underline underline-offset-2 hover:no-underline"
-              >
-                {m.track_merged_link()}
-              </Link>
-            </div>
-          ) : merged ? (
-            <Note className="self-start bg-surface-raised">
-              {m.track_merged_pending()}
-            </Note>
-          ) : null}
-        </div>
-      </article>
-    </Card>
+        ) : merged ? (
+          <Note className="self-start">{m.track_merged_pending()}</Note>
+        ) : null}
+      </div>
+    </article>
   )
 }
 
 export function TrackingResult({
   campus,
-  tenant,
   reports,
-  capped = false,
+  page = 1,
+  pageCount = 1,
+  pageHref,
   canUpload,
 }: {
   campus: string
-  tenant: string
   reports: TrackedReport[]
-  // Query stopped at its limit
-  capped?: boolean
+  page?: number
+  pageCount?: number
+  pageHref?: (page: number) => string
   // Session owner, not a link
   canUpload: boolean
 }) {
@@ -217,17 +181,20 @@ export function TrackingResult({
   }
   return (
     <>
-      <ul className="flex flex-col gap-8">
+      <ul className="flex flex-col gap-5">
         {reports.map((report) => (
           <li key={report.code}>
-            <ReportCard report={report} tenant={tenant} canUpload={canUpload} />
+            <ReportCard report={report} canUpload={canUpload} />
           </li>
         ))}
       </ul>
-      {capped ? (
-        <Note className="mt-8">
-          {m.track_capped({ count: reports.length })}
-        </Note>
+      {pageHref ? (
+        <Pagination
+          page={page}
+          pageCount={pageCount}
+          href={pageHref}
+          className="mt-10"
+        />
       ) : null}
       <p className="mt-12 border-ink/15 border-t pt-6 text-center text-ink-soft">
         {m.track_closing()}{" "}

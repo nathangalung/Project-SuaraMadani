@@ -2,7 +2,7 @@ import { ChevronDown, Menu, X } from "lucide-react"
 import { type MouseEvent, type PointerEvent, useRef } from "react"
 import { Link, NavLink, useLocation } from "react-router"
 import { m } from "~/paraglide/messages.js"
-import { Button, ButtonLink } from "../ui/button"
+import { ButtonLink } from "../ui/button"
 import { cn } from "../ui/cn"
 import { useDismiss } from "./use-dismiss"
 
@@ -60,8 +60,6 @@ type HeaderProps = {
   showSignIn?: boolean
   // Auth pages show logo only
   variant?: "site" | "auth"
-  // Admin: Kelola menu only
-  staff?: boolean
 }
 
 /** Handle `shell: "auth"`. */
@@ -75,6 +73,16 @@ export function isAuthShell(handle: unknown): boolean {
 }
 
 /** Handle flag `pageSignIn`. */
+/** Kelola draws its own frame. */
+export function isManageShell(handle: unknown): boolean {
+  return (
+    typeof handle === "object" &&
+    handle !== null &&
+    "shell" in handle &&
+    handle.shell === "manage"
+  )
+}
+
 export function hasPageSignIn(handle: unknown): boolean {
   return (
     typeof handle === "object" &&
@@ -136,7 +144,6 @@ function useMorphHover() {
 }
 
 function Logo({
-  home = "/",
   siteName,
   logoSrc,
   logoSrcSet,
@@ -153,11 +160,11 @@ function Logo({
   | "logoIntroSrcSet"
   | "emblemSrc"
   | "emblemSrcSet"
-> & { home?: string }) {
+>) {
   const morph = useMorphHover()
   return (
     <Link
-      to={home}
+      to="/"
       className="flex items-center gap-3 justify-self-start"
       onPointerEnter={logoIntroSrc ? morph.start : undefined}
       onPointerLeave={logoIntroSrc ? morph.stop : undefined}
@@ -272,7 +279,6 @@ type AccountProps = Pick<
   | "myReportsHref"
   | "onSignOut"
   | "showSignIn"
-  | "staff"
 > & { user: User | null }
 
 function DraftLink({ href, mobile }: { href: string; mobile?: boolean }) {
@@ -290,9 +296,9 @@ function DraftLink({ href, mobile }: { href: string; mobile?: boolean }) {
   )
 }
 
+// Opens the confirm page
 function SignOutForm({
   action,
-  onSignOut,
   mobile,
 }: {
   action?: string
@@ -300,16 +306,15 @@ function SignOutForm({
   mobile?: boolean
 }) {
   return (
-    <form method="post" action={action} onSubmit={onSignOut}>
-      <Button
-        type="submit"
-        variant="secondary"
-        size={mobile ? "lg" : "md"}
-        className="w-full"
-      >
-        {m.header_sign_out()}
-      </Button>
-    </form>
+    <ButtonLink
+      to={action ?? "/keluar"}
+      onClick={closeMenu}
+      variant="secondary"
+      size={mobile ? "lg" : "md"}
+      className="w-full"
+    >
+      {m.header_sign_out()}
+    </ButtonLink>
   )
 }
 
@@ -322,7 +327,6 @@ function DesktopAccount({
   myReportsHref,
   onSignOut,
   showSignIn,
-  staff,
 }: AccountProps) {
   return (
     <div className="hidden items-center gap-5 justify-self-end xl:flex">
@@ -341,15 +345,13 @@ function DesktopAccount({
             />
           </summary>
           <div className="absolute top-full right-0 z-10 mt-2 flex w-60 flex-col gap-2 rounded-[10px] bg-surface-raised p-3 shadow-floating">
-            {staff ? null : (
-              <NavLink
-                to={myReportsHref ?? "/lacak"}
-                onClick={closeMenu}
-                className="block rounded-[10px] px-3 py-2.5 font-semibold underline-offset-4 hover:underline aria-[current=page]:underline"
-              >
-                {m.nav_track()}
-              </NavLink>
-            )}
+            <NavLink
+              to={myReportsHref ?? "/lacak"}
+              onClick={closeMenu}
+              className="block rounded-[10px] px-3 py-2.5 font-semibold underline-offset-4 hover:underline aria-[current=page]:underline"
+            >
+              {m.nav_track()}
+            </NavLink>
             {staffLinks(user).map((link) => (
               <NavLink
                 key={link.to}
@@ -385,7 +387,6 @@ function MobileMenu({ nav, ...account }: AccountProps & { nav: NavItem[] }) {
     signOutAction,
     myReportsHref,
     showSignIn,
-    staff,
   } = account
   return (
     <details
@@ -436,31 +437,26 @@ function MobileMenu({ nav, ...account }: AccountProps & { nav: NavItem[] }) {
                   </span>
                   <span className="block truncate text-lg">{user.email}</span>
                 </li>
-                {staff ? null : (
-                  <li className={ROW}>
+                <li className={ROW}>
+                  <NavLink
+                    to={myReportsHref ?? "/lacak"}
+                    onClick={closeMenu}
+                    className="block py-4 text-lg aria-[current=page]:font-semibold"
+                  >
+                    {m.nav_track()}
+                  </NavLink>
+                </li>
+                {staffLinks(user).map((link) => (
+                  <li key={link.to} className={ROW}>
                     <NavLink
-                      to={myReportsHref ?? "/lacak"}
+                      to={link.to}
                       onClick={closeMenu}
                       className="block py-4 text-lg aria-[current=page]:font-semibold"
                     >
-                      {m.nav_track()}
+                      {link.label}
                     </NavLink>
                   </li>
-                )}
-                {/* Kelola items fill the nav */}
-                {staffLinks(user)
-                  .filter((link) => !(staff && link.to === "/kelola"))
-                  .map((link) => (
-                    <li key={link.to} className={ROW}>
-                      <NavLink
-                        to={link.to}
-                        onClick={closeMenu}
-                        className="block py-4 text-lg aria-[current=page]:font-semibold"
-                      >
-                        {link.label}
-                      </NavLink>
-                    </li>
-                  ))}
+                ))}
                 <li className="pt-5">
                   <SignOutForm
                     action={signOutAction}
@@ -509,7 +505,6 @@ export function Header({
   onSignOut,
   showSignIn = true,
   variant = "site",
-  staff = false,
 }: HeaderProps) {
   const ref = useRef<HTMLElement>(null)
   useDismiss(ref)
@@ -533,14 +528,12 @@ export function Header({
   }
   const account = {
     user,
-    // Admins file no reports here
-    draftHref: staff ? undefined : draftHref,
+    draftHref,
     signInHref,
     signOutAction,
     myReportsHref,
     onSignOut,
     showSignIn,
-    staff,
   }
   return (
     <header
@@ -548,13 +541,8 @@ export function Header({
       className="header-bg sticky top-0 z-[1000] text-ink [@media(max-height:30rem)]:static"
     >
       <div className="relative mx-auto flex h-20 max-w-7xl items-center justify-between gap-4 px-4 sm:px-8 lg:h-24 xl:grid xl:grid-cols-[1fr_auto_1fr] xl:gap-8">
-        <Logo {...logo} home={staff ? "/kelola" : "/"} />
-        {/* Page has the Kelola strip */}
-        {staff ? (
-          <span aria-hidden="true" />
-        ) : (
-          <DesktopNav nav={nav} navStarSrc={navStarSrc} />
-        )}
+        <Logo {...logo} />
+        <DesktopNav nav={nav} navStarSrc={navStarSrc} />
         <DesktopAccount {...account} />
         <MobileMenu nav={nav} {...account} />
       </div>

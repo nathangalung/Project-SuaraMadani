@@ -3,7 +3,6 @@ import { m } from "~/paraglide/messages.js"
 import { TOKEN_TEXT } from "../campus/theme-labels"
 import { FULFILMENT_TEXT, RESPONSE_TEXT } from "../demands/labels"
 import { CHANNEL_TEXT } from "../issues/labels"
-import { COMPLAINT_REASON_TEXT } from "./complaint-labels"
 import { CLOSE_REASON_TEXT, ROLE_TEXT } from "./labels"
 import { UNVERIFIABLE_TEXT } from "./public-reason-labels"
 
@@ -53,6 +52,7 @@ const COLUMN_TEXT: Record<string, Text> = {
   raised_on: m.audit_column_raised_on,
   state: m.audit_column_state,
   brief_summary: m.audit_column_brief_summary,
+  brief_url: m.audit_column_brief_url,
   response_status: m.audit_column_response_status,
   fulfilment_status: m.audit_column_fulfilment_status,
 }
@@ -62,7 +62,15 @@ const CODE_TEXT: Record<string, Text> = {
   // Historical rows, migration 0013
   sp4n_lapor: CHANNEL_TEXT.agency_service,
   ...UNVERIFIABLE_TEXT,
-  ...COMPLAINT_REASON_TEXT,
+  // Legacy rows, complaints removed
+  personal_data: m.complaint_reason_personal_data,
+  accusation: m.complaint_reason_accusation,
+  hate: m.complaint_reason_hate,
+  false_information: m.complaint_reason_false_information,
+  sexual_content: m.complaint_reason_sexual_content,
+  child_safety: m.complaint_reason_child_safety,
+  political: m.complaint_reason_political,
+  other: m.complaint_reason_other,
   ...ROLE_TEXT,
   // Historical rows, migration 0017
   moderator: m.role_admin,
@@ -78,6 +86,7 @@ const CODE_TEXT: Record<string, Text> = {
   redact: m.manage_evidence_decision_redact,
   no_redaction: m.manage_evidence_decision_no_redaction,
   withhold: m.manage_evidence_decision_withhold,
+  // Legacy rows, complaints removed
   no_violation: m.complaint_keep_no_violation,
   insufficient_detail: m.complaint_keep_insufficient_detail,
   out_of_scope: m.reason_out_of_scope,
@@ -109,7 +118,7 @@ export function auditReasonText(code: string): string {
     return code
       .split("/")
       .map((part) => lookup(CODE_TEXT, part))
-      .join(" · ")
+      .join(", ")
   }
   return lookup(CODE_TEXT, code)
 }

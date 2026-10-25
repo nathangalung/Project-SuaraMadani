@@ -1,30 +1,44 @@
 // Client-safe ranking rules
-import { RANKING_SIZE } from "../../../shared/demands.ts"
-
-export type RankingErrorKey = "empty" | "duplicate"
+export type RankingErrorKey = "missing" | "duplicate"
 
 // Field per tuntutan: rank-<code>
 export const RANK_FIELD = "rank-"
 
-/** Codes in chosen order. */
+/** Every tuntutan once, full order. */
 export function checkRanking(
   entries: Iterable<[string, FormDataEntryValue]>,
 ): { ok: true; codes: string[] } | { ok: false; errors: RankingErrorKey[] } {
-  const chosen: { code: string; position: number }[] = []
+  const fields: { code: string; value: string }[] = []
   for (const [name, value] of entries) {
     if (!name.startsWith(RANK_FIELD) || typeof value !== "string") continue
-    if (value === "") continue
+    fields.push({ code: name.slice(RANK_FIELD.length), value })
+  }
+  const size = fields.length
+  const chosen: { code: string; position: number }[] = []
+  let missing = size === 0
+  for (const { code, value } of fields) {
     const position = Number(value)
-    if (!Number.isInteger(position) || position < 1 || position > RANKING_SIZE)
+    // Positions run 1 to N
+    if (
+      value === "" ||
+      !Number.isInteger(position) ||
+      position < 1 ||
+      position > size
+    ) {
+      missing = true
       continue
-    chosen.push({ code: name.slice(RANK_FIELD.length), position })
+    }
+    chosen.push({ code, position })
   }
-  if (chosen.length === 0) return { ok: false, errors: ["empty"] }
   const positions = new Set(chosen.map((entry) => entry.position))
-  if (positions.size !== chosen.length) {
-    return { ok: false, errors: ["duplicate"] }
-  }
-  // Gaps close up
+  const codes = new Set(fields.map((field) => field.code))
+  const duplicate =
+    positions.size !== chosen.length || codes.size !== fields.length
+  const errors: RankingErrorKey[] = [
+    ...(missing ? (["missing"] as const) : []),
+    ...(duplicate ? (["duplicate"] as const) : []),
+  ]
+  if (errors.length > 0) return { ok: false, errors }
   return {
     ok: true,
     codes: chosen

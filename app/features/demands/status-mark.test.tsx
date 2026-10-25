@@ -13,18 +13,21 @@ describe("tuntutan status marks", () => {
       renderToStaticMarkup(<ResponseMark status="responded" />),
     ]
     for (const html of marks) expect(html).not.toContain("danger")
+    // Waiting reads as neutral chip
     expect(
       renderToStaticMarkup(<FulfilmentMark status="not_fulfilled" />),
-    ).toContain("text-ink-soft")
+    ).toContain("bg-chip text-ink")
     expect(
       renderToStaticMarkup(<ResponseMark status="not_responded" />),
-    ).toContain("text-ink-soft")
+    ).toContain("bg-chip text-ink")
   })
 
-  test("every mark pairs an icon with its word", () => {
+  test("every mark is a text pill", () => {
     const html = renderToStaticMarkup(<FulfilmentMark status="rejected" />)
-    expect(html).toMatch(/<svg[^>]*aria-hidden="true"/)
-    expect(html).toContain("Ditolak")
+    // Text pills, no symbols
+    expect(html).not.toContain("<svg")
+    expect(html).toContain("rounded-full")
+    expect(html).toContain(">Ditolak</span>")
   })
 })
 

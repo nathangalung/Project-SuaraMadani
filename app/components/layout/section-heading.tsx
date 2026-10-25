@@ -39,7 +39,7 @@ export function SectionHeading({
         className,
       )}
     >
-      <div className={cn("max-w-2xl", center && "mx-auto")}>
+      <div className={cn("min-w-0 flex-1", center && "mx-auto")}>
         <h2
           id={id}
           className={cn(

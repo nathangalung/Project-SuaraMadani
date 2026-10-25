@@ -129,9 +129,10 @@ describe("messages/id.json", () => {
       `${root}messages/id.json`,
     ).json()
     // DESIGN.md One Name per Thing
-    for (const key of ["issue_government_label", "data_status_lead"]) {
-      expect(messages[key]?.toLowerCase()).toContain("tanggapan pemerintah")
-    }
+    // Dashboard uses public stages now
+    expect(messages.issue_government_label?.toLowerCase()).toContain(
+      "tanggapan pemerintah",
+    )
     expect(messages.issue_response_title).toContain("Instansi")
   })
 
@@ -152,7 +153,6 @@ describe("messages/id.json", () => {
     )
     expect(misses).toEqual([])
     // Separate keys keep root small
-    expect(messages.privacy_link).toBe(messages.footer_privacy)
     expect(messages.guidelines_link).toBe(messages.footer_guidelines)
   })
 
