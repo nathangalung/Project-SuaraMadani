@@ -429,6 +429,16 @@ describe("supply chain", () => {
   test("no dependency install scripts run", async () => {
     const { trustedDependencies } = await readJson("package.json")
     expect(trustedDependencies).toEqual([])
+    // Frozen lockfile ignores empty list
+    const installs: string[] = []
+    for (const file of [".github/workflows/ci.yml", "infra/Dockerfile"]) {
+      const text = await Bun.file(join(root, file)).text()
+      installs.push(...(text.match(/bun (?:install|ci)\b[^\n]*/g) ?? []))
+    }
+    expect(installs.length).toBeGreaterThan(4)
+    expect(
+      installs.filter((line) => !line.includes("--ignore-scripts")),
+    ).toEqual([])
   })
 
   test("sample data stays out of the image", async () => {

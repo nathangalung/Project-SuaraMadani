@@ -43,7 +43,7 @@ WORKDIR /app
 FROM base AS deps
 WORKDIR /app
 COPY package.json bun.lock bunfig.toml ./
-RUN bun install --frozen-lockfile
+RUN bun install --frozen-lockfile --ignore-scripts
 
 FROM deps AS build
 COPY . .
@@ -54,7 +54,7 @@ FROM base AS prod-deps
 WORKDIR /app
 COPY package.json bun.lock bunfig.toml ./
 # Peers would pull drizzle-kit, esbuild
-RUN bun install --frozen-lockfile --production --omit=peer
+RUN bun install --frozen-lockfile --ignore-scripts --production --omit=peer
 
 # One image: web, workers, migrate
 FROM media AS runtime
