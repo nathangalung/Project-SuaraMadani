@@ -26,7 +26,7 @@ export default function globalSetup(): void {
       path: "/",
       httpOnly: true,
       // localhost counts as secure
-      secure: pair.startsWith("__Secure-"),
+      secure: /^__(?:Host|Secure)-/.test(pair),
       sameSite: "Lax" as const,
       expires: -1,
     }

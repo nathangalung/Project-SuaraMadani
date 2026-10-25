@@ -8,7 +8,15 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core"
 
-export const BACKUP_KINDS = ["pgbackrest", "restic", "b2-copy"] as const
+export const BACKUP_KINDS = [
+  "pgbackrest",
+  // pgbackrest verify, no AEAD
+  "pgbackrest-verify",
+  "restic",
+  "b2-copy",
+  // ASVS V16.4.3: off-host logs
+  "logs",
+] as const
 export type BackupKind = (typeof BACKUP_KINDS)[number]
 
 // Written by infra backup wrappers
@@ -27,7 +35,7 @@ export const backupRuns = pgTable(
     index("backup_runs_kind_finished_idx").on(t.kind, t.finishedAt.desc()),
     check(
       "backup_runs_kind_check",
-      sql`${t.kind} IN ('pgbackrest', 'restic', 'b2-copy')`,
+      sql`${t.kind} IN ('pgbackrest', 'pgbackrest-verify', 'restic', 'b2-copy', 'logs')`,
     ),
   ],
 )

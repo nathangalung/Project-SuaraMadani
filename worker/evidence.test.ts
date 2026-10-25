@@ -29,13 +29,14 @@ import {
   simplePdf,
   videoFixture,
 } from "./fixtures.ts"
+import { runTool, withScratch } from "./tools.ts"
 
 const su = superuserPool()
-// Runs as sm_media, real grants
+// Runs as sb_media, real grants
 const mediaPool = new Pool({
   connectionString: testUrl("TEST_DATABASE_SUPERUSER_URL"),
   max: 2,
-  options: "-c role=sm_media",
+  options: "-c role=sb_media",
 })
 const mediaDb = drizzle({ client: mediaPool, schema })
 
@@ -164,8 +165,8 @@ beforeAll(async () => {
   await insertRegions(su)
   orgA = await insertOrg(su, "wka")
   orgB = await insertOrg(su, "wkb")
-  userA = await insertUser(su, "worker@suaramadani.test")
-  filesDir = await mkdtemp(join(tmpdir(), "sm-worker-"))
+  userA = await insertUser(su, "worker@sadarbersuara.test")
+  filesDir = await mkdtemp(join(tmpdir(), "sb-worker-"))
 })
 
 afterAll(async () => {
@@ -197,6 +198,8 @@ describe("evidence job", () => {
     expect(meta.orientation).toBeUndefined()
     expect(Buffer.from(out).includes("TestCam")).toBe(false)
     expect(await row(id)).toEqual({ status: "ready", attempts: 1 })
+    // ASVS V5.4.3: every original scanned
+    expect(await scanned(id)).toBe(true)
     // Original kept unmodified
     expect(
       Buffer.from(
@@ -368,6 +371,27 @@ describe("evidence job", () => {
     expect(await scanned(id)).toBe(true)
   })
 
+  test("an infected image is quarantined before decoding", async () => {
+    const id = await addEvidence(eicar(), "image/jpeg")
+    expect(await handler()({ orgId: orgA, evidenceId: id })).toBe("malware")
+    expect(await details(id)).toMatchObject({
+      status: "rejected_malware",
+      failure_reason: "malware",
+    })
+    expect(await row(id)).toMatchObject({ attempts: 0 })
+  })
+
+  test("an image scan outage retries, unscanned", async () => {
+    const id = await addEvidence(await gpsJpeg(), "image/jpeg")
+    const down = createEvidenceHandler({
+      filesDir,
+      db: mediaDb,
+      clamd: { host: "127.0.0.1", port: 9, timeoutMs: 1000 },
+    })
+    await expect(down({ orgId: orgA, evidenceId: id })).rejects.toThrow()
+    expect(await row(id)).toEqual({ status: "received", attempts: 0 })
+  })
+
   test("a disguised infected file is quarantined", async () => {
     const id = await addEvidence(
       pdfWithAttachment(eicar()),
@@ -484,6 +508,16 @@ describe("evidence-video job", () => {
       await Bun.file(derivedPath(filesDir, orgA, id)).bytes(),
     ).metadata()
     expect([poster.width, poster.height]).toEqual([1280, 720])
+    expect(await scanned(id)).toBe(true)
+  })
+
+  test("an infected video is quarantined before probing", async () => {
+    const id = await addEvidence(eicar(), "video/mp4", 0, "video")
+    expect(await videoHandler()({ orgId: orgA, evidenceId: id })).toBe(
+      "malware",
+    )
+    expect(await details(id)).toMatchObject({ status: "rejected_malware" })
+    expect(await row(id)).toMatchObject({ attempts: 0 })
   })
 
   test("over 3 minutes is rejected, never transcoded", async () => {
@@ -499,7 +533,8 @@ describe("evidence-video job", () => {
     expect(
       await Bun.file(derivedPath(filesDir, orgA, id, "video.mp4")).exists(),
     ).toBe(false)
-  })
+    // 181 s fixture takes seconds
+  }, 30_000)
 
   test("above 1080p is rejected", async () => {
     const video = await videoFixture({ width: 2560, height: 1080, seconds: 1 })
@@ -521,6 +556,30 @@ describe("evidence-video job", () => {
     expect(await videoHandler()({ orgId: orgA, evidenceId: id })).toBe(
       "manual_review",
     )
+  })
+
+  test("Given a voice recording saved as MP4, when it is processed, then it needs review as no video", async () => {
+    const audio = await withScratch(async (dir) => {
+      const out = join(dir, "suara.mp4")
+      const run = await runTool(
+        [
+          "ffmpeg",
+          ...["-v", "error", "-nostdin", "-y", "-f", "lavfi"],
+          ...["-i", "sine=duration=1", "-c:a", "aac", "-f", "mp4", out],
+        ],
+        { timeoutMs: 30_000 },
+      )
+      if (run.exitCode !== 0) throw new Error(run.stderr)
+      return Bun.file(out).bytes()
+    })
+    const id = await addEvidence(audio, "video/mp4", 0, "video")
+    expect(await videoHandler()({ orgId: orgA, evidenceId: id })).toBe(
+      "manual_review",
+    )
+    expect(await details(id)).toMatchObject({
+      status: "needs_manual_review",
+      failure_reason: "no_video_stream",
+    })
   })
 
   test("a missing or foreign row is skipped", async () => {

@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm"
 import { fromDrizzle, type Queue } from "pg-boss"
 import type { NotificationTemplate } from "../shared/notifications.ts"
 import { database } from "./client.server.ts"
+import { requestScope } from "./request-scope.ts"
 import type { Tx } from "./tenant.server.ts"
 
 // Payloads carry IDs only
@@ -39,6 +40,10 @@ export type JobPayloads = {
   takedown: { orgId: string; takedownId: string; reqId?: string }
   // Cron tick, retention, /privasi
   "maintenance-daily": { reqId?: string }
+  // Cron tick, admin digests
+  "deadline-reminders": { reqId?: string }
+  // Claim plus 28 days
+  "survey-send": { orgId: string; claimId: string; reqId?: string }
   // Sealed: number and code
   "whatsapp-send": { logId: string; sealed: string; reqId?: string }
 }
@@ -175,7 +180,31 @@ export const QUEUES: Queue[] = [
     retryBackoff: true,
     expireInSeconds: 1800,
   },
+  { name: "survey-send-dlq", ...DEAD_LETTER },
+  // Open claim check, idempotent
+  {
+    name: "survey-send",
+    policy: "standard",
+    retryLimit: 2,
+    retryBackoff: true,
+    expireInSeconds: 120,
+    deadLetter: "survey-send-dlq",
+  },
+  // Rerun is safe, per day
+  {
+    name: "deadline-reminders",
+    policy: "exclusive",
+    retryLimit: 2,
+    retryBackoff: true,
+    expireInSeconds: 300,
+  },
 ]
+
+/** Request id joins worker lines. */
+function traced<T extends { reqId?: string }>(data: T): T {
+  const reqId = data.reqId ?? requestScope()?.reqId
+  return reqId ? { ...data, reqId } : data
+}
 
 /** Commits with tx. */
 export async function sendJob<Q extends QueueName>(
@@ -184,7 +213,7 @@ export async function sendJob<Q extends QueueName>(
   data: JobPayloads[Q],
   options: { startAfter?: Date } = {},
 ): Promise<string | null> {
-  return database().boss.send(queue, data, {
+  return database().boss.send(queue, traced(data), {
     ...options,
     db: fromDrizzle(tx, sql),
   })
@@ -195,11 +224,12 @@ export async function sendJobs<Q extends QueueName>(
   tx: Tx,
   queue: Q,
   data: JobPayloads[Q][],
+  options: { startAfter?: Date } = {},
 ): Promise<void> {
   if (data.length === 0) return
   await database().boss.insert(
     queue,
-    data.map((item) => ({ data: item })),
+    data.map((item) => ({ data: traced(item), ...options })),
     { db: fromDrizzle(tx, sql) },
   )
 }

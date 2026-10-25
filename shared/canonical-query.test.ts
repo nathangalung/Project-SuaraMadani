@@ -124,6 +124,18 @@ describe("querySpecFor", () => {
     expect(querySpecFor("/logo/0123456789abcdef.webp")).toEqual({})
   })
 
+  test("public data API paths have specs", () => {
+    expect(querySpecFor("/api/v1")).toEqual({})
+    expect(querySpecFor("/api/v1/isu")).toBe(ISSUE_LIST_QUERY)
+    expect(querySpecFor("/api/v1/isu/ISU-ITB-26-0042")).toEqual({})
+    expect(querySpecFor("/api/v1/tuntutan")).toBe(DEMAND_LIST_QUERY)
+    expect(querySpecFor("/api/v1/tuntutan/TUN-ITB-26-0001")).toEqual({})
+    expect(querySpecFor("/api/v1/data")).toEqual({})
+    expect(querySpecFor("/api/v1/data/tren.csv")).toEqual({})
+    expect(querySpecFor("/api/v1/isu/a/b")).toBeNull()
+    expect(querySpecFor("/api/auth/get-session")).toBeNull()
+  })
+
   test("tuntutan pages have specs", () => {
     expect(querySpecFor("/tuntutan")).toBe(DEMAND_LIST_QUERY)
     expect(querySpecFor("/tuntutan/TUN-ITB-26-0001")).toEqual({})

@@ -35,6 +35,10 @@ describe("cachePolicy", () => {
       "/lacak",
       "/masuk",
       "/isu/ISU-ITB-26-0042/laporkan",
+      "/isu/ISU-ITB-26-0042/berhenti",
+      "/isu/ISU-ITB-26-0042/nilai",
+      "/isu/ISU-ITB-26-0042/survei",
+      "/isu/ISU-ITB-26-0042/hak-jawab",
       "/tuntutan/TUN-ITB-26-0001/laporkan",
       "/tuntutan/TUN-ITB-26-0001/berhenti",
       "/tuntutan/TUN-ITB-26-0001/nilai",
@@ -55,6 +59,20 @@ describe("cachePolicy", () => {
     expect(cachePolicy({ ...base, hasSession: true })).toBe("private")
     expect(cachePolicy({ ...base, setsCookie: true })).toBe("private")
     expect(cachePolicy({ ...base, method: "POST" })).toBe("private")
+  })
+
+  test("the public data API is cacheable, other /api is not", () => {
+    for (const path of [
+      "/api/v1",
+      "/api/v1/isu",
+      "/api/v1/isu/ISU-ITB-26-0042",
+      "/api/v1/data/tren.csv",
+    ]) {
+      expect(cachePolicy({ ...base, path })).toBe("public")
+    }
+    for (const path of ["/api/v1x", "/api/v2/isu", "/api/auth/v1/x"]) {
+      expect(cachePolicy({ ...base, path })).toBe("private")
+    }
   })
 
   test("lookalike paths stay public", () => {
@@ -104,8 +122,9 @@ describe("applyCacheHeaders", () => {
 
 describe("hasSessionCookie", () => {
   test("matches the dev and prod names only", () => {
-    expect(hasSessionCookie("sm.session_token=abc")).toBe(true)
-    expect(hasSessionCookie("a=1; __Secure-sm.session_token=abc")).toBe(true)
+    expect(hasSessionCookie("sb.session_token=abc")).toBe(true)
+    expect(hasSessionCookie("a=1; __Secure-sb.session_token=abc")).toBe(true)
+    expect(hasSessionCookie("a=1; __Host-sb.session_token=abc")).toBe(true)
     expect(hasSessionCookie("__cf_bm=x; xsm.session_token=1")).toBe(false)
     expect(hasSessionCookie(null)).toBe(false)
   })

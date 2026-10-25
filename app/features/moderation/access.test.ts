@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createStaticHandler, RouterContextProvider } from "react-router"
+import { inRequestScope } from "../../../db/request-scope.ts"
 import type { MemberRole } from "../../../db/schema/auth.ts"
 import {
   createRootMiddleware,
@@ -86,6 +87,25 @@ describe("requireAdmin", () => {
     }
   })
 
+  test("a refusal is a security event", async () => {
+    const lines: Record<string, unknown>[] = []
+    const context = contextWith(sessionFor(true), { role: "editor" })
+    await inRequestScope({ reqId: "r7" }, () =>
+      status(requireAdmin(context, (line) => lines.push(line))),
+    )
+    expect(lines).toEqual([
+      {
+        msg: "security",
+        event: "staff_refused",
+        host: "itb.localhost",
+        need: "admin",
+        role: "editor",
+        user_id: "user-1",
+        req_id: "r7",
+      },
+    ])
+  })
+
   test("the retired moderator role never passes", async () => {
     const context = contextWith(sessionFor(true), {
       role: "moderator" as MemberRole,
@@ -138,7 +158,7 @@ describe("staff routes through the router", () => {
 
   async function hit(path: string): Promise<number> {
     const request = new Request(`http://itb.localhost${path}`, {
-      headers: { cookie: "sm.session_token=x" },
+      headers: { cookie: "sb.session_token=x" },
     })
     try {
       const response = await handler.query(request, {

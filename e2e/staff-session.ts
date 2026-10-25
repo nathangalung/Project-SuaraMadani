@@ -4,91 +4,19 @@ import { createHmac } from "node:crypto"
 import { eq } from "drizzle-orm"
 import { Pool } from "pg"
 import { database } from "../db/client.server.ts"
-import { members, users } from "../db/schema/auth.ts"
-import { emailLog } from "../db/schema/notifications.ts"
+import { members, twoFactors, users } from "../db/schema/auth.ts"
 import { organizations } from "../db/schema/organizations.ts"
 import { setSuperadmin } from "../db/superadmin.ts"
-import { createAuth } from "../server/auth.server.ts"
-import { addressHash, hashKey } from "../server/email-log.ts"
-import { AGE_CONSENT_VERSION } from "../shared/report-fields.ts"
+import { accountClient, jar } from "./sign-in.ts"
 
 // Reserved domain, never mailed
-const EMAIL = "e2e-staf@contoh.test"
-const PHONE = "+6281200000999"
+const STAFF = {
+  email: "e2e-staf@contoh.test",
+  phone: "+6281200000999",
+  name: "Staf Uji",
+}
 const host = process.argv[2] ?? "itb.localhost"
-const origin = `https://${host}`
-const sent: { to: string; text: string }[] = []
-const { db } = database()
-const auth = createAuth({
-  db,
-  hosts: [host],
-  dev: false,
-  email: { send: async (message) => void sent.push(message) },
-  hashKey,
-  verifyCaptcha: async () => ({ ok: true }),
-  // Codes by email only
-  whatsapp: {
-    ready: async () => false,
-    sendCode: async () => ({ ok: false, reason: "unavailable" }),
-    status: async () => null,
-  },
-})
-
-async function post(path: string, body: unknown, cookie = "") {
-  const res = await auth.handler(
-    new Request(`${origin}/api/auth${path}`, {
-      method: "POST",
-      headers: { "content-type": "application/json", origin, cookie },
-      body: JSON.stringify(body),
-    }),
-  )
-  if (res.status !== 200) throw new Error(`${path} ${res.status}`)
-  return res
-}
-
-const jar = (res: Response) =>
-  res.headers
-    .getSetCookie()
-    .map((c) => c.split(";")[0] ?? "")
-    .filter((c) => !c.endsWith("="))
-    .join("; ")
-
-async function signIn(): Promise<Response> {
-  // Per-address caps, own rows only
-  await db
-    .delete(emailLog)
-    .where(eq(emailLog.addressHash, addressHash(EMAIL, hashKey())))
-  const [known] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, EMAIL))
-  const body = known
-    ? { mode: "sign-in", identifier: EMAIL, channel: "email" }
-    : {
-        mode: "sign-up",
-        name: "Staf Uji",
-        email: EMAIL,
-        phone: PHONE,
-        channel: "email",
-      }
-  await post("/account/send-code", body)
-  await Bun.sleep(50)
-  const code = /\b(\d{6})\b/.exec(
-    sent.findLast((m) => m.to === EMAIL)?.text ?? "",
-  )?.[1]
-  return post("/account/verify-code", {
-    ...body,
-    code,
-    ...(known
-      ? {}
-      : {
-          ageDeclaration: {
-            age_18_plus: true,
-            ageConsentVersion: AGE_CONSENT_VERSION,
-          },
-        }),
-  })
-}
+const { db, post, signIn } = accountClient(host)
 
 function totp(secret: string, at: number): string {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
@@ -110,9 +38,9 @@ function totp(secret: string, at: number): string {
 }
 
 // Fresh account each run
-await db.delete(users).where(eq(users.email, EMAIL))
-await db.delete(users).where(eq(users.phoneNumber, PHONE))
-const first = jar(await signIn())
+await db.delete(users).where(eq(users.email, STAFF.email))
+await db.delete(users).where(eq(users.phoneNumber, STAFF.phone))
+const first = jar(await signIn(STAFF))
 const enable = await post("/two-factor/enable", {}, first)
 const { totpURI } = (await enable.json()) as { totpURI: string }
 const secret = new URL(totpURI).searchParams.get("secret") ?? ""
@@ -124,7 +52,7 @@ const [org] = await db
 const [user] = await db
   .select({ id: users.id })
   .from(users)
-  .where(eq(users.email, EMAIL))
+  .where(eq(users.email, STAFF.email))
 if (!org || !user) throw new Error(`no campus at ${host}`)
 await db
   .insert(members)
@@ -133,14 +61,19 @@ await db
 const migrator = new Pool({
   connectionString: process.env.DATABASE_MIGRATOR_URL,
 })
-await setSuperadmin(migrator, EMAIL, true)
+await setSuperadmin(migrator, STAFF.email, true)
 await migrator.end()
 // Session must postdate enrolment
 await Bun.sleep(1100)
-const again = jar(await signIn())
+const again = jar(await signIn(STAFF))
+// Enrolment spent this step
+await db
+  .update(twoFactors)
+  .set({ lastTotpStep: null })
+  .where(eq(twoFactors.userId, user.id))
 const staff = await post(
   "/two-factor/verify-totp",
-  { code: totp(secret, Date.now() + 30_000) },
+  { code: totp(secret, Date.now()) },
   again,
 )
 console.log(JSON.stringify({ cookie: jar(staff) }))

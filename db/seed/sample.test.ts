@@ -11,7 +11,7 @@ import { migrate } from "../migrate.ts"
 import { resetData, superuserPool, testUrl } from "../testing.ts"
 import { seedOrganizations } from "./organizations.ts"
 import { seedRegions, TEST_REGIONS } from "./regions.ts"
-import { assertDevTarget, resetSample, seedSample } from "./sample.ts"
+import { assertDevTarget, main, resetSample, seedSample } from "./sample.ts"
 import { SAMPLE_REGIONS } from "./sample-content.ts"
 import { SAMPLE_EMAIL_PATTERN } from "./sample-plan.ts"
 
@@ -43,7 +43,7 @@ afterAll(async () => {
   if (filesDir) await rm(filesDir, { recursive: true, force: true })
 })
 
-const local = "postgres://u:p@127.0.0.1:55432/suara_madani"
+const local = "postgres://u:p@127.0.0.1:55432/sadar_bersuara"
 
 describe("dev target guard", () => {
   test("accepts localhost and 127.0.0.1", () => {
@@ -61,11 +61,30 @@ describe("dev target guard", () => {
     ).toThrow("NODE_ENV=production")
   })
 
+  test("Given production or a remote URL, when the CLI runs, then it refuses before connecting", async () => {
+    const urls = {
+      DATABASE_URL: local,
+      DATABASE_MIGRATOR_URL: local,
+      DATABASE_MEDIA_URL: local,
+    }
+    await expect(
+      main(["--reset"], { ...urls, NODE_ENV: "production" }),
+    ).rejects.toThrow("NODE_ENV=production")
+    await expect(
+      main([], {
+        ...urls,
+        DATABASE_MEDIA_URL: "postgres://u:p@db.example.com/x",
+      }),
+    ).rejects.toThrow("db.example.com")
+    const { DATABASE_MEDIA_URL: _, ...partial } = urls
+    await expect(main([], partial)).rejects.toThrow("every database URL")
+  })
+
   test("refuses a remote host or a missing URL", () => {
     expect(() =>
       assertDevTarget({
         nodeEnv: "development",
-        urls: [local, "postgres://u:p@db.example.com:5432/suara_madani"],
+        urls: [local, "postgres://u:p@db.example.com:5432/sadar_bersuara"],
       }),
     ).toThrow("db.example.com")
     expect(() =>
@@ -94,6 +113,23 @@ async function countBy(sql: string): Promise<Record<string, number>> {
   return Object.fromEntries(rows.map((row) => [row.k, row.n]))
 }
 
+describe("sample seed prerequisites", () => {
+  test("Given no campus is seeded, when the sample seed runs, then it names the seeds to run first", async () => {
+    await resetData(su)
+    try {
+      await expect(
+        seedSample({ migrator: migrator.db, filesDir }),
+      ).rejects.toThrow(
+        "Run bun db/seed/regions.ts and bun db/seed/organizations.ts first.",
+      )
+      const { rows } = await su.query("SELECT 1 FROM reports")
+      expect(rows).toEqual([])
+    } finally {
+      await seedOrganizations(basePool, "localhost")
+    }
+  })
+})
+
 describe("sample seed", () => {
   test("seeds through real paths, re-runs as a no-op, resets", async () => {
     const jobs = () =>
@@ -107,6 +143,23 @@ describe("sample seed", () => {
     expect(first.itb?.state).toBe("empty")
     expect(first.ugm?.state).toBe("empty")
     expect(first.itb?.demands).toBe("empty")
+
+    // Claim rounds match issue states
+    const claims = await su.query<{ bad: number; open: number }>(
+      `SELECT
+         count(*) FILTER (WHERE (i.gov_status = 'claimed_resolved') <> (c.closed_at IS NULL)
+           OR c.claimed_at <> e.occurred_at)::int AS bad,
+         count(*) FILTER (WHERE c.closed_at IS NULL)::int AS open
+       FROM resolution_claims c
+       JOIN issues i ON i.id = c.issue_id
+       JOIN issue_events e ON e.claim_id = c.id AND e.action = 'claim_resolved'`,
+    )
+    expect(claims.rows[0]?.bad).toBe(0)
+    expect(claims.rows[0]?.open).toBeGreaterThan(0)
+    const surveys = await su.query(
+      "SELECT 1 FROM pgboss.job WHERE name = 'survey-send'",
+    )
+    expect(surveys.rows).toHaveLength(0)
 
     // Admin-authored tuntutan, wf8 item 6
     const demands = await su.query<{

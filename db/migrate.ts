@@ -53,6 +53,12 @@ export const GRANTS: Grant[] = [
   { table: "referrals", app: "SELECT, INSERT" },
   { table: "responses", app: "SELECT, INSERT" },
   { table: "issue_events", app: "SELECT, INSERT" },
+  // UPDATE: closing a claim
+  { table: "resolution_claims", app: "SELECT, INSERT, UPDATE" },
+  // UPDATE: hash cleared after 30d
+  { table: "ratings", app: "SELECT, INSERT, UPDATE, DELETE" },
+  { table: "fix_surveys", app: "SELECT, INSERT, UPDATE, DELETE" },
+  { table: "agency_replies", app: "SELECT, INSERT, UPDATE" },
   { table: "moderation_decisions", app: "SELECT, INSERT" },
   { table: "content_complaints", app: "SELECT, INSERT, UPDATE" },
   { table: "takedowns", app: "SELECT, INSERT, UPDATE" },
@@ -78,7 +84,7 @@ export const GRANTS: Grant[] = [
   { table: "notifications", app: "SELECT, INSERT, UPDATE" },
   // DELETE: 30-day retention
   { table: "email_log", app: "SELECT, INSERT, UPDATE, DELETE" },
-  // Owner sm_aggregates, refresh only
+  // Owner sb_aggregates, refresh only
   { table: "national_aggregates", app: "SELECT, MAINTAIN" },
   // DELETE: 30-day retention
   { table: "whatsapp_log", app: "SELECT, INSERT, UPDATE, DELETE" },
@@ -96,29 +102,29 @@ const MEDIA_QUEUES = QUEUES.map((queue) => queue.name)
   .join(", ")
 
 const PGBOSS_GRANTS = [
-  "GRANT USAGE ON SCHEMA pgboss TO sm_app, sm_media",
-  "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA pgboss TO sm_app",
-  "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA pgboss TO sm_app",
-  "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgboss TO sm_app",
+  "GRANT USAGE ON SCHEMA pgboss TO sb_app, sb_media",
+  "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA pgboss TO sb_app",
+  "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA pgboss TO sb_app",
+  "GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA pgboss TO sb_app",
   // Queue partitions created later
-  "ALTER DEFAULT PRIVILEGES FOR ROLE sm_migrator IN SCHEMA pgboss GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO sm_app",
-  "ALTER DEFAULT PRIVILEGES FOR ROLE sm_migrator IN SCHEMA pgboss GRANT USAGE, SELECT ON SEQUENCES TO sm_app",
-  "ALTER DEFAULT PRIVILEGES FOR ROLE sm_migrator IN SCHEMA pgboss GRANT EXECUTE ON FUNCTIONS TO sm_app",
+  "ALTER DEFAULT PRIVILEGES FOR ROLE sb_migrator IN SCHEMA pgboss GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO sb_app",
+  "ALTER DEFAULT PRIVILEGES FOR ROLE sb_migrator IN SCHEMA pgboss GRANT USAGE, SELECT ON SEQUENCES TO sb_app",
+  "ALTER DEFAULT PRIVILEGES FOR ROLE sb_migrator IN SCHEMA pgboss GRANT EXECUTE ON FUNCTIONS TO sb_app",
   // Decoder exploit cannot touch takedowns
-  "REVOKE ALL ON ALL TABLES IN SCHEMA pgboss FROM sm_media",
-  "REVOKE ALL ON ALL SEQUENCES IN SCHEMA pgboss FROM sm_media",
-  "ALTER DEFAULT PRIVILEGES FOR ROLE sm_migrator IN SCHEMA pgboss REVOKE ALL ON TABLES FROM sm_media",
-  "ALTER DEFAULT PRIVILEGES FOR ROLE sm_migrator IN SCHEMA pgboss REVOKE ALL ON SEQUENCES FROM sm_media",
-  "GRANT SELECT ON pgboss.queue, pgboss.version TO sm_media",
-  "GRANT SELECT, INSERT, UPDATE, DELETE ON pgboss.job_common TO sm_media",
+  "REVOKE ALL ON ALL TABLES IN SCHEMA pgboss FROM sb_media",
+  "REVOKE ALL ON ALL SEQUENCES IN SCHEMA pgboss FROM sb_media",
+  "ALTER DEFAULT PRIVILEGES FOR ROLE sb_migrator IN SCHEMA pgboss REVOKE ALL ON TABLES FROM sb_media",
+  "ALTER DEFAULT PRIVILEGES FOR ROLE sb_migrator IN SCHEMA pgboss REVOKE ALL ON SEQUENCES FROM sb_media",
+  "GRANT SELECT ON pgboss.queue, pgboss.version TO sb_media",
+  "GRANT SELECT, INSERT, UPDATE, DELETE ON pgboss.job_common TO sb_media",
   // DLQ copies insert via parent
-  "GRANT SELECT, INSERT ON pgboss.job TO sm_media",
+  "GRANT SELECT, INSERT ON pgboss.job TO sb_media",
   ...["job", "job_common"].flatMap((table) => [
     `ALTER TABLE pgboss.${table} ENABLE ROW LEVEL SECURITY`,
-    `DROP POLICY IF EXISTS sm_app_all ON pgboss.${table}`,
-    `CREATE POLICY sm_app_all ON pgboss.${table} TO sm_app USING (true) WITH CHECK (true)`,
-    `DROP POLICY IF EXISTS sm_media_own ON pgboss.${table}`,
-    `CREATE POLICY sm_media_own ON pgboss.${table} TO sm_media USING (name IN (${MEDIA_QUEUES})) WITH CHECK (name IN (${MEDIA_QUEUES}))`,
+    `DROP POLICY IF EXISTS sb_app_all ON pgboss.${table}`,
+    `CREATE POLICY sb_app_all ON pgboss.${table} TO sb_app USING (true) WITH CHECK (true)`,
+    `DROP POLICY IF EXISTS sb_media_own ON pgboss.${table}`,
+    `CREATE POLICY sb_media_own ON pgboss.${table} TO sb_media USING (name IN (${MEDIA_QUEUES})) WITH CHECK (name IN (${MEDIA_QUEUES}))`,
   ]),
 ]
 
@@ -129,13 +135,13 @@ function grantStatements(grant: Grant): string[] {
     throw new Error(`Bad table: ${grant.table}`)
   const table = `public.${grant.table}`
   const statements = [
-    `REVOKE ALL ON ${table} FROM PUBLIC, sm_app, sm_media, sm_backup`,
-    `GRANT ${grant.app} ON ${table} TO sm_app`,
+    `REVOKE ALL ON ${table} FROM PUBLIC, sb_app, sb_media, sb_backup`,
+    `GRANT ${grant.app} ON ${table} TO sb_app`,
   ]
   if (grant.media)
-    statements.push(`GRANT ${grant.media} ON ${table} TO sm_media`)
+    statements.push(`GRANT ${grant.media} ON ${table} TO sb_media`)
   if (grant.backup)
-    statements.push(`GRANT ${grant.backup} ON ${table} TO sm_backup`)
+    statements.push(`GRANT ${grant.backup} ON ${table} TO sb_backup`)
   return statements
 }
 
@@ -176,9 +182,14 @@ export async function migrate(connectionString: string): Promise<void> {
   }
 }
 
-if (import.meta.main) {
-  const url = process.env.DATABASE_MIGRATOR_URL
+/** CLI, migrator role only. */
+export async function main(
+  env: Record<string, string | undefined> = process.env,
+): Promise<void> {
+  const url = env.DATABASE_MIGRATOR_URL
   if (!url) throw new Error("DATABASE_MIGRATOR_URL is not set")
   await migrate(url)
   console.log(JSON.stringify({ msg: "migrated" }))
 }
+
+if (import.meta.main) await main()

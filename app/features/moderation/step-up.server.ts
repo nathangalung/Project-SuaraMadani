@@ -2,7 +2,12 @@ import { eq, sql } from "drizzle-orm"
 import { data, type RouterContextProvider, redirect } from "react-router"
 import { type Db, database } from "../../../db/client.server.ts"
 import { sessions } from "../../../db/schema/auth.ts"
-import { getAuth } from "../../../server/auth.server.ts"
+import { type Auth, getAuth } from "../../../server/auth.server.ts"
+import {
+  type LogRecord,
+  securityRecord,
+  writeLog,
+} from "../../../server/log.ts"
 import { sessionContext } from "../../context.ts"
 
 // Better Auth freshAge, PLAN §13
@@ -17,12 +22,13 @@ export function stepUpNext(value: string | null): string | null {
   return value !== null && NEXT.test(value) ? value : null
 }
 
+// Sign-in or TOTP, 300 s
+export const FRESH_SESSION = sql<boolean>`greatest(${sessions.createdAt}, coalesce(${sessions.stepUpAt}, ${sessions.createdAt})) > now() - make_interval(secs => ${FRESH_MS / 1000})`
+
 /** TOTP within 300 s. */
-async function isFresh(sessionId: string, db: Db): Promise<boolean> {
+export async function isFresh(sessionId: string, db: Db): Promise<boolean> {
   const [row] = await db
-    .select({
-      fresh: sql<boolean>`greatest(${sessions.createdAt}, coalesce(${sessions.stepUpAt}, ${sessions.createdAt})) > now() - make_interval(secs => ${FRESH_MS / 1000})`,
-    })
+    .select({ fresh: FRESH_SESSION })
     .from(sessions)
     .where(eq(sessions.id, sessionId))
   return row?.fresh === true
@@ -48,6 +54,7 @@ export async function recordStepUp(
   sessionId: string,
   ok: boolean,
   db: Db = database().db,
+  log: (line: LogRecord) => void = writeLog,
 ): Promise<"ok" | "retry" | "signed_out"> {
   if (ok) {
     await db
@@ -61,7 +68,15 @@ export async function recordStepUp(
     .set({ stepUpFailures: sql`${sessions.stepUpFailures} + 1` })
     .where(eq(sessions.id, sessionId))
     .returning({ failures: sessions.stepUpFailures })
-  if ((row?.failures ?? MAX_FAILURES) < MAX_FAILURES) return "retry"
+  const failures = row?.failures ?? MAX_FAILURES
+  const kill = failures >= MAX_FAILURES
+  log(
+    securityRecord(kill ? "step_up_signed_out" : "step_up_failed", {
+      session_id: sessionId,
+      failures,
+    }),
+  )
+  if (!kill) return "retry"
   // Stolen cookie gets five tries
   await db.delete(sessions).where(eq(sessions.id, sessionId))
   return "signed_out"
@@ -71,20 +86,30 @@ export type StepUpData = { error: "format" | "wrong" } | undefined
 
 const CODE = /^\d{6}$/
 
+type Rotated = { sessionId: string; setCookie: string[] }
+
 /** Verifies TOTP for this session. */
 export async function confirmStepUp(input: {
   request: Request
   sessionId: string
   next: string | null
   verify: (code: string) => Promise<boolean>
+  // ASVS V7.2.4: new token
+  rotate: () => Promise<Rotated>
   db?: Db
 }): Promise<StepUpData | Response> {
   const form = await input.request.formData()
   const code = String(form.get("code") ?? "").replace(/\s+/g, "")
   if (!CODE.test(code)) return { error: "format" }
   const ok = await input.verify(code)
-  const outcome = await recordStepUp(input.sessionId, ok, input.db)
-  if (outcome === "ok") return redirect(input.next ?? "/kelola", 303)
+  if (ok) {
+    const rotated = await input.rotate()
+    await recordStepUp(rotated.sessionId, true, input.db)
+    const headers = new Headers()
+    for (const cookie of rotated.setCookie) headers.append("Set-Cookie", cookie)
+    return redirect(input.next ?? "/kelola", { status: 303, headers })
+  }
+  const outcome = await recordStepUp(input.sessionId, false, input.db)
   if (outcome === "signed_out") return redirect("/masuk", 303)
   return { error: "wrong" }
 }
@@ -93,10 +118,11 @@ export async function confirmStepUp(input: {
 export async function stepUpAction(
   request: Request,
   context: Readonly<RouterContextProvider>,
+  auth?: Auth,
 ): Promise<StepUpData | Response> {
   const session = context.get(sessionContext)
   if (!session) throw redirect("/masuk")
-  const api = (await getAuth()).api
+  const api = (auth ?? (await getAuth())).api
   return confirmStepUp({
     request,
     sessionId: session.session.id,
@@ -107,5 +133,15 @@ export async function stepUpAction(
         () => true,
         () => false,
       ),
+    rotate: async () => {
+      const rotated = await api.rotateSession({
+        headers: request.headers,
+        returnHeaders: true,
+      })
+      return {
+        sessionId: rotated.response.id,
+        setCookie: rotated.headers.getSetCookie(),
+      }
+    },
   })
 }

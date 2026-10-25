@@ -31,6 +31,8 @@ import { createTakedownHandler } from "../../../worker/takedown.ts"
 import { runPublish } from "../issues/publish.server.ts"
 import { type CloseAccountInput, closeAccount } from "./close-account.server.ts"
 import { runMerge } from "./merge.server.ts"
+import { type IssueActionInput, runIssueAction } from "./referrals.server.ts"
+import { listReplies } from "./replies.server.ts"
 
 const su = superuserPool()
 const suDb = drizzle({ client: su })
@@ -163,7 +165,7 @@ beforeAll(async () => {
     "INSERT INTO members (organization_id, user_id, role) VALUES ($1, $2, 'admin')",
     [orgA, moderator],
   )
-  filesDir = await mkdtemp(`${tmpdir()}/sm-close-`)
+  filesDir = await mkdtemp(`${tmpdir()}/sb-close-`)
 })
 
 beforeEach(async () => {
@@ -219,6 +221,19 @@ describe("closeAccount", () => {
       "INSERT INTO demand_ratings (org_id, demand_id, user_id, score, show_name) VALUES ($1, $2, $3, 5, true)",
       [orgA, demand[0]?.id, minor],
     )
+    const { rows: claim } = await su.query<{ id: string }>(
+      `INSERT INTO resolution_claims (org_id, issue_id)
+       SELECT org_id, id FROM issues WHERE public_code = $1 RETURNING id`,
+      [mixed.code],
+    )
+    await su.query(
+      "INSERT INTO ratings (org_id, claim_id, user_id, score, is_reporter, account_days) VALUES ($1, $2, $3, 2, true, 40)",
+      [orgA, claim[0]?.id, minor],
+    )
+    await su.query(
+      "INSERT INTO fix_surveys (org_id, claim_id, user_id) VALUES ($1, $2, $3)",
+      [orgA, claim[0]?.id, minor],
+    )
     const hosts: string[][] = []
 
     const result = await closeAccount(input(shared))
@@ -261,6 +276,11 @@ describe("closeAccount", () => {
       [minor],
     )
     expect(ratings.rows).toHaveLength(0)
+    const claimRows = await su.query(
+      "SELECT 1 FROM ratings WHERE user_id = $1 UNION ALL SELECT 1 FROM fix_surveys WHERE user_id = $1",
+      [minor],
+    )
+    expect(claimRows.rows).toHaveLength(0)
     const { rows: issues } = await su.query(
       "SELECT public_code, report_count, published_at IS NOT NULL AS published FROM issues ORDER BY public_code",
     )
@@ -283,6 +303,44 @@ describe("closeAccount", () => {
         reason_code: "self_declared",
       },
     ])
+  })
+
+  test("agency replies forget the account here", async () => {
+    const own = await report(orgA, minor)
+    const issue = await publishedIssue([own])
+    const { rows: issueB } = await su.query<{ id: string }>(
+      `INSERT INTO issues (org_id, year, number, public_code, title, summary,
+         category_id, subcategory_id, province_code, regency_code,
+         gov_status, advocacy_status, report_count)
+       VALUES ($1, 2026, 1, 'ISU-UGM-26-0001', 'Judul', 'Ringkasan.',
+         'program', 'program.pendidikan', '32', '32.73', 'awaiting_response',
+         'monitoring', 0)
+       RETURNING id`,
+      [orgB],
+    )
+    const reply = (org: string, issueId: string, extra = "") =>
+      su.query(
+        `INSERT INTO agency_replies (org_id, issue_id, user_id, submission_id,
+           agency, sender_role, body, status, reject_reason, decided_at)
+         VALUES ($1, $2, $3, gen_random_uuid(), 'Dinas Pendidikan',
+           'Kepala Bidang', 'Isi hak jawab.', ${extra || "'pending', NULL, NULL"})`,
+        [org, issueId, minor],
+      )
+    await reply(orgA, issue.issueId)
+    await reply(orgA, issue.issueId, "'rejected', 'personal_data', now()")
+    await reply(orgB, issueB[0]?.id ?? "")
+    expect((await listReplies(orgA))[0]?.senderEmail).toContain("anak.")
+
+    expect((await closeAccount(input(own))).ok).toBe(true)
+    for (const status of ["pending", "rejected"] as const) {
+      const rows = await listReplies(orgA, status)
+      expect(rows.map((row) => row.senderEmail)).toEqual([null])
+    }
+    const { rows } = await su.query(
+      "SELECT org_id FROM agency_replies WHERE user_id = $1",
+      [minor],
+    )
+    expect(rows).toEqual([{ org_id: orgB }])
   })
 
   test("published copies leave the public folder", async () => {
@@ -360,6 +418,73 @@ describe("closeAccount", () => {
       ok: false,
       reason: "staff",
     })
+  })
+
+  test("the last unanswered reporter leaving confirms the round", async () => {
+    const shared = await report(orgA, minor)
+    const kept = await report(orgA, other)
+    const merged = await publishedIssue([shared, kept])
+    const purge = {
+      purgeUrls: async () => ({ skipped: true as const }),
+      purgeHosts: async () => ({ skipped: true as const }),
+    }
+    for (const action of ["refer", "claim_resolved"] as const) {
+      const { rows } = await su.query(
+        "SELECT advocacy_status, gov_status, version FROM issues WHERE id = $1",
+        [merged.issueId],
+      )
+      const done = await runIssueAction(
+        { id: orgA, host: "itb.localhost" },
+        {
+          issueId: merged.issueId,
+          seen: {
+            advocacy: rows[0]?.advocacy_status,
+            government: rows[0]?.gov_status,
+            version: rows[0]?.version,
+          },
+          actorId: moderator,
+          ...(action === "refer"
+            ? {
+                action,
+                referral: {
+                  agency: "Dinas Pendidikan Kota Bandung",
+                  channel: "agency_email",
+                  ticket: null,
+                  sentOn: "2026-10-01",
+                  deadlineOn: "2026-10-15",
+                },
+              }
+            : { action, note: null, notify: false }),
+        } as IssueActionInput,
+        { purge },
+      )
+      expect(done.ok).toBe(true)
+    }
+    const { rows: claim } = await su.query<{ id: string }>(
+      "SELECT id FROM resolution_claims WHERE issue_id = $1",
+      [merged.issueId],
+    )
+    const claimId = claim[0]?.id
+    await su.query(
+      `INSERT INTO fix_surveys (org_id, claim_id, user_id, answer, answered_at)
+       VALUES ($1, $2, $3, 'fixed', now()), ($1, $2, $4, NULL, NULL)`,
+      [orgA, claimId, other, minor],
+    )
+    expect(await closeAccount(input(shared), { purge })).toMatchObject({
+      ok: true,
+    })
+    const { rows } = await su.query(
+      `SELECT i.gov_status, c.outcome, c.basis FROM issues i
+       JOIN resolution_claims c ON c.issue_id = i.id WHERE c.id = $1`,
+      [claimId],
+    )
+    expect(rows).toEqual([
+      {
+        gov_status: "confirmed_resolved",
+        outcome: "confirmed",
+        basis: "survey",
+      },
+    ])
   })
 
   test("an adult's deletion request, its own audit row", async () => {

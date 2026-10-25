@@ -15,18 +15,18 @@ restic() {
 backup() {
   # Creates the repository once
   restic cat config >/dev/null 2>&1 || restic init
-  restic backup --host suara-madani --tag evidence \
+  restic backup --retry-lock 30m --host sadar-bersuara --tag evidence \
     --exclude /files/scratch --exclude /files/assets /files
   record_backup restic
 }
 
 prune() {
-  restic forget --host suara-madani --tag evidence \
+  restic forget --retry-lock 30m --host sadar-bersuara --tag evidence \
     --keep-daily 14 --keep-weekly 8 --keep-monthly 3 --prune
 }
 
 check() {
-  restic check --read-data-subset=5%
+  restic check --retry-lock 30m --read-data-subset=5%
 }
 
 case "$task" in

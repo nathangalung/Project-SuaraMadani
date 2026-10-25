@@ -34,9 +34,11 @@ export type OtpPurpose = (typeof OTP_PURPOSES)[number]
 
 // Starting Values: ban risk limits
 export const WHATSAPP_LIMITS = {
-  // Per number, like email OTP
+  // Per number and client
   spacingMs: 60_000,
   perDay: 8,
+  // Proven number, all clients
+  perNumberDayAllClients: 20,
   // Whole sender
   perHour: 60,
   perDayTotal: 300,

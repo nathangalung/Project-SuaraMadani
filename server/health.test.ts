@@ -11,16 +11,22 @@ import { Pool } from "pg"
 import { schema } from "../db/client.server.ts"
 import { QUEUES } from "../db/jobs.server.ts"
 import { migrate } from "../db/migrate.ts"
-import { insertOrg, resetData, superuserPool, testUrl } from "../db/testing.ts"
+import {
+  insertOrg,
+  insertUser,
+  resetData,
+  superuserPool,
+  testUrl,
+} from "../db/testing.ts"
 import { EMAIL_QUOTA } from "../shared/notifications.ts"
 import { archiveFailing, poolHealth } from "./health.ts"
 
 const su = superuserPool()
-// Runs as sm_app, real RLS
+// Runs as sb_app, real RLS
 const appPool = new Pool({
   connectionString: testUrl("TEST_DATABASE_SUPERUSER_URL"),
   max: 2,
-  options: "-c role=sm_app",
+  options: "-c role=sb_app",
 })
 const appDb = drizzle({ client: appPool, schema })
 
@@ -257,6 +263,27 @@ describe("queues", () => {
     expect(report.ok).toBe(false)
   })
 
+  test("a failed deadline reminder run fails", async () => {
+    // No DLQ, missed day skipped
+    await su.query(
+      "INSERT INTO pgboss.job (name, data, state) VALUES ('deadline-reminders', '{}', 'failed')",
+    )
+    const report = await jobs()
+    expect(report.checks.deadline_reminders_failed).toBe(1)
+    expect(report.checks.maintenance_failed).toBe(0)
+    expect(report.ok).toBe(false)
+  })
+
+  test("an old failed reminder run has aged out", async () => {
+    await su.query(
+      `INSERT INTO pgboss.job (name, data, state, created_on)
+       VALUES ('deadline-reminders', '{}', 'failed', now() - interval '3 days')`,
+    )
+    const report = await jobs()
+    expect(report.checks.deadline_reminders_failed).toBe(0)
+    expect(report.ok).toBe(true)
+  })
+
   test("a maintenance run waiting 6 h fails", async () => {
     await su.query(
       `INSERT INTO pgboss.job (name, data, state, created_on, start_after)
@@ -348,21 +375,39 @@ describe("backups", () => {
     expect(report.checks.backup_pgbackrest_age_s).toBe(-1)
     expect(report.checks.backup_restic_age_s).toBe(-1)
     expect(report.checks["backup_b2-copy_age_s"]).toBe(-1)
+    // ASVS V11.3.3: repository verified
+    expect(report.checks["backup_pgbackrest-verify_age_s"]).toBe(-1)
+    // ASVS V16.4.3: logs shipped hourly
+    expect(report.checks.backup_logs_age_s).toBe(-1)
     expect(report.ok).toBe(false)
   })
 
   test("fresh runs of every kind pass the run check", async () => {
     await backupRun("pgbackrest", 3600)
+    await backupRun("pgbackrest-verify", 3600)
     await backupRun("restic", 3600)
     await backupRun("b2-copy", 86_400)
+    await backupRun("logs", 3600)
     const report = await jobs(true)
     expect(report.checks.backup_stale).toBe(0)
   })
 
-  test("a database backup older than 26 h fails", async () => {
-    await backupRun("pgbackrest", 26 * 3600 + 60)
+  test("logs older than 3 h fail", async () => {
+    await backupRun("pgbackrest", 60)
+    await backupRun("pgbackrest-verify", 60)
     await backupRun("restic", 60)
     await backupRun("b2-copy", 60)
+    await backupRun("logs", 3 * 3600 + 60)
+    const report = await jobs(true)
+    expect(report.checks.backup_stale).toBe(1)
+  })
+
+  test("a database backup older than 26 h fails", async () => {
+    await backupRun("pgbackrest", 26 * 3600 + 60)
+    await backupRun("pgbackrest-verify", 60)
+    await backupRun("restic", 60)
+    await backupRun("b2-copy", 60)
+    await backupRun("logs", 60)
     const report = await jobs(true)
     expect(report.checks.backup_stale).toBe(1)
     expect(report.ok).toBe(false)
@@ -372,7 +417,9 @@ describe("backups", () => {
     await backupRun("restic", 9 * 3600)
     await backupRun("restic", 60)
     await backupRun("pgbackrest", 60)
+    await backupRun("pgbackrest-verify", 60)
     await backupRun("b2-copy", 7 * 86_400)
+    await backupRun("logs", 60)
     const report = await jobs(true)
     expect(report.checks.backup_stale).toBe(0)
   })
@@ -381,6 +428,20 @@ describe("backups", () => {
     const report = await jobs(true)
     expect(report.checks.wal_archive_failing).toBe(1)
     expect(report.ok).toBe(false)
+  })
+})
+
+describe("seed accounts", () => {
+  test("production counts .test addresses", async () => {
+    expect((await jobs()).checks.seed_accounts).toBeUndefined()
+    expect((await jobs(true)).checks.seed_accounts).toBe(0)
+    await insertUser(su, "superadmin@sadarbersuara.test")
+    await insertUser(su, "warga@contoh.id")
+    try {
+      expect((await jobs(true)).checks.seed_accounts).toBe(1)
+    } finally {
+      await su.query("DELETE FROM users")
+    }
   })
 })
 
@@ -416,5 +477,52 @@ describe("archiveFailing", () => {
     expect(
       archiveFailing({ lastArchived: ago(30), lastFailed: ago(120) }, now),
     ).toBe(false)
+  })
+})
+
+describe("poolHealth db", () => {
+  test("a hung pool fails within 1 s", async () => {
+    // decisions.md Health checks: 1 s
+    const hung = { query: () => new Promise(() => {}) } as unknown as Pool
+    const started = performance.now()
+    await expect(poolHealth(hung, appDb).db()).rejects.toThrow("deadline")
+    expect(performance.now() - started).toBeLessThan(1500)
+  })
+})
+
+describe("jobs cache", () => {
+  test("Given a fresh report, when a job dies within 30 s, then the cached report holds until the window ends", async () => {
+    let at = 1_000_000
+    const health = poolHealth(appPool, appDb, { now: () => at })
+    expect((await health.jobs()).checks["email-send-dlq"]).toBe(0)
+    await su.query(
+      "INSERT INTO pgboss.job (name, data, state) VALUES ('email-send-dlq', '{}', 'created')",
+    )
+    at += 29_999
+    expect((await health.jobs()).checks["email-send-dlq"]).toBe(0)
+    at += 1
+    expect((await health.jobs()).checks["email-send-dlq"]).toBe(1)
+  })
+
+  test("Given a jobs read that fails, when health is asked again at once, then it reads again instead of serving the failure", async () => {
+    const pool = new Pool({
+      connectionString: testUrl("TEST_DATABASE_SUPERUSER_URL"),
+      max: 2,
+      options: "-c role=sb_app -c lock_timeout=100",
+    })
+    const health = poolHealth(pool, drizzle({ client: pool, schema }), {
+      now: () => 1_000_000,
+    })
+    const locker = await su.connect()
+    try {
+      await locker.query("BEGIN")
+      await locker.query("LOCK TABLE email_log IN ACCESS EXCLUSIVE MODE")
+      await expect(health.jobs()).rejects.toThrow("lock timeout")
+      await locker.query("ROLLBACK")
+      expect((await health.jobs()).checks.email_quota_used).toBe(0)
+    } finally {
+      locker.release()
+      await pool.end()
+    }
   })
 })

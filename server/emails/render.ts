@@ -10,7 +10,7 @@ import {
   type ComplaintDecisionReason,
   type ComplaintSubjectKind,
 } from "../../shared/complaints.ts"
-import { formatDate } from "../../shared/format.ts"
+import { formatDate, formatIsoDate } from "../../shared/format.ts"
 import {
   type DecisionReason,
   isRejectReason,
@@ -21,6 +21,7 @@ import type {
   DemandTemplate,
   NotificationTemplate,
 } from "../../shared/notifications.ts"
+import type { ReplyRejectReason } from "../../shared/replies.ts"
 import type {
   AdvocacyStatus,
   DemandProgress,
@@ -166,6 +167,20 @@ const ISSUE_LEAD: Record<IssueAction, Text> = {
   close: m.mail_issue_close,
 }
 
+// Subject names the event itself
+const ISSUE_SUBJECT: Record<IssueAction, Text> = {
+  refer: m.mail_issue_subject_refer,
+  escalate: m.mail_issue_subject_escalate,
+  record_response: m.mail_issue_subject_record_response,
+  mark_in_progress: m.mail_issue_subject_mark_in_progress,
+  claim_resolved: m.mail_issue_subject_claim_resolved,
+  confirm_resolved: m.mail_issue_subject_confirm_resolved,
+  reopen: m.mail_issue_subject_reopen,
+  mark_not_competent: m.mail_issue_subject_mark_not_competent,
+  mark_not_followed_up: m.mail_issue_subject_mark_not_followed_up,
+  close: m.mail_issue_subject_close,
+}
+
 function footer(): string[] {
   return [m.mail_footer_identity(), m.mail_footer_auto()]
 }
@@ -242,9 +257,8 @@ export function renderReporterMail(mail: ReporterMail): RenderedMail {
 export function renderFollowerMail(mail: FollowerMail): RenderedMail {
   const { issue } = mail
   const published = mail.template === "issue_published"
-  const lead = published
-    ? m.mail_issue_published_body()
-    : ISSUE_LEAD[mail.template.slice("issue_".length) as IssueAction]()
+  const action = mail.template.slice("issue_".length) as IssueAction
+  const lead = published ? m.mail_issue_published_body() : ISSUE_LEAD[action]()
   const heading = published
     ? m.mail_issue_published_heading()
     : m.mail_issue_heading()
@@ -253,7 +267,7 @@ export function renderFollowerMail(mail: FollowerMail): RenderedMail {
       ? m.mail_issue_published_subject({ code: issue.code })
       : m.mail_issue_subject({
           code: issue.code,
-          status: GOVERNMENT_TEXT[issue.govStatus](),
+          action: ISSUE_SUBJECT[action](),
         }),
     preheader: lead,
     heading,
@@ -407,6 +421,141 @@ export function renderComplaintMail(mail: ComplaintMail): RenderedMail {
     paragraphs,
     facts,
     action: { label: m.mail_complaint_action(), url: mail.complaint.url },
+    notes: [],
+    footer: footer(),
+  })
+}
+
+// Longer lists end counted
+export const DEADLINE_MAIL_ITEMS = 20
+
+export type DeadlineMail = {
+  site: MailSite
+  operator: string
+  // Oldest deadline first
+  items: {
+    code: string
+    title: string
+    agency: string
+    deadlineOn: string
+    // Since sent, as /isu shows
+    days: number
+  }[]
+}
+
+/** Admin digest, lewat tenggat. */
+export function renderDeadlineMail(mail: DeadlineMail): RenderedMail {
+  const shown = mail.items.slice(0, DEADLINE_MAIL_ITEMS)
+  const rest = mail.items.length - shown.length
+  const lead = m.mail_deadline_body()
+  return renderMail(mail.site, {
+    subject: m.mail_deadline_subject({ count: mail.items.length }),
+    preheader: lead,
+    heading: m.mail_deadline_heading(),
+    paragraphs: [lead],
+    facts: shown.map((item) => [
+      item.code,
+      m.mail_deadline_item({
+        title: item.title,
+        agency: item.agency,
+        deadline: formatIsoDate(item.deadlineOn),
+        days: item.days,
+      }),
+    ]),
+    action: {
+      label: m.mail_deadline_action(),
+      url: `${mail.site.origin}/kelola/isu?perlu=lewat-tenggat`,
+    },
+    notes: [
+      ...(rest > 0 ? [m.mail_deadline_more({ count: rest })] : []),
+      m.mail_deadline_note({ operator: mail.operator }),
+    ],
+    footer: footer(),
+  })
+}
+
+type IssueRef = { code: string; title: string; url: string }
+
+export type SurveyMail = {
+  site: MailSite
+  issue: IssueRef
+  surveyUrl: string
+  claimedAt: Date
+}
+
+/** "Sudah beres?" to a reporter. */
+export function renderSurveyMail(mail: SurveyMail): RenderedMail {
+  const lead = m.mail_survey_body({ claimedOn: formatDate(mail.claimedAt) })
+  return renderMail(mail.site, {
+    subject: m.mail_survey_subject({ code: mail.issue.code }),
+    preheader: lead,
+    heading: m.mail_survey_heading(),
+    paragraphs: [lead],
+    facts: [
+      [m.mail_fact_issue_code(), mail.issue.code],
+      [m.mail_fact_issue_title(), mail.issue.title],
+    ],
+    action: { label: m.mail_survey_action(), url: mail.surveyUrl },
+    notes: [m.mail_survey_note()],
+    footer: footer(),
+  })
+}
+
+export type ReplyMail = {
+  site: MailSite
+  issue: IssueRef
+  agency: string
+  // Null: receipt
+  decision:
+    | { status: "accepted" }
+    | { status: "rejected"; reason: ReplyRejectReason }
+    | null
+}
+
+const REPLY_REASON: Record<ReplyRejectReason, Text> = {
+  sender_unconfirmed: m.mail_reply_reason_sender_unconfirmed,
+  off_topic: m.mail_reply_reason_off_topic,
+  personal_data: m.mail_reply_reason_personal_data,
+  already_recorded: m.mail_reply_reason_already_recorded,
+}
+
+/** Receipt or decision, to sender. */
+export function renderReplyMail(mail: ReplyMail): RenderedMail {
+  const code = { code: mail.issue.code }
+  const agency = { agency: mail.agency }
+  const { decision } = mail
+  const copy =
+    decision === null
+      ? {
+          subject: m.mail_reply_received_subject(code),
+          heading: m.mail_reply_received_heading(),
+          body: m.mail_reply_received_body(agency),
+        }
+      : decision.status === "accepted"
+        ? {
+            subject: m.mail_reply_accepted_subject(code),
+            heading: m.mail_reply_accepted_heading(),
+            body: m.mail_reply_accepted_body(agency),
+          }
+        : {
+            subject: m.mail_reply_rejected_subject(code),
+            heading: m.mail_reply_rejected_heading(),
+            body: m.mail_reply_rejected_body({
+              ...agency,
+              reason: REPLY_REASON[decision.reason](),
+            }),
+          }
+  return renderMail(mail.site, {
+    subject: copy.subject,
+    preheader: copy.body,
+    heading: copy.heading,
+    paragraphs: [copy.body],
+    facts: [
+      [m.mail_fact_issue_code(), mail.issue.code],
+      [m.mail_fact_issue_title(), mail.issue.title],
+      [m.mail_fact_reply_agency(), mail.agency],
+    ],
+    action: { label: m.mail_reply_action(), url: mail.issue.url },
     notes: [],
     footer: footer(),
   })

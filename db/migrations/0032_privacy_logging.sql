@@ -1,0 +1,5 @@
+-- Audit request id, legal hide
+ALTER TABLE "demands" DROP CONSTRAINT "demands_hidden_check";--> statement-breakpoint
+ALTER TABLE "audit_log" ALTER COLUMN "request_id" SET DEFAULT nullif(current_setting('app.request_id', true), '');--> statement-breakpoint
+ALTER TABLE "demand_ratings" ADD COLUMN "name_hidden_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "demands" ADD CONSTRAINT "demands_hidden_check" CHECK (("demands"."hidden_at" IS NULL) = ("demands"."hidden_reason" IS NULL) AND ("demands"."hidden_reason" IS NULL OR "demands"."hidden_reason" IN ('standard_1', 'standard_2', 'standard_3', 'standard_4', 'standard_5', 'standard_6', 'standard_7', 'standard_8', 'standard_9', 'standard_10', 'standard_11', 'standard_12', 'standard_13', 'komdigi_order', 'data_subject_request')) AND ("demands"."hidden_at" IS NULL OR "demands"."state" = 'draft')) NOT VALID;

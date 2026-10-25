@@ -7,6 +7,7 @@ import {
   type TenantContext,
   tenantContext,
 } from "../app/context.ts"
+import { inRequestScope, type RequestScope } from "../db/request-scope.ts"
 import {
   createRootMiddleware,
   type RootDeps,
@@ -113,7 +114,7 @@ describe("tenant", () => {
         },
       }),
       "http://evil.localhost/isu",
-      { headers: { cookie: "sm.session_token=x" } },
+      { headers: { cookie: "sb.session_token=x" } },
     )
     expect(status).toBe(404)
     expect(looked).toBe(false)
@@ -159,7 +160,7 @@ describe("apex national scope", () => {
         },
       }),
       "http://localhost/",
-      { headers: { cookie: "sm.session_token=abc" } },
+      { headers: { cookie: "sb.session_token=abc" } },
     )
     expect(status).toBe(200)
     expect(looked).toBe(false)
@@ -230,15 +231,41 @@ describe("session", () => {
       deps({ readSession }),
       "http://itb.localhost/isu",
       {
-        headers: { cookie: "sm.session_token=abc" },
+        headers: { cookie: "sb.session_token=abc" },
       },
     )
     expect(signed.context.get(sessionContext)?.user.id).toBe("user-1")
     expect(calls).toBe(1)
   })
 
+  test("the request scope names the account", async () => {
+    const scope: RequestScope = { reqId: "r1" }
+    await inRequestScope(scope, () =>
+      run(
+        deps({
+          readSession: async () => ({
+            session: sessionFor(false),
+            setCookie: [],
+          }),
+        }),
+        "http://itb.localhost/isu",
+        { headers: { cookie: "sb.session_token=abc" } },
+      ),
+    )
+    expect(scope.userId).toBe("user-1")
+  })
+
+  test("a refused report page masks its code", async () => {
+    const lines: Record<string, unknown>[] = []
+    await run(
+      { ...deps(), log: (line) => lines.push(line) },
+      "http://itb.localhost/kelola/laporan/ITB-26-ABCDE",
+    )
+    expect(lines[0]?.path).toBe("/kelola/laporan/:code")
+  })
+
   test("a refreshed session cookie reaches the response", async () => {
-    const refreshed = "sm.session_token=new; Max-Age=604800; Path=/; HttpOnly"
+    const refreshed = "sb.session_token=new; Max-Age=604800; Path=/; HttpOnly"
     const { response } = await run(
       deps({
         readSession: async () => ({
@@ -247,7 +274,7 @@ describe("session", () => {
         }),
       }),
       "http://itb.localhost/lapor/periksa",
-      { headers: { cookie: "sm.session_token=abc" } },
+      { headers: { cookie: "sb.session_token=abc" } },
     )
     expect(response?.headers.getSetCookie()).toEqual([refreshed])
   })
@@ -262,7 +289,7 @@ describe("session", () => {
         },
       }),
       "http://itb.localhost/api/auth/get-session",
-      { headers: { cookie: "sm.session_token=abc" } },
+      { headers: { cookie: "sb.session_token=abc" } },
     )
     expect(calls).toBe(0)
   })
@@ -275,6 +302,24 @@ describe("csrf", () => {
       headers: { origin: "http://ugm.localhost" },
     })
     expect(status).toBe(403)
+  })
+
+  test("a refused write is a security event", async () => {
+    // OWASP A09: alertable refusals
+    const lines: Record<string, unknown>[] = []
+    await run(
+      deps({ log: (line) => lines.push(line) }),
+      "http://itb.localhost/api/upload/x",
+      { method: "POST", headers: { origin: "http://ugm.localhost" } },
+    )
+    expect(lines).toEqual([
+      {
+        msg: "security",
+        event: "csrf_refused",
+        host: "itb.localhost",
+        path: "/api/upload/x",
+      },
+    ])
   })
 
   test("same-origin writes pass", async () => {
@@ -295,10 +340,28 @@ describe("staff paths", () => {
       }),
       memberRole: async (orgId) => (orgId === "org-itb" ? role : null),
     })
-  const cookie = { headers: { cookie: "sm.session_token=abc" } }
+  const cookie = { headers: { cookie: "sb.session_token=abc" } }
 
   test("no session is 403", async () => {
     expect((await run(deps(), "http://itb.localhost/kelola")).status).toBe(403)
+  })
+
+  test("a refused staff page names the account", async () => {
+    const lines: Record<string, unknown>[] = []
+    await run(
+      { ...staffDeps(false, "admin"), log: (line) => lines.push(line) },
+      "http://itb.localhost/kelola/antrean",
+      cookie,
+    )
+    expect(lines).toEqual([
+      {
+        msg: "security",
+        event: "staff_refused",
+        host: "itb.localhost",
+        path: "/kelola/antrean",
+        user_id: "user-1",
+      },
+    ])
   })
 
   test("admin without TOTP is 403", async () => {
@@ -384,6 +447,8 @@ describe("staff paths", () => {
       "/%6Belola",
       "/%6belola/laporan/Y",
       "/kelola%2Fbukti",
+      // Malformed escape, still gated
+      "/kelola/%E0%A4%A",
     ]) {
       const { status } = await run(
         staffDeps(false, "admin"),

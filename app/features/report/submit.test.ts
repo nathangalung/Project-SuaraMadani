@@ -23,7 +23,12 @@ import { createUploadHandler } from "../../../server/api/upload.server.ts"
 import type { TurnstileResult } from "../../../server/turnstile.server.ts"
 import { CONSENT_TEXT_VERSION } from "../../../shared/report-fields.ts"
 import type { SessionContext, TenantContext } from "../../context.ts"
-import { handleSubmit, type SubmitDeps } from "./submit.server.ts"
+import {
+  handleSubmit,
+  type SubmitDeps,
+  type SubmitResult,
+  submitAction,
+} from "./submit.server.ts"
 
 const su = superuserPool()
 let orgA = ""
@@ -164,7 +169,7 @@ beforeAll(async () => {
   orgA = await insertOrg(su, "itb")
   orgB = await insertOrg(su, "ugm")
   userA = await insertUser(su, "pelapor.submit@contoh.id")
-  filesDir = await mkdtemp(join(tmpdir(), "sm-submit-"))
+  filesDir = await mkdtemp(join(tmpdir(), "sb-submit-"))
   png = new Uint8Array(
     await sharp({
       create: { width: 4, height: 4, channels: 3, background: "#0f55d6" },
@@ -313,19 +318,51 @@ describe("idempotency", () => {
     expect(captchaCalls).toBe(0)
   })
 
-  test("a duplicate token answer looks the report up again", async () => {
+  // Winner commits during the check
+  async function racedBy(answer: TurnstileResult) {
     const input = body()
-    const first = await submit(input)
-    const again = await handleSubmit({
+    const holder: { won?: SubmitResult } = {}
+    const loser = await handleSubmit({
       body: input,
       tenant: tenant(orgA, "ITB"),
       session: session(userA),
       remoteIp: null,
       deps: deps({
+        verifyCaptcha: async () => {
+          holder.won = await submit(input)
+          return answer
+        },
+      }),
+    })
+    const winner = holder.won
+    if (!winner) throw new Error("winner never ran")
+    expect(winner.status).toBe(201)
+    return { loser, winner }
+  }
+
+  test("Given the winner commits while the loser's token is checked, when the token is spent, then the loser gets the stored report", async () => {
+    const { loser, winner } = await racedBy({ ok: false, reason: "duplicate" })
+    expect(loser.status).toBe(200)
+    expect(loser.body).toEqual(winner.body)
+    expect(await count("reports")).toBe(1)
+  })
+
+  test("Given the winner commits while the loser's token is checked, when the loser reaches the insert, then the locked re-check returns the stored report", async () => {
+    const { loser, winner } = await racedBy({ ok: true })
+    expect(loser.status).toBe(200)
+    expect(loser.body).toEqual(winner.body)
+    expect(await count("reports")).toBe(1)
+    expect(await count("notifications")).toBe(1)
+  })
+
+  test("a spent token with nothing stored is refused", async () => {
+    const result = await submit(body(), {
+      deps: deps({
         verifyCaptcha: async () => ({ ok: false, reason: "duplicate" }),
       }),
     })
-    expect(again.body).toEqual(first.body)
+    expect(result).toEqual({ status: 403, body: { error: "captcha_failed" } })
+    expect(await count("reports")).toBe(0)
   })
 })
 
@@ -445,6 +482,38 @@ describe("refusals", () => {
     const sixth = await submit(body())
     expect(sixth.status).toBe(429)
     expect(await count("reports")).toBe(5)
+  })
+})
+
+describe("step-7 route action", () => {
+  const post = (payload: string, headers: Record<string, string> = {}) =>
+    submitAction({
+      request: new Request("http://itb.localhost/lapor/periksa", {
+        method: "POST",
+        body: payload,
+        headers: { "content-type": "application/json", ...headers },
+      }),
+      tenant: tenant(orgA, "ITB"),
+      session: session(userA),
+    })
+
+  test("a body over 64 KiB is 413 before parsing", async () => {
+    const result = await post("{}", { "content-length": String(65 * 1024) })
+    expect(result.init?.status).toBe(413)
+    expect(result.data).toEqual({ error: "too_large" })
+  })
+
+  test("a body that is not JSON is a field error, nothing stored", async () => {
+    const result = await post("{bukan json")
+    expect(result.init?.status).toBe(400)
+    expect(await count("reports")).toBe(0)
+  })
+
+  test("Given a valid report without a captcha token, when posted, then 403 captcha_failed and nothing stored", async () => {
+    const result = await post(JSON.stringify(body({ turnstileToken: "" })))
+    expect(result.init?.status).toBe(403)
+    expect(result.data).toEqual({ error: "captcha_failed" })
+    expect(await count("reports")).toBe(0)
   })
 })
 

@@ -25,6 +25,15 @@ describe("siteIdentity", () => {
     })
   })
 
+  test("a status link that is not a URL is left out", () => {
+    const facts = siteIdentity({
+      ...base,
+      contactEmail: null,
+      settings: { statusUrl: "status.contoh.id" },
+    })
+    expect(facts.statusHref).toBeUndefined()
+  })
+
   test("drops unsafe or malformed values", () => {
     const facts = siteIdentity({
       ...base,

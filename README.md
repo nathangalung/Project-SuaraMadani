@@ -2,20 +2,21 @@
 
 Sadar Bersuara is an independent public-issue reporting and monitoring platform run by Indonesian student organisations, civil to civil; it is not a university or government service. A reporter files a private report; an admin of the student organisation verifies it (or rejects it with a reason) before anything is public, and merges related reports into a public **issue**; an admin then forwards the issue to the responsible agency through that agency's official channel and tracks the ticket, the deadline and the response in the open. Admins also write **tuntutan** (demands), national or regional, each in one category and broken into subtuntutan with a response and a fulfilment status, dated sourced updates and optional policy briefs; signed-in citizens rate how important a tuntutan is (1 to 5, anonymously or under their name), and campus home pages show tuntutan right under the hero. One deployment serves many organisations: each has its own subdomain, theme and admin queue, and the bare domain shows combined national numbers.
 
-The product is in Indonesian (formal "Anda"); code, comments and these docs are in English. Phase 1 of the roadmap is mostly built; the items still open are marked [sebagian] and [belum] in [PLAN.md](PLAN.md) §13 and listed in [docs/architecture.md](docs/architecture.md) (Implementation Status).
+The product is in Indonesian (formal "Anda"); code, comments and these docs are in English. Phase 1 of the roadmap is mostly built. The Phase 2 backend was built on 21 October 2026 (deadline reminders, the public data API `/api/v1`, the Amazon SES email adapter, GlitchTip and Umami, resumable uploads, the "Sudah beres?" survey with ratings per resolution claim, and the agency right of reply); its pages and forms wait for the frontend. The items still open are marked [sebagian], [backend selesai] and [belum] in [PLAN.md](PLAN.md) §13 and listed in [docs/architecture.md](docs/architecture.md) (Implementation Status).
 
 | Document | What It Holds |
 |---|---|
 | [PLAN.md](PLAN.md) | Product plan and roadmap (Indonesian): concept, flows, legal, roadmap with status marks |
 | [docs/architecture.md](docs/architecture.md) | How the system is built: modules, RLS, request lifecycle, data flows, jobs, email, caching, security, deploy, every tuning value, folder tree |
 | [docs/decisions.md](docs/decisions.md) | One row per engineering decision, with triggers to revisit and sources |
+| [docs/nfr-audit.md](docs/nfr-audit.md) | Non-functional audit: every OWASP ASVS 5.0 requirement, OWASP Top 10 2025, API Security Top 10 2023, compliance, performance, reliability, supply chain, privacy, open decisions |
 | [DESIGN.md](DESIGN.md) | Design contract: tokens, components, motion, page flow, copy rules |
 | [docs/mockup-port-map.md](docs/mockup-port-map.md) | Where every file of the original mockup went |
 | [infra/README.md](infra/README.md) | Production host setup, unlock after reboot, Cloudflare checklist, monitors |
 
 ## Stack
 
-Bun 1.4.3, React 19 with React Router 8 (framework mode, server rendered), Hono, Tailwind CSS 4, Paraglide JS, PostgreSQL 18 with PostGIS and row-level security per campus, Drizzle ORM, Better Auth (sign-up with name, email and WhatsApp number; sign-in codes by email or WhatsApp through our own plugin; TOTP for admins), pg-boss queues in the same database, sharp, `heif-dec`, `pdftoppm`, ffmpeg and ClamAV for evidence files, and Baileys (an unofficial WhatsApp Web library) in a separate `worker-whatsapp` process, with a Meta Cloud API adapter as the official fallback. Production runs as Docker Compose behind Caddy and Cloudflare Tunnel. Exact versions are pinned in `package.json`, `infra/Dockerfile` and `infra/compose.yaml`.
+Bun 1.4.3, React 19 with React Router 8 (framework mode, server rendered), Hono, Tailwind CSS 4, Paraglide JS, PostgreSQL 18 with PostGIS and row-level security per campus, Drizzle ORM, Better Auth (sign-up with name, email and WhatsApp number; sign-in codes by email or WhatsApp through our own plugin; TOTP for admins), pg-boss queues in the same database, sharp, `heif-dec`, `pdftoppm`, ffmpeg and ClamAV for evidence files, and Baileys (an unofficial WhatsApp Web library) in a separate `worker-whatsapp` process, with a Meta Cloud API adapter as the official fallback. Email goes through Brevo or Amazon SES (`EMAIL_PROVIDER`); server errors go to a self-hosted GlitchTip and page views to a self-hosted Umami. Production runs as Docker Compose behind Caddy and Cloudflare Tunnel. Exact versions are pinned in `package.json`, `infra/Dockerfile` and `infra/compose.yaml`.
 
 ## Prerequisites
 
@@ -35,10 +36,10 @@ Run every command from the repository root.
    CI=true bun install --frozen-lockfile
    ```
 
-   Bun runs no dependency install scripts here, so enable the Git hooks yourself (Biome and typecheck before each commit):
+   Bun runs no dependency install scripts here, so enable the Git hooks yourself (Biome, typecheck and a gitleaks scan of the staged changes before each commit). The gitleaks hook needs the `gitleaks` binary on `PATH`, the version CI pins (8.30.1, https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1); without it the commit fails:
 
    ```sh
-   bunx lefthook install
+   bunx --bun lefthook install
    ```
 
 2. Create `.env` from the example and add the secrets, as CI does:
@@ -62,7 +63,7 @@ Run every command from the repository root.
    bun run db:up
    ```
 
-   `bun run db:down` stops them again; the database volume is kept.
+   `bun run db:down` stops them again; the database volume is kept. A dev stack from before the rename to Sadar Bersuara (21 October 2026) runs under the old project name; docs/decisions.md ADR-19 has the steps to move it.
 
 4. Apply the migrations, then load the region list, the two dev organisations with their admin accounts, and the sample data:
 
@@ -97,7 +98,7 @@ Run every command from the repository root.
    bun run worker:whatsapp
    ```
 
-   `worker` runs the `aggregate-refresh`, `email-send`, `issue-notify`, `demand-notify`, `takedown` and `maintenance-daily` queues; `worker:media` runs `evidence`, `evidence-video`, `evidence-publish` and `evidence-brief`, which call `heif-dec`, `pdfinfo`, `pdftoppm`, `qpdf`, `ffprobe`, `ffmpeg` and the dev ClamAV (the Docker image has the tools; without `qpdf` on the host an uploaded policy brief stays "Menunggu pemindaian", because only a metadata-stripped copy is ever served; to try briefs on such a host, run the media worker in the media test image: `docker compose -f infra/compose.dev.yaml --profile media build media-test`, then `docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD":/app -w /app -e WORKER_QUEUES=evidence,evidence-video,evidence-publish,evidence-brief suara-madani-dev-media-test bun --env-file=.env worker/index.ts`); `worker:whatsapp` runs `whatsapp-send` with the provider from `WHATSAPP_PROVIDER` (`dev` locally) and needs `WHATSAPP_JOB_KEY`. Each logs `{"msg":"worker started",...}` when it is ready. While `worker:whatsapp` runs, the sign-in form offers WhatsApp; without it, WhatsApp shows as unavailable.
+   `worker` runs the `aggregate-refresh`, `email-send`, `issue-notify`, `demand-notify`, `takedown`, `maintenance-daily`, `deadline-reminders` and `survey-send` queues; `worker:media` runs `evidence`, `evidence-video`, `evidence-publish` and `evidence-brief`, which call `heif-dec`, `pdfinfo`, `pdftoppm`, `qpdf`, `ffprobe`, `ffmpeg` and the dev ClamAV (the Docker image has the tools; without `qpdf` on the host an uploaded policy brief stays "Menunggu pemindaian", because only a metadata-stripped copy is ever served; to try briefs on such a host, run the media worker in the media test image: `docker compose -f infra/compose.dev.yaml --profile media build media-test`, then `docker run --rm --network host --user "$(id -u):$(id -g)" -v "$PWD":/app -w /app -e WORKER_QUEUES=evidence,evidence-video,evidence-publish,evidence-brief sadar-bersuara-dev-media-test bun --env-file=.env worker/index.ts`); `worker:whatsapp` runs `whatsapp-send` with the provider from `WHATSAPP_PROVIDER` (`dev` locally) and needs `WHATSAPP_JOB_KEY`. Each logs `{"msg":"worker started",...}` when it is ready. While `worker:whatsapp` runs, the sign-in form offers WhatsApp; without it, WhatsApp shows as unavailable.
 
 ## Emails and WhatsApp Codes in Development
 
@@ -107,14 +108,14 @@ All mail goes to Mailpit: open **http://127.0.0.1:58025**. Sign-in codes are sen
 
 | Account | Role | WhatsApp number (fictional) |
 |---|---|---|
-| `admin2.itb@suaramadani.test`, `admin.itb@suaramadani.test` | Admin of KM ITB (everything in `/kelola`) | `+6281100000101`, `+6281100000102` |
-| `admin2.ugm@suaramadani.test`, `admin.ugm@suaramadani.test` | Admin of BEM KM UGM | `+6281100000201`, `+6281100000202` |
-| `superadmin@suaramadani.test` | Superadmin (`/admin`: add an organisation, link the WhatsApp sender); no campus role | `+6281100000001` |
+| `admin2.itb@sadarbersuara.test`, `admin.itb@sadarbersuara.test` | Admin of KM ITB (everything in `/kelola`) | `+6281100000101`, `+6281100000102` |
+| `admin2.ugm@sadarbersuara.test`, `admin.ugm@sadarbersuara.test` | Admin of BEM KM UGM | `+6281100000201`, `+6281100000202` |
+| `superadmin@sadarbersuara.test` | Superadmin (`/admin`: add an organisation, link the WhatsApp sender); no campus role | `+6281100000001` |
 | `sampel.itb.NNN@contoh.test`, `sampel.ugm.NNN@contoh.test`, `sampel.<slug>.admin@contoh.test` | Sample reporters and the second sample admin, created by the sample seed; names contain "Sampel" | `+628110…` |
 
 There is one tenant staff role, `admin`. There are no passwords. Admin pages need a second step with TOTP:
 
-1. Open http://itb.localhost:5173/masuk, keep the "Masuk" tab, enter `admin2.itb@suaramadani.test` (or its number `0811 0000 0101`) and press "Lanjutkan".
+1. Open http://itb.localhost:5173/masuk, keep the "Masuk" tab, enter `admin2.itb@sadarbersuara.test` (or its number `0811 0000 0101`) and press "Lanjutkan".
 2. Choose "Email" (or "WhatsApp" while `bun run worker:whatsapp` runs) and press "Kirim kode verifikasi". Read the six-digit code in Mailpit and enter it.
 3. Open http://itb.localhost:5173/kelola. The first time you get a 403 page with "Verifikasi dua langkah", which opens `/masuk/dua-langkah`: add the setup key to an authenticator app (manual entry; there is no QR code for TOTP yet), enter the current code, confirm that you saved the backup codes, and you land on `/kelola`. Later sign-ins ask for the TOTP code after the sign-in code.
 4. Admin sessions end after 12 hours. Team and settings pages (`/kelola/anggota`, `/kelola/pengaturan`) and `/admin` ask for a fresh TOTP code at `/masuk/konfirmasi` when the last one is older than 5 minutes. The superadmin signs in on a campus host the same way and lands on `/admin`.
@@ -126,22 +127,25 @@ To make another existing account superadmin, run `bun run db:superadmin grant <e
 To reset a dev admin account's TOTP:
 
 ```sh
-docker exec suara-madani-dev-postgres-1 psql -U postgres -d suara_madani -c "begin; delete from two_factors where user_id = (select id from users where email = 'admin2.itb@suaramadani.test'); update users set two_factor_enabled = false where email = 'admin2.itb@suaramadani.test'; delete from sessions where user_id = (select id from users where email = 'admin2.itb@suaramadani.test'); commit;"
+docker exec sadar-bersuara-dev-postgres-1 psql -U postgres -d sadar_bersuara -c "begin; delete from two_factors where user_id = (select id from users where email = 'admin2.itb@sadarbersuara.test'); update users set two_factor_enabled = false where email = 'admin2.itb@sadarbersuara.test'; delete from sessions where user_id = (select id from users where email = 'admin2.itb@sadarbersuara.test'); commit;"
 ```
 
 ## Quality Gates
 
-Every change must pass the six gates CI runs (`.github/workflows/ci.yml`):
+Every change must pass the six gates CI runs (`.github/workflows/ci.yml`), with the test gate run as `bun run coverage`, plus the acceptance gate:
 
 ```sh
 bun run typecheck   # react-router typegen, then tsc --noEmit
 bun run lint        # biome check .
-bun run test        # bun test, against the suara_madani_test database
+bun run test        # bun test, against the sadar_bersuara_test database
+bun run coverage    # bun test with lcov, then infra/coverage-gate.ts
+bun run acceptance  # docs/acceptance.md scenarios automated
 bun run build       # react-router build
 bun run size        # size-limit: first-load JS budget per route
 bun run knip        # unused files, exports and dependencies
 ```
 
+- `bun run coverage` fails below 99% lines or functions of backend source, on a backend file missing from the report, or on a file below 90% lines; `bun run acceptance` fails below 99% of the `docs/acceptance.md` scenarios automated by a test with `[<ID>]` in its title, or on more than 3 Pre-Launch Checks ([ADR-24](docs/decisions.md#adr-24-coverage-and-acceptance-gates)). CI runs `bun run coverage` in place of `bun run test`, inside the media test container below.
 - `bun run test` needs `bun run db:up` first; it uses the `TEST_DATABASE_*` URLs in `.env`, and the test database is reset by the tests themselves. Run one test run at a time.
 - Seven HEIC tests skip when libheif's `heif-dec` and `heif-enc` are not installed, and one policy brief test skips without `qpdf`. CI runs the suite inside the media test container, where nothing skips:
 
@@ -151,24 +155,25 @@ bun run knip        # unused files, exports and dependencies
   ```
 
 - `bun run format` applies Biome formatting. Code comments are at most five words with no `;` (`tooling.test.ts` checks it), and every UI string lives in `messages/id.json`.
-- CI also runs gitleaks, osv-scanner (`infra/osv-scan.sh`), squawk on new migrations, an image build and scan, the production stack test with the PLAN §10.8 Lighthouse budgets (`STACK_LIGHTHOUSE=1 infra/stack-test.sh`, checked by `infra/lighthouse-budget.ts`), and the Playwright and axe suite in `e2e/`. Under WSL, run the Lighthouse step with `CHROME_PATH` set to a Linux Chrome (for example the Playwright Chromium); otherwise chrome-launcher starts the Windows Chrome, which never connects and keeps running.
-- End to end, against a production build on port 5198 with the sample seed (Node and Chromium needed; `CHROME_PATH` may point at a local Chrome):
+- CI also runs shellcheck on `infra/*.sh`, gitleaks, osv-scanner (`infra/osv-scan.sh`), squawk on new migrations, an image build and scan, the production stack test with the PLAN §10.8 Lighthouse budgets (`STACK_LIGHTHOUSE=1 infra/stack-test.sh`, checked by `infra/lighthouse-budget.ts`), and the Playwright and axe suite in `e2e/`. Under WSL, run the Lighthouse step with `CHROME_PATH` set to a Linux Chrome (for example the Playwright Chromium); otherwise chrome-launcher starts the Windows Chrome, which never connects and keeps running.
+- End to end, against a production build on port 5198 with the sample seed (Bun and Chromium needed; `CHROME_PATH` may point at a local Chrome):
 
   ```sh
   bun run build
   PORT=5198 NODE_ENV=production EMAIL_PROVIDER=brevo BREVO_API_KEY=unused bun --env-file=.env server/index.ts &
-  npx playwright install chromium
+  bunx --bun playwright install chromium
   bun run e2e
   ```
 
   The suite signs in a throwaway admin account (`e2e-staf@contoh.test`, created by `e2e/staff-session.ts`) to check `/kelola`; delete it afterwards on a shared database.
+  The `api` project (`e2e/api.e2e.ts`, HTTP only, no browser: `bun run e2e --project=api`) also signs up a fresh reporter (`e2e-pelapor-<time>@contoh.test`) and creates one report with an upload through `e2e/api-fixtures.ts`, so point it at a disposable database copy, never a shared one ([ADR-23](docs/decisions.md#adr-23-agentic-testing-pattern-for-the-backend-e2e-suite)).
 - Load test (k6, PLAN §13 exit): `infra/load-test.js`; see [docs/runbook.md](docs/runbook.md) for running it against the origin.
 
 ## Deploy
 
-Production is one host running `infra/compose.yaml` (Caddy, web, worker, worker-media, worker-whatsapp, Postgres with pgBackRest, ClamAV, cloudflared) behind Cloudflare Tunnel. After the first deploy, the superadmin links the WhatsApp sender number at `/admin/whatsapp` ([docs/runbook.md](docs/runbook.md#whatsapp-sender)). Host preparation, secrets (`infra/.env.sops` with SOPS and age), the Cloudflare checklist and the monitors are in [infra/README.md](infra/README.md).
+Production is one host running `infra/compose.yaml` (Caddy, web, worker, worker-media, worker-whatsapp, Postgres with pgBackRest, ClamAV, GlitchTip, Umami, cloudflared) behind Cloudflare Tunnel. After the first deploy, the superadmin links the WhatsApp sender number at `/admin/whatsapp` ([docs/runbook.md](docs/runbook.md#whatsapp-sender)). Host preparation, secrets (`infra/.env.sops` with SOPS and age), the Cloudflare checklist and the monitors are in [infra/README.md](infra/README.md).
 
-- **Normal deploy:** push to `main`. `ci.yml` runs the gates, scans and the image job, then calls `deploy.yml`, which builds and pushes `ghcr.io/<owner>/suara-madani:<sha>`, and connects through Cloudflare Access SSH to the host, where the forced command `infra/deploy-gate.sh` runs:
+- **Normal deploy:** push to `main`. `ci.yml` runs the gates, scans and the image job, then calls `deploy.yml`, which builds and pushes `ghcr.io/<owner>/sadar-bersuara:<sha>`, and connects through Cloudflare Access SSH to the host, where the forced command `infra/deploy-gate.sh` runs:
 
   ```sh
   infra/deploy.sh <sha>
@@ -178,15 +183,15 @@ Production is one host running `infra/compose.yaml` (Caddy, web, worker, worker-
 
 - **Rollback:** run the Deploy workflow by hand with action `rollback` and an earlier SHA, which runs `infra/deploy.sh rollback <sha>` on the host. No migration runs, and a SHA older than the newest contract migration is refused.
 
-- **Local production check** before touching a host: build both images and run the production compose on `127.0.0.1:5199`, then the backup restore drill. Neither needs a Cloudflare, R2 or B2 account.
+- **Local production check** before touching a host: build both images and run the production compose on `127.0.0.1:5199`, then the backup restore drill. Neither needs a Cloudflare, R2 or B2 account. The restore drill also seeds the sample data, so it needs `bun`, the dev ClamAV (`bun run db:up`) and a free `127.0.0.1:5198` (`RESTORE_TEST_PORT`).
 
   ```sh
-  docker build -f infra/Dockerfile --target runtime --build-arg GIT_SHA=local --build-arg PGBOSS_VERSION="$(jq -r '.dependencies["pg-boss"]' package.json)" -t suara-madani:local .
-  docker build -f infra/postgres.Dockerfile -t suara-madani-postgres:local infra
-  infra/stack-test.sh suara-madani:local suara-madani-postgres:local
+  docker build -f infra/Dockerfile --target runtime --build-arg GIT_SHA=local --build-arg PGBOSS_VERSION="$(jq -r '.dependencies["pg-boss"]' package.json)" -t sadar-bersuara:local .
+  docker build -f infra/postgres.Dockerfile -t sadar-bersuara-postgres:local infra
+  infra/stack-test.sh sadar-bersuara:local sadar-bersuara-postgres:local
   infra/restore-test.sh
   ```
 
   Each script ends with `stack-test: PASS` or `restore-test: PASS`.
 
-As of 16 October 2026 the deploy and backup paths have run only in these local drills; the first real deploy needs the GitHub environments, the Cloudflare account, R2 and B2 described in `infra/README.md`.
+As of 21 October 2026 the deploy, backup and one-tenant restore paths and the 10-minute k6 load test have run only locally (the drills above and [docs/runbook.md](docs/runbook.md) Load Test); the first real deploy needs the GitHub environments, the Cloudflare account, R2 and B2 described in `infra/README.md`.

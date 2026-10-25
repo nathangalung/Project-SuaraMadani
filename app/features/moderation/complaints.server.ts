@@ -334,7 +334,7 @@ export function getComplaint(
         issue,
         demand,
         evidence: files,
-        takedowns: await listTakedowns(tx, { complaintId: k.id }),
+        takedowns: await listTakedowns(tx, k.id),
       }
     },
     { role },
@@ -626,25 +626,61 @@ async function demandEffect(
   }
   if (input.decision === "keep") return { ok: true, purge: null }
   if (demand.state === "draft") return { ok: false, reason: "not_allowed" }
+  return {
+    ok: true,
+    purge: await hideDemand(
+      tx,
+      orgId,
+      { id: demandId, code: demand.code },
+      {
+        reason: input.reason as StandardReason,
+        actorId: input.actorId,
+        complaintId: input.complaintId,
+      },
+    ),
+  }
+}
+
+/** Draft again, audited, durable purge. */
+export async function hideDemand(
+  tx: Tx,
+  orgId: string,
+  demand: { id: string; code: string },
+  input: {
+    reason: TakedownReason
+    actorId: string
+    complaintId: string | null
+  },
+): Promise<PurgedDemand> {
   const [hidden] = await tx
     .update(demands)
     .set({
       state: "draft",
       closedAt: null,
       hiddenAt: sql`now()`,
-      hiddenReason: input.reason as StandardReason,
+      hiddenReason: input.reason,
       version: sql`${demands.version} + 1`,
       updatedAt: sql`now()`,
     })
-    .where(eq(demands.id, demandId))
+    .where(eq(demands.id, demand.id))
     .returning({ version: demands.version })
+  if (!hidden) throw new Error("demand not hidden")
   await audit(tx, orgId, {
     actorId: input.actorId,
     action: "demand.hide",
     entityType: "demand",
-    entityId: demandId,
+    entityId: demand.id,
     changedColumns: ["state", "hidden_at", "version"],
     reasonCode: input.reason,
+  })
+  // CMP-18: retried, takedown_late alerts
+  await queueTakedown(tx, orgId, {
+    action: "unpublish",
+    issueId: null,
+    complaintId: input.complaintId,
+    publicFiles: [],
+    evidenceIds: [],
+    actorId: input.actorId,
   })
   // Hidden PDFs leave the CDN
   const briefs = await tx
@@ -653,18 +689,15 @@ async function demandEffect(
     .innerJoin(demandItems, eq(demandItems.id, policyBriefs.itemId))
     .where(
       and(
-        eq(demandItems.demandId, demandId),
+        eq(demandItems.demandId, demand.id),
         isNotNull(policyBriefs.publishedAt),
       ),
     )
   return {
-    ok: true,
-    purge: {
-      code: demand.code,
-      version: hidden?.version ?? demand.version,
-      briefs: briefs.map((row) => row.id),
-      issues: await citedIssues(tx, demandId),
-    },
+    code: demand.code,
+    version: hidden.version,
+    briefs: briefs.map((row) => row.id),
+    issues: await citedIssues(tx, demand.id),
   }
 }
 

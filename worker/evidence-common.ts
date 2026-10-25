@@ -179,8 +179,8 @@ export function evidenceRows(deps: EvidenceDeps) {
 
 export type EvidenceRows = ReturnType<typeof evidenceRows>
 
-// clamd StreamMaxLength is 12M
-const SCAN_MAX_BYTES = EVIDENCE_LIMITS.pdf
+// clamd StreamMaxLength is 51M
+const SCAN_MAX_BYTES = EVIDENCE_LIMITS.video
 
 export type ScanSource = {
   clamd: ClamdConfig

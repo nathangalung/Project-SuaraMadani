@@ -43,6 +43,7 @@
       "preset": "recommended",
       "suspicious": {
         "noExplicitAny": "error",
+        "noFocusedTests": "error",
         "noImportCycles": "error"
       }
     }

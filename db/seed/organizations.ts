@@ -16,7 +16,7 @@ type SeedOrg = {
 }
 
 // Dev only, no membership anywhere
-export const SEED_SUPERADMIN = "superadmin@suaramadani.test"
+export const SEED_SUPERADMIN = "superadmin@sadarbersuara.test"
 
 // KM ITB values from DESIGN.md
 export const ITB_THEME: OrgTheme = {
@@ -57,16 +57,16 @@ export const SEED_ORGS: SeedOrg[] = [
     settings: {
       credit: "CSTS — Center for Science, Technology and Society, KM ITB",
     },
-    contactEmail: "kontak.itb@suaramadani.test",
+    contactEmail: "kontak.itb@sadarbersuara.test",
     staff: [
       {
-        email: "admin2.itb@suaramadani.test",
+        email: "admin2.itb@sadarbersuara.test",
         role: "admin",
         name: "Admin Dua ITB",
         phone: "+6281100000101",
       },
       {
-        email: "admin.itb@suaramadani.test",
+        email: "admin.itb@sadarbersuara.test",
         role: "admin",
         name: "Admin ITB",
         phone: "+6281100000102",
@@ -80,16 +80,16 @@ export const SEED_ORGS: SeedOrg[] = [
     campusName: "Universitas Gadjah Mada",
     theme: {},
     settings: {},
-    contactEmail: "kontak.ugm@suaramadani.test",
+    contactEmail: "kontak.ugm@sadarbersuara.test",
     staff: [
       {
-        email: "admin2.ugm@suaramadani.test",
+        email: "admin2.ugm@sadarbersuara.test",
         role: "admin",
         name: "Admin Dua UGM",
         phone: "+6281100000201",
       },
       {
-        email: "admin.ugm@suaramadani.test",
+        email: "admin.ugm@sadarbersuara.test",
         role: "admin",
         name: "Admin UGM",
         phone: "+6281100000202",
@@ -121,6 +121,15 @@ async function seedUser(
   const id = rows[0]?.id
   if (!id) throw new Error("user not seeded")
   return id
+}
+
+/** Proven seed accounts, never production. */
+export function assertSeedTarget(nodeEnv: string | undefined): void {
+  if (nodeEnv === "production") {
+    throw new Error(
+      "Organization seed refuses NODE_ENV=production: use bun run db:first-campus (infra/README.md First Setup)",
+    )
+  }
 }
 
 /** Global tables only, no RLS. */
@@ -179,11 +188,18 @@ export async function seedOrganizations(
   }
 }
 
-if (import.meta.main) {
-  const pool = new Pool({ connectionString: process.env.DATABASE_MIGRATOR_URL })
-  await seedOrganizations(pool, process.env.APEX_HOST ?? "localhost")
-  await pool.end()
+/** Dev seed CLI. */
+export async function main(
+  env: Record<string, string | undefined> = process.env,
+): Promise<void> {
+  assertSeedTarget(env.NODE_ENV)
+  const pool = new Pool({ connectionString: env.DATABASE_MIGRATOR_URL })
+  await seedOrganizations(pool, env.APEX_HOST ?? "localhost").finally(() =>
+    pool.end(),
+  )
   console.log(
     JSON.stringify({ msg: "seeded organizations", count: SEED_ORGS.length }),
   )
 }
+
+if (import.meta.main) await main()

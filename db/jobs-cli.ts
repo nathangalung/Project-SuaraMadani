@@ -1,4 +1,5 @@
-import { PgBoss } from "pg-boss"
+import type { PgBoss } from "pg-boss"
+import { createDatabase } from "./client.server.ts"
 import { QUEUES } from "./jobs.server.ts"
 
 // DLQ triage, docs/runbook.md#dead-letters
@@ -71,25 +72,22 @@ export async function runJobsCli(
   return 2
 }
 
-if (import.meta.main) {
-  const url = process.env.DATABASE_MIGRATOR_URL
+/** CLI exit code, own client. */
+export async function main(
+  argv: string[],
+  env: Record<string, string | undefined> = process.env,
+): Promise<number> {
+  const url = env.DATABASE_MIGRATOR_URL
   if (!url) throw new Error("DATABASE_MIGRATOR_URL is not set")
-  const boss = new PgBoss({
-    connectionString: url,
-    max: 1,
-    application_name: "jobs-cli",
-    supervise: false,
-    schedule: false,
-    migrate: false,
-    createSchema: false,
-  })
-  boss.on("error", (error) => console.error(error.message))
-  await boss.start()
+  // Runs in the migrate container
+  const { pool, boss } = createDatabase(url, "migrate")
   try {
-    process.exitCode = await runJobsCli(process.argv.slice(2), boss, (line) =>
-      console.log(line),
-    )
+    await boss.start()
+    return await runJobsCli(argv, boss, (line) => console.log(line))
   } finally {
     await boss.stop({ graceful: false })
+    await pool.end()
   }
 }
+
+if (import.meta.main) process.exitCode = await main(process.argv.slice(2))

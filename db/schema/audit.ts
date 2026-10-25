@@ -25,7 +25,10 @@ export const auditLog = pgTable(
       .default(sql`'{}'::text[]`),
     valueHashes: jsonb("value_hashes").$type<ValueHashes>(),
     reasonCode: text("reason_code"),
-    requestId: text("request_id"),
+    // withTenant sets app.request_id
+    requestId: text("request_id").default(
+      sql`nullif(current_setting('app.request_id', true), '')`,
+    ),
     createdAt: createdAt(),
   },
   (t) => [

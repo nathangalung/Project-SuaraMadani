@@ -61,7 +61,7 @@ export async function runTool(
   return { exitCode, stdout, stderr }
 }
 
-const SCRATCH_PREFIX = "sm-media-"
+const SCRATCH_PREFIX = "sb-media-"
 
 /** Private temp dir, always removed. */
 export async function withScratch<T>(

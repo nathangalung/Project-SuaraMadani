@@ -480,7 +480,7 @@ export async function refreshDashboards(
   return { orgs: orgs.length, failed }
 }
 
-/** Runs as owner sm_aggregates. */
+/** Runs as owner sb_aggregates. */
 async function refreshNational(db: Db): Promise<void> {
   await db.transaction(async (tx) => {
     await tx.execute(sql.raw(REFRESH_TIMEOUT_SQL)) // sql-raw-ok: constant

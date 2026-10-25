@@ -23,7 +23,7 @@ fi
 mapfile -t services < <(app_services)
 log "stopping app and database"
 # Its session rows rewind too
-compose stop web worker worker-media worker-whatsapp postgres
+compose stop web worker worker-media worker-whatsapp glitchtip umami postgres
 # Keep the damaged cluster aside
 aside="$pgdata.before-restore.$(date -u +%Y%m%dT%H%M%SZ)"
 cp -a "$pgdata" "$aside"
@@ -32,5 +32,5 @@ log "old cluster copied to $aside"
 compose run --rm --no-deps -u postgres --entrypoint pgbackrest postgres \
   "${restore_args[@]}" restore
 compose up -d --wait --wait-timeout 600 postgres
-compose up -d --wait --wait-timeout 180 "${services[@]}"
+compose up -d --wait --wait-timeout 300 "${services[@]}" glitchtip umami
 log "restore to $target done, run row checks, check /admin/whatsapp"

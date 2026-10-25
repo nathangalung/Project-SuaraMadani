@@ -1,6 +1,10 @@
 import { createHash, timingSafeEqual } from "node:crypto"
 import type { BetterAuthPlugin, GenericEndpointContext } from "better-auth"
-import { APIError, createAuthEndpoint } from "better-auth/api"
+import {
+  APIError,
+  createAuthEndpoint,
+  getSessionFromCtx,
+} from "better-auth/api"
 import { setSessionCookie } from "better-auth/cookies"
 import { generateRandomString } from "better-auth/crypto"
 import * as z from "zod"
@@ -48,7 +52,7 @@ type User = {
 // Reserve, then send the code
 type EmailCodeSender = (
   to: string,
-  // Client IP for Daftar caps
+  // Client IP for per-client caps
   options: { unproven: boolean; client: string | null },
 ) => Promise<(code: string) => void>
 
@@ -270,6 +274,11 @@ async function consumeCode(ctx: Ctx, key: string, value: string) {
 }
 
 async function signedIn(ctx: Ctx, user: User) {
+  // ASVS V7.2.4: end current token
+  const current = await getSessionFromCtx(ctx, { disableRefresh: true })
+  if (current) {
+    await ctx.context.internalAdapter.deleteSession(current.session.token)
+  }
   const session = await ctx.context.internalAdapter.createSession(user.id)
   if (!session) throw new APIError("INTERNAL_SERVER_ERROR")
   // Two-factor hook reads newSession
@@ -370,7 +379,7 @@ export function accountOtp(deps: AccountOtpDeps): BetterAuthPlugin {
             value,
             target.unproven
               ? { purpose: "sign-up", client }
-              : { purpose: "sign-in" },
+              : { purpose: "sign-in", client },
           )
           if (sent.ok) {
             await store()

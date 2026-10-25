@@ -15,6 +15,9 @@
 	log {
 		output file /var/log/caddy/access.log {
 			roll_size 50MiB
+			# Daily roll: idle files age
+			roll_interval 24h
+			roll_keep 31
 			roll_keep_for 720h
 		}
 		format filter {
@@ -22,6 +25,16 @@
 			request>headers delete
 			resp_headers delete
 		}
+	}
+
+	# Joins the app req_id
+	log_append cf_ray {http.request.header.Cf-Ray}
+
+	# Caddy-made responses too
+	header {
+		?X-Content-Type-Options nosniff
+		?Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		?Strict-Transport-Security "{$HSTS_POLICY:max-age=300}"
 	}
 
 	@upload path /api/upload/*
@@ -52,8 +65,12 @@
 		root * /srv
 		# Uplink and lab see compressed
 		encode zstd gzip
-		header Cache-Control "public, max-age=31536000, immutable"
-		header X-Content-Type-Options nosniff
+		header {
+			Cache-Control "public, max-age=31536000, immutable"
+			X-Content-Type-Options nosniff
+			Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+			Strict-Transport-Security "{$HSTS_POLICY:max-age=300}"
+		}
 		file_server
 	}
 
@@ -67,12 +84,53 @@
 		header {
 			Content-Type image/webp
 			X-Content-Type-Options nosniff
-			Content-Security-Policy "sandbox; default-src 'none'"
+			Content-Security-Policy "sandbox; default-src 'none'; frame-ancestors 'none'"
 			Cache-Control "public, max-age=31536000, immutable"
+			Strict-Transport-Security "{$HSTS_POLICY:max-age=300}"
 		}
 		file_server
 	}
 	handle /media/* {
+		respond 404
+	}
+
+	# Umami tracker, same origin
+	@stats-script {
+		method GET HEAD
+		path /stats/script.js
+	}
+	handle @stats-script {
+		rewrite * /script.js
+		reverse_proxy umami:3000 {
+			header_up -Cookie
+			header_down X-Content-Type-Options nosniff
+			header_down Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+			# REL-13: wedged Umami, bounded wait
+			transport http {
+				dial_timeout 2s
+				response_header_timeout 5s
+			}
+		}
+	}
+	@stats-send {
+		method POST
+		path /stats/api/send
+	}
+	handle @stats-send {
+		rewrite * /api/send
+		reverse_proxy umami:3000 {
+			header_up -Cookie
+			header_down X-Content-Type-Options nosniff
+			header_down Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+			header_up X-Client-IP {client_ip}
+			transport http {
+				dial_timeout 2s
+				response_header_timeout 5s
+			}
+		}
+	}
+	# Umami UI stays private
+	handle /stats/* {
 		respond 404
 	}
 
@@ -99,6 +157,9 @@
 			Retry-After 30
 			Cache-Control no-store
 			Content-Type "text/html; charset=utf-8"
+			X-Content-Type-Options nosniff
+			Content-Security-Policy "default-src 'none'; style-src 'sha256-M4sOaJmCKrTuIZKhYisPhGxlSz4e5UO0Fgn42oPiw+U='; frame-ancestors 'none'"
+			Strict-Transport-Security "{$HSTS_POLICY:max-age=300}"
 		}
 		file_server {
 			status 503

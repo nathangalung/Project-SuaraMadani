@@ -12,8 +12,8 @@ import {
 } from "./provider.ts"
 import { heartbeat, takeRequest, updateSender } from "./sender-row.ts"
 
-const POLL_MS = 2_000
-const HEARTBEAT_MS = 30_000
+type Timing = { pollMs: number; heartbeatMs: number }
+const TIMING: Timing = { pollMs: 2_000, heartbeatMs: 30_000 }
 
 type Env = Partial<Record<string, string>>
 
@@ -81,6 +81,7 @@ export async function startWhatsApp(
   db: Db,
   config: WhatsAppEnv,
   env: Env = process.env,
+  timing: Timing = TIMING,
 ): Promise<WhatsAppRuntime> {
   const timers: ReturnType<typeof setInterval>[] = []
   const fixed = staticProvider(config, env)
@@ -119,12 +120,12 @@ export async function startWhatsApp(
       } finally {
         polling = false
       }
-    }, POLL_MS),
+    }, timing.pollMs),
     setInterval(() => {
       heartbeat(db).catch((error: unknown) =>
         writeLog({ msg: "whatsapp heartbeat failed", ...errorRecord(error) }),
       )
-    }, HEARTBEAT_MS),
+    }, timing.heartbeatMs),
   )
   const provider = fixed ?? linked?.provider
   if (!provider) throw new Error("no WhatsApp provider")

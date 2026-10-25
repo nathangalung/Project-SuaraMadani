@@ -5,7 +5,7 @@ import {
 } from "../shared/report-fields.ts"
 import type { reports } from "./schema/reports.ts"
 
-// Test-only helpers for suara_madani_test
+// Test-only helpers for sadar_bersuara_test
 
 export function testUrl(name: string): string {
   const url = process.env[name]
@@ -99,4 +99,10 @@ export function reportValues(
     consentTextVersion: CONSENT_TEXT_VERSION,
     ...overrides,
   }
+}
+
+/** Polls, throws after 20 s. */
+export async function until(done: () => boolean): Promise<void> {
+  for (let i = 0; i < 800 && !done(); i++) await Bun.sleep(25)
+  if (!done()) throw new Error("until: condition never held")
 }

@@ -1,9 +1,11 @@
-import { and, desc, eq, sql } from "drizzle-orm"
+import { and, desc, eq, gte, sql } from "drizzle-orm"
 import type { JobPayloads } from "../db/jobs.server.ts"
 import { sendJob } from "../db/jobs.server.ts"
-import { members, users } from "../db/schema/auth.ts"
+import { listOverdueReferrals } from "../db/referrals.server.ts"
+import { type MemberRole, members, users } from "../db/schema/auth.ts"
+import { fixSurveys } from "../db/schema/claims.ts"
 import { demandFollows, demandItems, demands } from "../db/schema/demands.ts"
-import { issueReports, issues } from "../db/schema/issues.ts"
+import { issueReports, issues, resolutionClaims } from "../db/schema/issues.ts"
 import {
   contentComplaints,
   moderationDecisions,
@@ -15,6 +17,7 @@ import {
   notifications,
 } from "../db/schema/notifications.ts"
 import { organizations } from "../db/schema/organizations.ts"
+import { agencyReplies } from "../db/schema/replies.ts"
 import { reports } from "../db/schema/reports.ts"
 import { type Tx, withTenant } from "../db/tenant.server.ts"
 import {
@@ -36,9 +39,12 @@ import {
   type MailSite,
   type RenderedMail,
   renderComplaintMail,
+  renderDeadlineMail,
   renderDemandMail,
   renderFollowerMail,
+  renderReplyMail,
   renderReporterMail,
+  renderSurveyMail,
 } from "../server/emails/render.ts"
 import { writeLog } from "../server/log.ts"
 import { originFor } from "../server/origin.server.ts"
@@ -50,17 +56,22 @@ import {
   signLink,
 } from "../server/signed-link.ts"
 import { appealDeadline } from "../shared/complaints.ts"
-import { isDecisionReason } from "../shared/moderation.ts"
+import { jakartaIsoDate } from "../shared/format.ts"
+import { isDecisionReason, referralWait } from "../shared/moderation.ts"
 import {
   type ComplaintTemplate,
+  DEADLINE_TEMPLATE,
   type DemandTemplate,
   EMAIL_QUOTA,
   isComplaintTemplate,
   isDemandTemplate,
+  isReplyTemplate,
   isUndeliverable,
   jakartaDayStart,
   type NotificationTemplate,
   nextSendMorning,
+  type ReplyTemplate,
+  SURVEY_TEMPLATE,
 } from "../shared/notifications.ts"
 import { demandProgress } from "../shared/status.ts"
 
@@ -88,6 +99,17 @@ const STALE_SENDING_MS = 70_000
 const MAX_RATE_DEFERRALS = 24
 const DEFAULT_RETRY_AFTER_S = 60
 const FINAL: NotificationStatus[] = ["sent", "failed", "skipped"]
+const DAY_MS = 86_400_000
+
+// Mail not sent, row skipped
+type Skip =
+  | "unfollowed"
+  | "unpublished"
+  | "not_admin"
+  | "superseded"
+  | "resolved"
+  | "claim_closed"
+  | "answered"
 
 /** Missing keys fail at boot. */
 function defaultEmailSendDeps(): EmailSendDeps {
@@ -126,8 +148,12 @@ async function compose(
     issueId: string | null
     complaintId: string | null
     demandId: string | null
+    replyId: string | null
+    claimId: string | null
+    role: MemberRole | null
+    createdAt: Date
   },
-): Promise<RenderedMail | "unfollowed" | "unpublished"> {
+): Promise<RenderedMail | Skip> {
   const [org] = await tx
     .select({
       name: organizations.name,
@@ -155,6 +181,28 @@ async function compose(
     })
 
   const { template } = input
+  if (template === DEADLINE_TEMPLATE) {
+    return composeDeadline(tx, {
+      site,
+      operator: org.name,
+      userId: input.userId,
+      role: input.role,
+      createdAt: input.createdAt,
+      now,
+    })
+  }
+  if (template === SURVEY_TEMPLATE && input.issueId && input.claimId) {
+    return composeSurvey(tx, {
+      site,
+      issueId: input.issueId,
+      claimId: input.claimId,
+      userId: input.userId,
+      sign: (claimId) => sign("survei", claimId),
+    })
+  }
+  if (input.replyId && isReplyTemplate(template)) {
+    return composeReply(tx, { site, template, replyId: input.replyId })
+  }
   if (input.complaintId && isComplaintTemplate(template)) {
     return composeComplaint(tx, {
       site,
@@ -288,6 +336,49 @@ async function compose(
   })
 }
 
+/** Live list at send time. */
+async function composeDeadline(
+  tx: Tx,
+  input: {
+    site: MailSite
+    operator: string
+    userId: string
+    role: MemberRole | null
+    createdAt: Date
+    now: Date
+  },
+): Promise<RenderedMail | Skip> {
+  // Staff only, role may change
+  if (input.role !== "admin") return "not_admin"
+  // Next digest covers this
+  const nextDay = new Date(jakartaDayStart(input.createdAt).getTime() + DAY_MS)
+  const [newer] = await tx
+    .select({ id: notifications.id })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.userId, input.userId),
+        eq(notifications.template, DEADLINE_TEMPLATE),
+        gte(notifications.createdAt, nextDay),
+      ),
+    )
+    .limit(1)
+  if (newer) return "superseded"
+  const rows = await listOverdueReferrals(tx, jakartaIsoDate(input.now))
+  if (rows.length === 0) return "resolved"
+  return renderDeadlineMail({
+    site: input.site,
+    operator: input.operator,
+    items: rows.map((row) => ({
+      code: row.code,
+      title: row.title,
+      agency: row.agency,
+      deadlineOn: row.deadlineOn,
+      days: referralWait(row, "awaiting_response", input.now)?.days ?? 0,
+    })),
+  })
+}
+
 async function composeDemand(
   tx: Tx,
   input: {
@@ -336,6 +427,103 @@ async function composeDemand(
       progress: demandProgress(items),
     },
     unsubscribeUrl: input.unsubscribe(demand.code),
+  })
+}
+
+/** Its own round, open, unanswered. */
+async function composeSurvey(
+  tx: Tx,
+  input: {
+    site: MailSite
+    issueId: string
+    claimId: string
+    userId: string
+    sign: (claimId: string) => string
+  },
+): Promise<RenderedMail | Skip> {
+  const [row] = await tx
+    .select({
+      code: issues.publicCode,
+      title: issues.title,
+      publishedAt: issues.publishedAt,
+      claimId: resolutionClaims.id,
+      claimedAt: resolutionClaims.claimedAt,
+      closedAt: resolutionClaims.closedAt,
+      answer: fixSurveys.answer,
+    })
+    .from(issues)
+    .leftJoin(
+      resolutionClaims,
+      and(
+        eq(resolutionClaims.orgId, issues.orgId),
+        eq(resolutionClaims.issueId, issues.id),
+        eq(resolutionClaims.id, input.claimId),
+      ),
+    )
+    .leftJoin(
+      fixSurveys,
+      and(
+        eq(fixSurveys.orgId, resolutionClaims.orgId),
+        eq(fixSurveys.claimId, resolutionClaims.id),
+        eq(fixSurveys.userId, input.userId),
+      ),
+    )
+    .where(eq(issues.id, input.issueId))
+  if (!row) throw new Error("surveyed issue not found")
+  if (!row.publishedAt) return "unpublished"
+  if (!row.claimId || !row.claimedAt || row.closedAt) return "claim_closed"
+  if (row.answer) return "answered"
+  const url = `${input.site.origin}/isu/${row.code}`
+  return renderSurveyMail({
+    site: input.site,
+    issue: { code: row.code, title: row.title, url },
+    surveyUrl: `${url}/survei?t=${input.sign(row.claimId)}`,
+    claimedAt: row.claimedAt,
+  })
+}
+
+async function composeReply(
+  tx: Tx,
+  input: { site: MailSite; template: ReplyTemplate; replyId: string },
+): Promise<RenderedMail> {
+  const [row] = await tx
+    .select({
+      agency: agencyReplies.agency,
+      status: agencyReplies.status,
+      reason: agencyReplies.rejectReason,
+      code: issues.publicCode,
+      title: issues.title,
+    })
+    .from(agencyReplies)
+    .innerJoin(
+      issues,
+      and(
+        eq(issues.orgId, agencyReplies.orgId),
+        eq(issues.id, agencyReplies.issueId),
+      ),
+    )
+    .where(eq(agencyReplies.id, input.replyId))
+  if (!row) throw new Error("notified reply not found")
+  const decision =
+    input.template === "reply_received"
+      ? null
+      : row.status === "accepted"
+        ? ({ status: "accepted" } as const)
+        : row.status === "rejected" && row.reason
+          ? ({ status: "rejected", reason: row.reason } as const)
+          : null
+  if (input.template === "reply_decided" && !decision) {
+    throw new Error("reply decision missing")
+  }
+  return renderReplyMail({
+    site: input.site,
+    issue: {
+      code: row.code,
+      title: row.title,
+      url: `${input.site.origin}/isu/${row.code}`,
+    },
+    agency: row.agency,
+    decision,
   })
 }
 
@@ -413,12 +601,16 @@ async function claim(tx: Tx, deps: EmailSendDeps, data: Data): Promise<Claim> {
       issueId: notifications.issueId,
       complaintId: notifications.complaintId,
       demandId: notifications.demandId,
+      replyId: notifications.replyId,
+      claimId: notifications.claimId,
+      createdAt: notifications.createdAt,
       logId: emailLog.id,
       logStatus: emailLog.status,
       logAt: emailLog.createdAt,
       email: users.email,
       emailVerified: users.emailVerified,
       member: members.id,
+      role: members.role,
     })
     .from(notifications)
     .leftJoin(emailLog, eq(emailLog.id, notifications.emailLogId))
@@ -458,10 +650,12 @@ async function claim(tx: Tx, deps: EmailSendDeps, data: Data): Promise<Claim> {
     issueId: row.issueId,
     complaintId: row.complaintId,
     demandId: row.demandId,
+    replyId: row.replyId,
+    claimId: row.claimId,
+    role: row.role,
+    createdAt: row.createdAt,
   })
-  if (mail === "unfollowed" || mail === "unpublished") {
-    return skip(tx, row.id, mail)
-  }
+  if (typeof mail === "string") return skip(tx, row.id, mail)
 
   // Earlier timeout today: reuse
   if (
@@ -574,7 +768,7 @@ export function createEmailSendHandler(
       }
       await finish({ status: "pending", log: "failed" })
       const deferrals = data.deferrals ?? 0
-      if (error.status !== 429 || deferrals >= MAX_RATE_DEFERRALS) throw error
+      if (!error.rateLimited || deferrals >= MAX_RATE_DEFERRALS) throw error
       const wait = (error.retryAfterSeconds ?? DEFAULT_RETRY_AFTER_S) * 1000
       await withTenant(data.orgId, (tx) =>
         sendJob(

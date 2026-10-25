@@ -1,0 +1,10 @@
+[Unit]
+Description=Sadar Bersuara analytics retention
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+ExecStart=/opt/sadar-bersuara/infra/umami-prune.sh
+TimeoutStartSec=1h

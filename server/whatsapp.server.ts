@@ -19,9 +19,9 @@ const WHATSAPP_LOCK = 0x5e4d_a12
 
 type WhatsAppRefusal = "unavailable" | "spacing" | "daily" | "busy"
 
-// Unproven number carries the client
+// Client IP for per-client caps
 type SendPurpose =
-  | { purpose: "sign-in" }
+  | { purpose: "sign-in"; client?: string | null }
   | { purpose: "sign-up"; client: string | null }
 
 export type WhatsAppGateway = {
@@ -42,6 +42,8 @@ type Scope = {
   phoneHash?: string
   purpose?: OtpPurpose
   clientHash?: string
+  // Exact client, null matches none
+  client?: string | null
 }
 
 // Socket down: WhatsApp never asked
@@ -69,6 +71,11 @@ async function sentSince(
         scope.clientHash
           ? eq(whatsappLog.clientHash, scope.clientHash)
           : undefined,
+        scope.client === undefined
+          ? undefined
+          : scope.client === null
+            ? isNull(whatsappLog.clientHash)
+            : eq(whatsappLog.clientHash, scope.client),
         requester ? undefined : ASKED,
         gte(whatsappLog.createdAt, since),
       ),
@@ -100,10 +107,20 @@ async function signUpRefusal(
 async function refusal(
   tx: Tx,
   phoneHash: string,
+  // Proven: own bucket per client
+  signIn: { clientHash: string | null } | null,
   now: Date,
 ): Promise<WhatsAppRefusal | null> {
   const day = new Date(now.getTime() - 86_400_000)
-  const own = await sentSince(tx, day, { phoneHash })
+  if (signIn) {
+    // ASVS V6.1.1: no lockout
+    const all = await sentSince(tx, day, { phoneHash })
+    if (all.n >= WHATSAPP_LIMITS.perNumberDayAllClients) return "daily"
+  }
+  const own = await sentSince(tx, day, {
+    phoneHash,
+    ...(signIn ? { client: signIn.clientHash } : {}),
+  })
   if (
     own.last &&
     now.getTime() - own.last.getTime() < WHATSAPP_LIMITS.spacingMs
@@ -143,15 +160,19 @@ export function createWhatsAppGateway(deps: {
       const at = now()
       const phoneHash = addressHash(to, deps.hashKey())
       const signUp = purpose.purpose === "sign-up"
-      const client = signUp ? clientKey(purpose.client) : "unknown"
+      const client = clientKey(purpose.client ?? null)
       const clientHash =
         client === "unknown" ? null : addressHash(client, deps.hashKey())
       return deps.db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(${WHATSAPP_LOCK})`)
         const refused = !deps.caps
           ? null
-          : ((await refusal(tx, phoneHash, at)) ??
-            (signUp ? await signUpRefusal(tx, clientHash, at) : null))
+          : ((await refusal(
+              tx,
+              phoneHash,
+              signUp ? null : { clientHash },
+              at,
+            )) ?? (signUp ? await signUpRefusal(tx, clientHash, at) : null))
         if (refused) return { ok: false, reason: refused } as const
         const [row] = await tx
           .insert(whatsappLog)

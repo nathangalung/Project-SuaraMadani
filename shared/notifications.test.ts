@@ -5,6 +5,7 @@ import {
   jakartaDayStart,
   NOTIFICATION_TEMPLATES,
   nextSendMorning,
+  quietUntil,
   templateForReport,
 } from "./notifications.ts"
 import {
@@ -55,6 +56,22 @@ describe("email quota", () => {
   })
 })
 
+describe("quiet hours", () => {
+  test("mail before 07:00 WIB waits for it", () => {
+    const morning = new Date("2026-10-14T00:00:00Z")
+    // 05:00 WIB on 14 October
+    expect(quietUntil(new Date("2026-10-13T22:00:00Z"))).toEqual(morning)
+    // 00:10 WIB, same morning
+    expect(quietUntil(new Date("2026-10-13T17:10:00Z"))).toEqual(morning)
+  })
+
+  test("mail from 07:00 WIB goes now", () => {
+    expect(quietUntil(new Date("2026-10-14T00:00:00Z"))).toBeUndefined()
+    // 23:00 WIB
+    expect(quietUntil(new Date("2026-10-14T16:00:00Z"))).toBeUndefined()
+  })
+})
+
 describe("templates", () => {
   test("every state machine follow-up has a template", () => {
     const names = new Set<string>(NOTIFICATION_TEMPLATES)
@@ -81,6 +98,8 @@ describe("templates", () => {
   test("the receipt and publication are templates too", () => {
     expect(NOTIFICATION_TEMPLATES).toContain("report_submitted")
     expect(NOTIFICATION_TEMPLATES).toContain("issue_published")
+    // Admin digest, no subject row
+    expect(NOTIFICATION_TEMPLATES).toContain("referral_deadline")
   })
 
   test("report statuses map to their template", () => {

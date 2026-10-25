@@ -20,7 +20,7 @@ import {
 // Spike P4 on PostgreSQL 18
 const su = superuserPool()
 const suDb = drizzle({ client: su, schema })
-// Real sm_app login
+// Real sb_app login
 const app = createDatabase(testUrl("TEST_DATABASE_URL"), "worker")
 
 type Cell = {
@@ -129,16 +129,16 @@ describe("national_aggregates roles", () => {
        WHERE c.oid = 'public.national_aggregates'::regclass AND c.relkind = 'm'`,
     )
     expect(rows).toEqual([
-      { owner: "sm_aggregates", login: false, bypass: true },
+      { owner: "sb_aggregates", login: false, bypass: true },
     ])
   })
 
-  test("sm_app holds only SELECT and MAINTAIN on it", async () => {
+  test("sb_app holds only SELECT and MAINTAIN on it", async () => {
     const { rows } = await su.query<{ privilege: string }>(
       `SELECT p.privilege_type AS privilege
        FROM pg_class c, aclexplode(c.relacl) p
        WHERE c.oid = 'public.national_aggregates'::regclass
-         AND p.grantee = 'sm_app'::regrole
+         AND p.grantee = 'sb_app'::regrole
        ORDER BY 1`,
     )
     expect(rows.map((r) => r.privilege)).toEqual(["MAINTAIN", "SELECT"])
@@ -146,20 +146,20 @@ describe("national_aggregates roles", () => {
 
   test("the view role cannot create objects", async () => {
     const { rows } = await su.query<{ create: boolean; member: boolean }>(
-      `SELECT has_schema_privilege('sm_aggregates', 'public', 'CREATE') AS create,
-        pg_has_role('sm_app', 'sm_aggregates', 'MEMBER') AS member`,
+      `SELECT has_schema_privilege('sb_aggregates', 'public', 'CREATE') AS create,
+        pg_has_role('sb_app', 'sb_aggregates', 'MEMBER') AS member`,
     )
     expect(rows[0]).toEqual({ create: false, member: false })
   })
 
-  test("sm_app cannot become the view role", async () => {
+  test("sb_app cannot become the view role", async () => {
     const error = await app.db
-      .execute(sql`SET ROLE sm_aggregates`)
+      .execute(sql`SET ROLE sb_aggregates`)
       .catch((e: unknown) => e)
     expect(stateOf(error)).toBe("42501")
   })
 
-  test("sm_app cannot change the view", async () => {
+  test("sb_app cannot change the view", async () => {
     const error = await app.db
       .execute(
         sql`ALTER MATERIALIZED VIEW public.national_aggregates RENAME TO x`,
@@ -191,7 +191,7 @@ describe("national_aggregates refresh", () => {
     const client = await su.connect()
     try {
       await client.query("BEGIN")
-      await client.query("SET LOCAL ROLE sm_migrator")
+      await client.query("SET LOCAL ROLE sb_migrator")
       await client.query(
         "CREATE MATERIALIZED VIEW public.p4_probe AS SELECT count(*) AS n FROM public.issues WITH NO DATA",
       )
@@ -205,7 +205,7 @@ describe("national_aggregates refresh", () => {
     }
   })
 
-  test("sm_app refreshes and sees every campus on FORCE tables", async () => {
+  test("sb_app refreshes and sees every campus on FORCE tables", async () => {
     const rows = await cells()
     expect(cell(rows, "campus", orgA)?.issues).toBe(8)
     expect(cell(rows, "campus", orgC)?.issues).toBe(0)
@@ -241,7 +241,7 @@ describe("national_aggregates refresh", () => {
     expect(cell(rows, "category", "program")?.issues).toBe(6)
   })
 
-  test("tenant isolation still holds for sm_app", async () => {
+  test("tenant isolation still holds for sb_app", async () => {
     const error = await app.db
       .select()
       .from(issues)

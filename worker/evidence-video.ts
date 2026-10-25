@@ -17,6 +17,8 @@ import {
   MAX_DECODES,
   manualReview,
   PermanentError,
+  type ScanSource,
+  scanOriginal,
 } from "./evidence-common.ts"
 import { ToolTimeout, withScratch } from "./tools.ts"
 import { probeVideo, transcodeVideo } from "./video.ts"
@@ -46,16 +48,17 @@ export function createVideoHandler(
     const row = await rows.read(orgId, evidenceId)
     if (row?.status !== "received" || row.kind !== "video") return "skipped"
     const source = originalPath(deps.filesDir, orgId, evidenceId)
-    // Small files only, see scanOriginal
+    const input = await readFile(source)
+    const scan: ScanSource = { clamd, bytes: async () => input, signal }
+    // ASVS V5.4.3: before ffprobe
+    const verdict = await scanOriginal(rows, orgId, evidenceId, scan)
+    if (verdict === "malware") return "malware"
+    scan.done = verdict === "clean"
     const review = (reason: EvidenceFailure) =>
-      manualReview(rows, orgId, evidenceId, reason, {
-        clamd,
-        bytes: () => readFile(source),
-        signal,
-      })
+      manualReview(rows, orgId, evidenceId, reason, scan)
     let demuxer: string | undefined
     try {
-      const mime = await checkOriginal(await readFile(source), row)
+      const mime = await checkOriginal(input, row)
       demuxer = videoDemuxer(mime)
     } catch (error) {
       if (error instanceof PermanentError) return review(error.reason)

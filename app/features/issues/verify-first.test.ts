@@ -33,7 +33,7 @@ const suDb = drizzle({ client: su, schema })
 const appPool = new Pool({
   connectionString: testUrl("TEST_DATABASE_SUPERUSER_URL"),
   max: 2,
-  options: "-c role=sm_app",
+  options: "-c role=sb_app",
 })
 const appDb = drizzle({ client: appPool, schema })
 const NOW = new Date("2026-10-14T03:00:00Z")

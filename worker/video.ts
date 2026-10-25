@@ -62,6 +62,58 @@ export async function probeVideo(
   return { durationSeconds, width: stream.width, height: stream.height }
 }
 
+/** ffmpeg encode argument list. */
+export function encodeArgs(
+  demuxer: string,
+  path: string,
+  output: string,
+): string[] {
+  return [
+    "ffmpeg",
+    "-nostdin",
+    "-v",
+    "error",
+    "-y",
+    ...INPUT(demuxer, path),
+    "-map",
+    "0:v:0",
+    "-map",
+    "0:a:0?",
+    "-map_metadata",
+    "-1",
+    "-map_chapters",
+    "-1",
+    "-sn",
+    "-dn",
+    "-vf",
+    SCALE,
+    "-fpsmax",
+    "30",
+    "-c:v",
+    "libx264",
+    // PERF-19: not host CPUs
+    "-threads",
+    "2",
+    "-preset",
+    "faster",
+    "-crf",
+    "26",
+    "-pix_fmt",
+    "yuv420p",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "96k",
+    "-ac",
+    "2",
+    "-t",
+    "180",
+    "-movflags",
+    "+faststart",
+    output,
+  ]
+}
+
 /** 720p H.264 plus poster. */
 export async function transcodeVideo(
   path: string,
@@ -71,50 +123,7 @@ export async function transcodeVideo(
 ): Promise<{ video: string; poster: string }> {
   const video = join(outDir, "video.mp4")
   const poster = join(outDir, "poster.png")
-  const encode = await runTool(
-    [
-      "ffmpeg",
-      "-nostdin",
-      "-v",
-      "error",
-      "-y",
-      ...INPUT(demuxer, path),
-      "-map",
-      "0:v:0",
-      "-map",
-      "0:a:0?",
-      "-map_metadata",
-      "-1",
-      "-map_chapters",
-      "-1",
-      "-sn",
-      "-dn",
-      "-vf",
-      SCALE,
-      "-fpsmax",
-      "30",
-      "-c:v",
-      "libx264",
-      "-preset",
-      "faster",
-      "-crf",
-      "26",
-      "-pix_fmt",
-      "yuv420p",
-      "-c:a",
-      "aac",
-      "-b:a",
-      "96k",
-      "-ac",
-      "2",
-      "-t",
-      "180",
-      "-movflags",
-      "+faststart",
-      video,
-    ],
-    options,
-  )
+  const encode = await runTool(encodeArgs(demuxer, path, video), options)
   if (encode.exitCode !== 0) {
     throw new Error(`ffmpeg failed: ${encode.stderr.slice(0, 200)}`)
   }

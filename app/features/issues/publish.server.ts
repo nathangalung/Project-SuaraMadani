@@ -87,6 +87,11 @@ export function issuePurgeUrls(host: string, issue: PurgedIssue): string[] {
     `${origin}/data`,
     `${origin}/data.data`,
     ...images,
+    // Public data API copies
+    `${origin}/api/v1/isu/${code}`,
+    `${origin}/api/v1/isu`,
+    `${origin}/api/v1/data`,
+    `${origin}/api/v1/data/peringkat-isu.csv`,
   ]
 }
 

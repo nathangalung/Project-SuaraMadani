@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test"
-import { createPurgeClient } from "./purge.server.ts"
+import { describe, expect, spyOn, test } from "bun:test"
+import { createPurgeClient, purgeQuietly } from "./purge.server.ts"
 
 type Call = { url: string; init: RequestInit }
 
@@ -37,6 +37,8 @@ describe("createPurgeClient", () => {
     expect(new Headers(calls[0]?.init.headers).get("authorization")).toBe(
       "Bearer t",
     )
+    // API10: token never follows redirects
+    expect(calls[0]?.init.redirect).toBe("error")
     expect(body(calls[0]).files).toHaveLength(100)
     expect(body(calls[2]).files).toHaveLength(5)
   })
@@ -57,5 +59,40 @@ describe("createPurgeClient", () => {
         fetch: bad.fetch,
       }).purgeUrls(["https://itb.x.id/"]),
     ).rejects.toThrow("purge failed: 400")
+  })
+})
+
+describe("purgeQuietly", () => {
+  test("a failure reaches the error stream", async () => {
+    // ASVS V16.3.4: runbook error query
+    const lines: string[] = []
+    const spy = spyOn(console, "error").mockImplementation((line) => {
+      lines.push(String(line))
+    })
+    try {
+      await purgeQuietly(
+        ["https://itb.localhost/isu"],
+        { host: "x" },
+        {
+          purge: {
+            purgeUrls: async () => {
+              throw new Error("purge failed: 429")
+            },
+            purgeHosts: async () => ({ skipped: false }),
+          },
+        },
+      )
+    } finally {
+      spy.mockRestore()
+    }
+    expect(lines.map((line) => JSON.parse(line))).toEqual([
+      expect.objectContaining({
+        level: "error",
+        msg: "purge failed",
+        host: "x",
+        error: "Error",
+        message: "purge failed: 429",
+      }),
+    ])
   })
 })

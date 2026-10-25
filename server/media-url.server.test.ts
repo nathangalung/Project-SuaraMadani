@@ -25,17 +25,17 @@ describe("mediaView", () => {
 
   test("R2 video needs the media origin", () => {
     const r2 = { ...VIDEO, store: "r2" as const }
-    expect(mediaView(r2, "itb.suaramadani.id", undefined)).toBeNull()
+    expect(mediaView(r2, "itb.sadarbersuara.id", undefined)).toBeNull()
     expect(
-      mediaView(r2, "itb.suaramadani.id", "https://media.suaramadani.id"),
+      mediaView(r2, "itb.sadarbersuara.id", "https://media.sadarbersuara.id"),
     ).toEqual({
       type: "video",
-      src: `https://media.suaramadani.id/itb.suaramadani.id/${VIDEO.file}`,
+      src: `https://media.sadarbersuara.id/itb.sadarbersuara.id/${VIDEO.file}`,
       poster: `/media/${VIDEO.poster}`,
       width: 1280,
       height: 720,
     })
-    expect(mediaView(r2, "itb.suaramadani.id", "javascript:x")).toBeNull()
+    expect(mediaView(r2, "itb.sadarbersuara.id", "javascript:x")).toBeNull()
   })
 
   test("dev video stays local", () => {

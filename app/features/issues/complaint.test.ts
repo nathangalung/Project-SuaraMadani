@@ -26,6 +26,7 @@ import { runMerge } from "../moderation/merge.server.ts"
 import {
   appealComplaint,
   type ComplaintDeps,
+  complaintRequest,
   getOwnComplaint,
   submitComplaint,
 } from "./complaint.server.ts"
@@ -286,6 +287,79 @@ describe("submitComplaint", () => {
     captcha = { ok: false, reason: "rejected" }
     const result = await submit(issue.code)
     expect(result).toEqual({ status: 403, body: { error: "captcha_failed" } })
+  })
+})
+
+describe("double submit and route wiring", () => {
+  const count = async () =>
+    (
+      await su.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM content_complaints",
+      )
+    ).rows[0]?.n
+
+  test("a submission id that is no UUID is a bare 400", async () => {
+    const issue = await seedIssue("a")
+    expect(
+      await submit(issue.code, { fields: form({ submissionId: "satu" }) }),
+    ).toEqual({ status: 400, body: { errors: [] } })
+    expect(await count()).toBe(0)
+  })
+
+  test("Given the winner commits while the loser's captcha is checked, when the loser gets a spent token, then it returns the winner's code", async () => {
+    const issue = await seedIssue("a")
+    const fields = form()
+    let winnerCode = ""
+    const loser = await submitComplaint({
+      tenant: tenant("a"),
+      session: session(complainant),
+      subject: { kind: "issue", code: issue.code },
+      form: fields,
+      remoteIp: null,
+      deps: {
+        now: () => NOW,
+        verifyCaptcha: async () => {
+          const won = await submit(issue.code, { fields })
+          if ("code" in won.body) winnerCode = won.body.code
+          return { ok: false, reason: "duplicate" }
+        },
+      },
+    })
+    expect(winnerCode).not.toBe("")
+    expect(loser).toEqual({ status: 200, body: { code: winnerCode } })
+    expect(await count()).toBe(1)
+  })
+
+  test("a spent token with nothing stored is refused", async () => {
+    const issue = await seedIssue("a")
+    captcha = { ok: false, reason: "duplicate" }
+    expect(await submit(issue.code)).toEqual({
+      status: 403,
+      body: { error: "captcha_failed" },
+    })
+    expect(await count()).toBe(0)
+  })
+
+  test("the route form is size-capped and needs a captcha token", async () => {
+    const issue = await seedIssue("a")
+    const request = (body: BodyInit, headers: Record<string, string> = {}) =>
+      complaintRequest({
+        request: new Request(
+          `http://cpa.localhost/isu/${issue.code}/laporkan`,
+          { method: "POST", body, headers },
+        ),
+        tenant: tenant("a"),
+        session: session(complainant),
+        subject: { kind: "issue", code: issue.code },
+      })
+    expect(await request("x", { "content-length": String(17 * 1024) })).toEqual(
+      { status: 413 },
+    )
+    expect(await request(form({ turnstileToken: "" }))).toEqual({
+      status: 403,
+      body: { error: "captcha_failed" },
+    })
+    expect(await count()).toBe(0)
   })
 })
 

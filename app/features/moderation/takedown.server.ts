@@ -102,7 +102,7 @@ export type TakedownView = {
 /** Admin sees purge progress. */
 export function listTakedowns(
   tx: Tx,
-  where: { issueId?: string; complaintId?: string },
+  complaintId: string,
 ): Promise<TakedownView[]> {
   return tx
     .select({
@@ -113,14 +113,7 @@ export function listTakedowns(
       doneAt: takedowns.doneAt,
     })
     .from(takedowns)
-    .where(
-      and(
-        where.issueId ? eq(takedowns.issueId, where.issueId) : undefined,
-        where.complaintId
-          ? eq(takedowns.complaintId, where.complaintId)
-          : undefined,
-      ),
-    )
+    .where(eq(takedowns.complaintId, complaintId))
     .orderBy(desc(takedowns.createdAt))
     .limit(20)
 }

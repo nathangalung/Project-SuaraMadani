@@ -15,6 +15,15 @@ export function originalPath(
   return join(resolve(filesDir), "evidence", orgId, evidenceId)
 }
 
+/** Resumable bytes, swept daily. */
+export function partPath(
+  filesDir: string,
+  orgId: string,
+  evidenceId: string,
+): string {
+  return join(resolve(filesDir), "evidence", orgId, `.part-${evidenceId}`)
+}
+
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/
 
 /** Staff brief, served after scan. */

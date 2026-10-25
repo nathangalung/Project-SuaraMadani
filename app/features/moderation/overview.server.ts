@@ -11,6 +11,7 @@ import {
   type SQL,
   sql,
 } from "drizzle-orm"
+import { overdueIssue } from "../../../db/referrals.server.ts"
 import type { MemberRole } from "../../../db/schema/auth.ts"
 import { issues } from "../../../db/schema/issues.ts"
 import { reports } from "../../../db/schema/reports.ts"
@@ -31,16 +32,6 @@ import {
 const SETTLED: GovernmentStatus[] = ["confirmed_resolved", "closed"]
 export const ISSUE_LIST_LIMIT = 100
 
-// Latest referral deadline before today
-function overdue(today: string): SQL {
-  return sql`${issues.govStatus} = 'awaiting_response' AND (
-    SELECT r.deadline_on FROM referrals r
-    WHERE r.org_id = ${issues.orgId} AND r.issue_id = ${issues.id}
-      AND r.kind = 'referral'
-    ORDER BY r.sent_on DESC, r.created_at DESC LIMIT 1
-  ) < ${today}::date`
-}
-
 function needFilter(need: IssueNeed, today: string): SQL | undefined {
   const published = isNotNull(issues.publishedAt)
   switch (need) {
@@ -58,7 +49,7 @@ function needFilter(need: IssueNeed, today: string): SQL | undefined {
         notInArray(issues.govStatus, SETTLED),
       )
     case "lewat-tenggat":
-      return and(published, overdue(today))
+      return and(published, overdueIssue(today))
     case "klaim":
       return and(published, eq(issues.govStatus, "claimed_resolved"))
   }

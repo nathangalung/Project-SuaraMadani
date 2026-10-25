@@ -6,6 +6,7 @@ import { BACKUP_KINDS, type BackupKind } from "../db/schema/backups.ts"
 import { pgError, withTenant } from "../db/tenant.server.ts"
 import { EMAIL_QUOTA, jakartaDayStart } from "../shared/notifications.ts"
 import { type WhatsAppStatus, whatsappReady } from "../shared/whatsapp.ts"
+import { withDeadline } from "./http.ts"
 
 type JobsHealth = { ok: boolean; checks: Record<string, number> }
 
@@ -24,6 +25,8 @@ const OLDEST_READY_LIMIT: Record<string, number> = {
   "evidence-brief": 1800,
   // Daily retention, missed run
   "maintenance-daily": 6 * 3600,
+  // Daily admin digest
+  "deadline-reminders": 6 * 3600,
   // Codes live 5 minutes
   "whatsapp-send": 120,
 }
@@ -33,13 +36,19 @@ const DEAD_LETTER_QUEUES = QUEUES.flatMap((queue) =>
 // Starting Values: newest run
 const BACKUP_LIMIT_S: Record<BackupKind, number> = {
   pgbackrest: 26 * 3600,
+  // Same daily timer
+  "pgbackrest-verify": 26 * 3600,
   restic: 8 * 3600,
   "b2-copy": 8 * 86_400,
+  // Hourly timer, two misses
+  logs: 3 * 3600,
 }
 const ARCHIVE_LIMIT_MS = 15 * 60_000
 // PLAN §5.10: ten minutes
 const TAKEDOWN_LIMIT_S = 600
 const CACHE_MS = 30_000
+// decisions.md Health checks row
+const DB_DEADLINE_MS = 1000
 // ADR-07: snapshot 1 h
 const SNAPSHOT_LIMIT_S = 3600
 // Starting Values: page at 70%
@@ -52,10 +61,15 @@ const OLDEST_READY_SQL = `
   WHERE name = $1 AND state = 'created' AND start_after <= now()`
 
 // No DLQ: failed rows stay
-const MAINTENANCE_FAILED_SQL = `
+const CRON_FAILED_SQL = `
   SELECT count(*)::int AS n FROM pgboss.job
-  WHERE name = 'maintenance-daily' AND state = 'failed'
+  WHERE name = $1 AND state = 'failed'
     AND created_on > now() - interval '2 days'`
+// Daily crons without a DLQ
+const CRON_FAILED: Record<string, string> = {
+  "maintenance-daily": "maintenance_failed",
+  "deadline-reminders": "deadline_reminders_failed",
+}
 
 const DEAD_SQL = `
   SELECT count(*)::int AS n FROM pgboss.job
@@ -151,6 +165,14 @@ async function whatsappChecks(
   return { ready: ready ? 1 : 0, down: ready || deliberate ? 0 : 1 }
 }
 
+/** Reserved .test addresses, dev seeds. */
+async function seedAccounts(pool: Pool): Promise<number> {
+  const { rows } = await pool.query<{ n: number }>(
+    "SELECT count(*)::int AS n FROM users WHERE lower(email) LIKE '%.test'",
+  )
+  return rows[0]?.n ?? 0
+}
+
 type Archiver = { lastArchived: Date | null; lastFailed: Date | null }
 
 /** Stale, missing or failing archive. */
@@ -215,11 +237,12 @@ async function readJobs(
     checks[queue] = n
     if (n > 0) ok = false
   }
-  const { rows: failed } = await pool.query<{ n: number }>(
-    MAINTENANCE_FAILED_SQL,
-  )
-  checks.maintenance_failed = failed[0]?.n ?? 0
-  if (checks.maintenance_failed > 0) ok = false
+  for (const [queue, check] of Object.entries(CRON_FAILED)) {
+    const { rows } = await pool.query<{ n: number }>(CRON_FAILED_SQL, [queue])
+    const n = rows[0]?.n ?? 0
+    checks[check] = n
+    if (n > 0) ok = false
+  }
   const { stale, lateTakedowns } = await tenantChecks(pool, db)
   checks.dashboard_snapshot_stale = stale
   checks.takedown_late = lateTakedowns
@@ -239,6 +262,9 @@ async function readJobs(
     const found = await backupChecks(pool, now)
     Object.assign(checks, found.checks)
     if (!found.ok) ok = false
+    // ASVS V6.3.2: no default accounts
+    checks.seed_accounts = await seedAccounts(pool)
+    if (checks.seed_accounts > 0) ok = false
   }
   return { ok, checks }
 }
@@ -260,7 +286,7 @@ export function poolHealth(
   let cached: { at: number; value: Promise<JobsHealth> } | undefined
   return {
     async db() {
-      await pool.query("SELECT 1")
+      await withDeadline(pool.query("SELECT 1"), DB_DEADLINE_MS)
     },
     jobs() {
       const at = now()

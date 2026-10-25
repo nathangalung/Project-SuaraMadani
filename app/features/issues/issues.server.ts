@@ -250,37 +250,44 @@ export function listIssueRanking(
   ranking: IssueRanking,
   now: Date,
 ): Promise<RankedIssue[]> {
-  return withTenant(orgId, async (tx) => {
-    const base = and(
-      isNotNull(issues.publishedAt),
-      ranking === "terlama" ? notInArray(issues.govStatus, SETTLED) : undefined,
+  return withTenant(orgId, (tx) => readIssueRanking(tx, ranking, now))
+}
+
+/** Same, inside a caller's transaction. */
+export async function readIssueRanking(
+  tx: Tx,
+  ranking: IssueRanking,
+  now: Date,
+): Promise<RankedIssue[]> {
+  const base = and(
+    isNotNull(issues.publishedAt),
+    ranking === "terlama" ? notInArray(issues.govStatus, SETTLED) : undefined,
+  )
+  const rows = await tx
+    .select({
+      code: issues.publicCode,
+      title: issues.title,
+      categoryId: issues.categoryId,
+      govStatus: issues.govStatus,
+      regencyName: regency.name,
+      districtName: district.name,
+      reportCount: issues.reportCount,
+      publishedAt: issues.publishedAt,
+    })
+    .from(issues)
+    .innerJoin(regency, eq(regency.code, issues.regencyCode))
+    .leftJoin(district, eq(district.code, issues.districtCode))
+    .where(base)
+    .orderBy(
+      ...(ranking === "terlama"
+        ? [asc(issues.publishedAt), asc(issues.id)]
+        : [desc(issues.reportCount), desc(issues.id)]),
     )
-    const rows = await tx
-      .select({
-        code: issues.publicCode,
-        title: issues.title,
-        categoryId: issues.categoryId,
-        govStatus: issues.govStatus,
-        regencyName: regency.name,
-        districtName: district.name,
-        reportCount: issues.reportCount,
-        publishedAt: issues.publishedAt,
-      })
-      .from(issues)
-      .innerJoin(regency, eq(regency.code, issues.regencyCode))
-      .leftJoin(district, eq(district.code, issues.districtCode))
-      .where(base)
-      .orderBy(
-        ...(ranking === "terlama"
-          ? [asc(issues.publishedAt), asc(issues.id)]
-          : [desc(issues.reportCount), desc(issues.id)]),
-      )
-      .limit(RANKING_SIZE)
-    return rows.map(({ publishedAt, ...row }) => ({
-      ...row,
-      days: daysSince(published({ publishedAt }), now),
-    }))
-  })
+    .limit(RANKING_SIZE)
+  return rows.map(({ publishedAt, ...row }) => ({
+    ...row,
+    days: daysSince(published({ publishedAt }), now),
+  }))
 }
 
 export type IssueCursor = {

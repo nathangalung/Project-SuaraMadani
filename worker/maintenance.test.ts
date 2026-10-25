@@ -6,7 +6,14 @@ import {
   expect,
   test,
 } from "bun:test"
-import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises"
+import {
+  mkdir,
+  mkdtemp,
+  rm,
+  symlink,
+  utimes,
+  writeFile,
+} from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { drizzle } from "drizzle-orm/node-postgres"
@@ -21,7 +28,12 @@ import {
   superuserPool,
   testUrl,
 } from "../db/testing.ts"
-import { briefPath, derivedPath, originalPath } from "../server/files.server.ts"
+import {
+  briefPath,
+  derivedPath,
+  originalPath,
+  partPath,
+} from "../server/files.server.ts"
 import { createMaintenanceHandler, LOOKUP_CHUNK } from "./maintenance.ts"
 
 const su = superuserPool()
@@ -83,7 +95,7 @@ beforeAll(async () => {
   orgA = await insertOrg(su, "mta")
   orgB = await insertOrg(su, "mtb")
   user = await insertUser(su, "rawat@contoh.id")
-  filesDir = await mkdtemp(join(tmpdir(), "sm-maint-"))
+  filesDir = await mkdtemp(join(tmpdir(), "sb-maint-"))
 })
 
 beforeEach(async () => {
@@ -154,8 +166,8 @@ describe("maintenance-daily", () => {
       [new Date(NOW.getTime() - 31 * DAY), new Date(NOW.getTime() - DAY)],
     )
     await su.query(
-      `INSERT INTO sessions (token, user_id, expires_at, created_at, ip_address)
-       VALUES ($1, $3, $4, $5, '10.0.0.1'), ($2, $3, $6, $7, '10.0.0.2')`,
+      `INSERT INTO sessions (token, user_id, expires_at, created_at, ip_address, user_agent)
+       VALUES ($1, $3, $4, $5, '10.0.0.1', 'UA lama'), ($2, $3, $6, $7, '10.0.0.2', 'UA panjang')`,
       [
         crypto.randomUUID(),
         crypto.randomUUID(),
@@ -170,12 +182,157 @@ describe("maintenance-daily", () => {
     expect(result.emailLog).toBe(1)
     expect(result.sessions).toBe(1)
     const { rows } = await su.query(
-      "SELECT ip_address FROM sessions WHERE user_id = $1",
+      "SELECT ip_address, user_agent FROM sessions WHERE user_id = $1",
       [user],
     )
-    expect(rows).toEqual([{ ip_address: null }])
+    // PRIV-08: user agent like IP
+    expect(rows).toEqual([{ ip_address: null, user_agent: null }])
     const log = await su.query("SELECT address_hash FROM email_log")
     expect(log.rows).toEqual([{ address_hash: "b" }])
+  })
+
+  test("invitations go 30 days after expiry", async () => {
+    // PRIV-19: never-joined addresses
+    const at = (days: number) => new Date(NOW.getTime() + days * DAY)
+    await su.query(
+      `INSERT INTO invitations (organization_id, email, role, status, expires_at, inviter_id) VALUES
+       ($1, 'lama.tunggu@contoh.id', 'admin', 'pending', $3, $2),
+       ($1, 'lama.terima@contoh.id', 'admin', 'accepted', $3, $2),
+       ($1, 'lama.batal@contoh.id', 'admin', 'canceled', $3, $2),
+       ($1, 'baru.lewat@contoh.id', 'editor', 'canceled', $4, $2),
+       ($1, 'baru.tunggu@contoh.id', 'editor', 'pending', $5, $2)`,
+      [orgA, user, at(-31), at(-29), at(5)],
+    )
+    const result = await run()
+    expect(result.invitations).toBe(3)
+    const { rows } = await su.query(
+      "SELECT email FROM invitations ORDER BY email",
+    )
+    expect(rows).toEqual([
+      { email: "baru.lewat@contoh.id" },
+      { email: "baru.tunggu@contoh.id" },
+    ])
+  })
+
+  test("rating prefixes clear after 30 days", async () => {
+    const { rows: issue } = await su.query<{ id: string }>(
+      `INSERT INTO issues (org_id, year, number, public_code, title, summary,
+         category_id, subcategory_id, province_code, regency_code, gov_status)
+       VALUES ($1, 2026, 901, 'ISU-MTA-26-0901', 'Judul isu', 'Ringkasan.',
+         'program', 'program.pendidikan', '32', '32.73', 'claimed_resolved')
+       RETURNING id`,
+      [orgA],
+    )
+    const { rows: claim } = await su.query<{ id: string }>(
+      "INSERT INTO resolution_claims (org_id, issue_id) VALUES ($1, $2) RETURNING id",
+      [orgA, issue[0]?.id],
+    )
+    const fresh = await insertUser(su, "nilai.baru@contoh.id")
+    await su.query(
+      `INSERT INTO ratings (org_id, claim_id, user_id, score, is_reporter, account_days, client_hash, created_at)
+       VALUES ($1, $2, $3, 4, false, 40, 'lama', $5), ($1, $2, $4, 4, false, 40, 'baru', $6)`,
+      [
+        orgA,
+        claim[0]?.id,
+        user,
+        fresh,
+        new Date(NOW.getTime() - 31 * DAY),
+        new Date(NOW.getTime() - DAY),
+      ],
+    )
+    const result = await run()
+    expect(result.ratingPrefixes).toBe(1)
+    const { rows } = await su.query(
+      "SELECT client_hash FROM ratings ORDER BY created_at",
+    )
+    expect(rows).toEqual([{ client_hash: null }, { client_hash: "baru" }])
+    await su.query("DELETE FROM issues WHERE id = $1", [issue[0]?.id])
+  })
+
+  test("a tuntutan keeps its top prefix, hashes clear", async () => {
+    const { rows: demand } = await su.query<{ id: string }>(
+      `INSERT INTO demands (org_id, year, number, public_code, scope, title,
+         body, summary, target, raised_on)
+       VALUES ($1, 2026, 7, 'TUN-MTA-26-0007', 'national', 'Judul',
+         'Teks.', 'Ringkasan.', 'Kementerian', '2026-09-01') RETURNING id`,
+      [orgA],
+    )
+    const rated: [string, number][] = [
+      ["burst", 31],
+      ["burst", 31],
+      ["other", 31],
+      ["burst", 1],
+    ]
+    for (const [n, [hash, days]] of rated.entries()) {
+      const rater = await insertUser(su, `tuntutan${n}@contoh.id`)
+      await su.query(
+        `INSERT INTO demand_ratings (org_id, demand_id, user_id, score, client_hash, created_at, updated_at)
+         VALUES ($1, $2, $3, 5, $4, $5, $5)`,
+        [
+          orgA,
+          demand[0]?.id,
+          rater,
+          hash,
+          new Date(NOW.getTime() - days * DAY),
+        ],
+      )
+    }
+    const result = await run()
+    expect(result.ratingPrefixes).toBe(3)
+    const { rows } = await su.query(
+      `SELECT d.max_prefix_ratings AS n,
+         count(r.client_hash)::int AS kept
+       FROM demands d JOIN demand_ratings r ON r.demand_id = d.id
+       WHERE d.id = $1 GROUP BY d.max_prefix_ratings`,
+      [demand[0]?.id],
+    )
+    expect(rows).toEqual([{ n: 3, kept: 1 }])
+    await su.query("DELETE FROM demands WHERE id = $1", [demand[0]?.id])
+  })
+
+  test("a claim keeps its top prefix count", async () => {
+    const { rows: issue } = await su.query<{ id: string }>(
+      `INSERT INTO issues (org_id, year, number, public_code, title, summary,
+         category_id, subcategory_id, province_code, regency_code, gov_status)
+       VALUES ($1, 2026, 902, 'ISU-MTA-26-0902', 'Judul isu', 'Ringkasan.',
+         'program', 'program.pendidikan', '32', '32.73', 'claimed_resolved')
+       RETURNING id`,
+      [orgA],
+    )
+    const { rows: claim } = await su.query<{ id: string }>(
+      "INSERT INTO resolution_claims (org_id, issue_id) VALUES ($1, $2) RETURNING id",
+      [orgA, issue[0]?.id],
+    )
+    const rated: [string, number][] = [
+      ["burst", 31],
+      ["burst", 31],
+      ["burst", 31],
+      ["other", 31],
+      ["burst", 1],
+    ]
+    for (const [n, [hash, days]] of rated.entries()) {
+      const rater = await insertUser(su, `prefiks${n}@contoh.id`)
+      await su.query(
+        `INSERT INTO ratings (org_id, claim_id, user_id, score, is_reporter, account_days, client_hash, created_at)
+         VALUES ($1, $2, $3, 5, false, 40, $4, $5)`,
+        [orgA, claim[0]?.id, rater, hash, new Date(NOW.getTime() - days * DAY)],
+      )
+    }
+    const stored = async () =>
+      (
+        await su.query(
+          "SELECT max_prefix_ratings AS n FROM resolution_claims WHERE id = $1",
+          [claim[0]?.id],
+        )
+      ).rows
+    expect(await stored()).toEqual([{ n: null }])
+    expect((await run()).ratingPrefixes).toBe(4)
+    expect(await stored()).toEqual([{ n: 4 }])
+    // Fresh burst row clears later
+    const later = new Date(NOW.getTime() + 31 * DAY)
+    await createMaintenanceHandler({ filesDir, now: () => later })()
+    expect(await stored()).toEqual([{ n: 4 }])
+    await su.query("DELETE FROM issues WHERE id = $1", [issue[0]?.id])
   })
 
   test("WhatsApp log follows /privasi, 30 days", async () => {
@@ -243,13 +400,32 @@ describe("maintenance-daily", () => {
     await touch(newOrphan, 60_000)
     const temp = join(dirname(liveFile), `.tmp-${crypto.randomUUID()}`)
     await touch(temp, 2 * DAY)
+    const stalePart = partPath(filesDir, orgA, crypto.randomUUID())
+    await touch(stalePart, 2 * DAY)
+    const freshPart = partPath(filesDir, orgA, crypto.randomUUID())
+    await touch(freshPart, 60_000)
     const result = await run()
-    expect(result.orphans).toBe(3)
+    expect(result.orphans).toBe(4)
     expect(await exists(liveFile)).toBe(true)
     expect(await exists(orphan)).toBe(false)
     expect(await exists(orphanDerived)).toBe(false)
     expect(await exists(temp)).toBe(false)
+    expect(await exists(stalePart)).toBe(false)
+    expect(await exists(freshPart)).toBe(true)
     expect(await exists(newOrphan)).toBe(true)
+  })
+
+  test("Given a temp file vanishing mid-sweep, when maintenance runs, then the sweep goes on", async () => {
+    // Earlier leftovers cleared first
+    await run()
+    const dir = dirname(originalPath(filesDir, orgA, crypto.randomUUID()))
+    const stale = join(dir, `.tmp-${crypto.randomUUID()}`)
+    await touch(stale, 2 * DAY)
+    // Listed, then stat fails
+    await symlink(join(dir, "gone"), join(dir, `.tmp-${crypto.randomUUID()}`))
+    const result = await run()
+    expect(result.orphans).toBe(1)
+    expect(await exists(stale)).toBe(false)
   })
 
   test("a send stuck in sending for an hour is queued again", async () => {

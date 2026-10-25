@@ -1,10 +1,10 @@
 import { createHmac } from "node:crypto"
-import { and, count, eq, gte, inArray, max, sql } from "drizzle-orm"
+import { and, count, eq, gte, inArray, isNull, max, sql } from "drizzle-orm"
 import type { Db } from "../db/client.server.ts"
 import { type EmailKind, emailLog } from "../db/schema/notifications.ts"
 import { EMAIL_QUOTA, jakartaDayStart } from "../shared/notifications.ts"
 import type { EmailMessage, EmailSender } from "./email.ts"
-import { errorRecord, writeLog } from "./log.ts"
+import { errorRecord, writeError, writeLog } from "./log.ts"
 
 const MIN_KEY_BYTES = 32
 
@@ -40,8 +40,10 @@ export function valueHash(value: string, key: Buffer): string {
 // One global lock, quota counts
 export const EMAIL_QUOTA_LOCK = 0x5e4d_a11
 
-// Starting Values: per address
+// Starting Values: address and client
 const OTP_LIMITS = { spacingMs: 60_000, perDay: 8 } as const
+// Proven address, every client
+const ADDRESS_LIMITS = { spacingMs: 0, perDay: 20 } as const
 // Daftar or first proof
 const UNPROVEN_OTP_LIMITS = { spacingMs: 60_000, perDay: 3 } as const
 const INVITATION_LIMITS = { spacingMs: 60_000, perDay: 5 } as const
@@ -61,7 +63,7 @@ export type OtpReservation =
 type OtpOptions = {
   // Address the account never proved
   unproven?: boolean
-  // HMAC of clientKey, Daftar only
+  // HMAC of clientKey
   client?: string | null
 }
 
@@ -72,6 +74,8 @@ async function ownLimit(
   hash: string,
   limits: Limits,
   now: Date,
+  // Set: that client's rows only
+  client?: string | null,
 ): Promise<"spacing" | "daily" | null> {
   const since = new Date(now.getTime() - 86_400_000)
   const [own] = await tx
@@ -81,6 +85,11 @@ async function ownLimit(
       and(
         eq(emailLog.kind, kind),
         eq(emailLog.addressHash, hash),
+        client === undefined
+          ? undefined
+          : client === null
+            ? isNull(emailLog.clientHash)
+            : eq(emailLog.clientHash, client),
         gte(emailLog.createdAt, since),
       ),
     )
@@ -166,11 +175,14 @@ export function reserveOtp(
   options: OtpOptions = {},
 ): Promise<OtpReservation> {
   const unproven = options.unproven === true
-  const limits = unproven ? UNPROVEN_OTP_LIMITS : OTP_LIMITS
-  const client = unproven ? (options.client ?? null) : null
+  const client = options.client ?? null
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(${EMAIL_QUOTA_LOCK})`)
-    const own = await ownLimit(tx, "otp", hash, limits, now)
+    // ASVS V6.1.1: per-client caps
+    const own = unproven
+      ? await ownLimit(tx, "otp", hash, UNPROVEN_OTP_LIMITS, now)
+      : ((await ownLimit(tx, "otp", hash, ADDRESS_LIMITS, now)) ??
+        (await ownLimit(tx, "otp", hash, OTP_LIMITS, now, client)))
     if (own) return { ok: false, reason: own }
     if (unproven && (await signUpBusy(tx, client, now))) {
       writeLog({ msg: "email sign-up share full" })
@@ -245,7 +257,7 @@ export async function sendLogged(
       logId = row?.id
     } catch (error) {
       // Sending never waits on logging
-      writeLog({ msg: "email_log insert failed", ...errorRecord(error) })
+      writeError({ msg: "email_log insert failed", ...errorRecord(error) })
     }
   }
   const mark = async (status: "sent" | "failed") => {

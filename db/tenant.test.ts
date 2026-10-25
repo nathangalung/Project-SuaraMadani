@@ -6,9 +6,11 @@ import { PgBoss } from "pg-boss"
 import { createDatabase, database, schema } from "./client.server.ts"
 import { sendJob } from "./jobs.server.ts"
 import { migrate } from "./migrate.ts"
+import { inRequestScope } from "./request-scope.ts"
 import { auditLog } from "./schema/audit.ts"
 import { evidence, reportContacts, reports } from "./schema/reports.ts"
 import {
+  forgetTenant,
   getTenantByHost,
   nextCounter,
   normalizeHost,
@@ -68,6 +70,10 @@ const TENANT_TABLES = [
   "referrals",
   "responses",
   "issue_events",
+  "resolution_claims",
+  "ratings",
+  "fix_surveys",
+  "agency_replies",
   "moderation_decisions",
   "content_complaints",
   "takedowns",
@@ -137,7 +143,7 @@ describe("catalog", () => {
       FROM pg_class c
       WHERE c.relnamespace = 'public'::regnamespace
         AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
-        AND EXISTS (SELECT 1 FROM unnest(ARRAY['sm_app', 'sm_media']) r
+        AND EXISTS (SELECT 1 FROM unnest(ARRAY['sb_app', 'sb_media']) r
           WHERE has_table_privilege(r, c.oid, 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
              OR has_any_column_privilege(r, c.oid, 'SELECT, INSERT, UPDATE, REFERENCES'))
     `)
@@ -155,12 +161,12 @@ describe("catalog", () => {
   test("app roles cannot bypass RLS or own tables", async () => {
     const { rows } = await su.query<{ rolname: string; bypass: boolean }>(
       `SELECT rolname, rolbypassrls AS bypass FROM pg_roles
-       WHERE rolname IN ('sm_app', 'sm_media', 'sm_migrator')`,
+       WHERE rolname IN ('sb_app', 'sb_media', 'sb_migrator')`,
     )
     expect(rows.every((r) => !r.bypass)).toBe(true)
     const owned = await su.query(
       `SELECT 1 FROM pg_class WHERE relowner IN
-        (SELECT oid FROM pg_roles WHERE rolname IN ('sm_app', 'sm_media'))`,
+        (SELECT oid FROM pg_roles WHERE rolname IN ('sb_app', 'sb_media'))`,
     )
     expect(owned.rowCount).toBe(0)
   })
@@ -178,7 +184,7 @@ describe("catalog", () => {
   })
 })
 
-describe("tenant isolation as sm_app", () => {
+describe("tenant isolation as sb_app", () => {
   test("a query without a tenant fails loudly", async () => {
     const read = database().db.select().from(reports)
     expect(String(await read.catch((e) => e?.cause ?? e))).toContain(
@@ -317,6 +323,24 @@ describe("constraints", () => {
     expect(sqlState(await insert.catch((e) => e))).toBe("23502")
   })
 
+  test("audit rows carry the request id", async () => {
+    const insert = () =>
+      withTenant(orgA, (tx) =>
+        tx
+          .insert(auditLog)
+          .values({
+            orgId: orgA,
+            action: "report.submit",
+            entityType: "report",
+          })
+          .returning({ requestId: auditLog.requestId }),
+      )
+    const [scoped] = await inRequestScope({ reqId: "req-audit-1" }, insert)
+    expect(scoped?.requestId).toBe("req-audit-1")
+    const [bare] = await insert()
+    expect(bare?.requestId).toBeNull()
+  })
+
   test("audit_log is append-only", async () => {
     const [row] = await withTenant(orgA, (tx) =>
       tx
@@ -325,7 +349,7 @@ describe("constraints", () => {
         .returning({ id: auditLog.id }),
     )
     const id = row?.id ?? ""
-    // sm_app lacks the grant
+    // sb_app lacks the grant
     const update = withTenant(orgA, (tx) =>
       tx.update(auditLog).set({ action: "x" }).where(eq(auditLog.id, id)),
     )
@@ -540,9 +564,22 @@ describe("pg-boss outbox", () => {
     )
     expect(await jobCount()).toBe(before + 1)
   })
+
+  test("a job queued in a request carries its id", async () => {
+    await database().boss.start()
+    await inRequestScope({ reqId: "req-job-scope" }, () =>
+      withTenant(orgA, (tx) =>
+        sendJob(tx, "evidence", { orgId: orgA, evidenceId: reportA }),
+      ),
+    )
+    const { rows } = await su.query(
+      "SELECT 1 FROM pgboss.job WHERE name = 'evidence' AND data->>'reqId' = 'req-job-scope'",
+    )
+    expect(rows).toHaveLength(1)
+  })
 })
 
-describe("sm_media", () => {
+describe("sb_media", () => {
   test("touches only its own queues", async () => {
     await su.query(
       "INSERT INTO pgboss.job (name, data) VALUES ('takedown', '{}'), ('evidence', '{}')",
@@ -550,7 +587,7 @@ describe("sm_media", () => {
     const client = await su.connect()
     try {
       await client.query("BEGIN")
-      await client.query("SET LOCAL ROLE sm_media")
+      await client.query("SET LOCAL ROLE sb_media")
       const gone = await client.query(
         "DELETE FROM pgboss.job_common WHERE name = 'takedown'",
       )
@@ -593,8 +630,8 @@ describe("sm_media", () => {
       { retryLimit: 0 },
     )
     const roleUrl = new URL(testUrl("TEST_DATABASE_SUPERUSER_URL"))
-    roleUrl.searchParams.set("options", "-c role=sm_media")
-    // Every session as sm_media
+    roleUrl.searchParams.set("options", "-c role=sb_media")
+    // Every session as sb_media
     const worker = new PgBoss({
       connectionString: roleUrl.toString(),
       max: 2,
@@ -625,7 +662,7 @@ describe("sm_media", () => {
     const client = await su.connect()
     try {
       await client.query("BEGIN")
-      await client.query("SET LOCAL ROLE sm_media")
+      await client.query("SET LOCAL ROLE sb_media")
       await client.query("SELECT set_config('app.org_id', $1, true)", [orgA])
       await client.query("SELECT id, status FROM evidence")
       await client.query("SAVEPOINT s")
@@ -655,7 +692,7 @@ describe("sm_media", () => {
     const client = await su.connect()
     try {
       await client.query("BEGIN")
-      await client.query("SET LOCAL ROLE sm_media")
+      await client.query("SET LOCAL ROLE sb_media")
       await client.query("SELECT set_config('app.org_id', $1, true)", [orgA])
       await client.query(
         "UPDATE evidence SET public_media = '[]', preview_pages = 1, failure_reason = NULL, duration_ms = 1, width = 1, height = 1, source_pages = 1",
@@ -706,6 +743,22 @@ describe("getTenantByHost", () => {
   test("unknown host is undefined", async () => {
     expect(await getTenantByHost("nope.localhost")).toBeUndefined()
   })
+
+  test("Given a cached tenant, when its own process forgets it, then the next read sees the change at once", async () => {
+    const now = () => 200_000
+    await getTenantByHost("itb.localhost", { now })
+    await su.query(
+      "UPDATE organizations SET campus_name = 'segera' WHERE id = $1",
+      [orgA],
+    )
+    expect(
+      (await getTenantByHost("itb.localhost", { now }))?.campusName,
+    ).not.toBe("segera")
+    forgetTenant("ITB.localhost:5173")
+    expect((await getTenantByHost("itb.localhost", { now }))?.campusName).toBe(
+      "segera",
+    )
+  })
 })
 
 describe("separate pool per profile", () => {
@@ -722,7 +775,7 @@ describe("separate pool per profile", () => {
       expect(tx[0]?.transaction_timeout).toBe("15s")
       expect(
         await database().db.execute(sql`select current_user`),
-      ).toHaveProperty("rows.0.current_user", "sm_app")
+      ).toHaveProperty("rows.0.current_user", "sb_app")
     } finally {
       await pool.end()
     }

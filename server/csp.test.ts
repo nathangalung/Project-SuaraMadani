@@ -150,15 +150,15 @@ describe("cspFor", () => {
     ])
     const { csp } = cspFor(page(MARK), {
       ...prod,
-      mediaOrigin: "https://media.suaramadani.id",
+      mediaOrigin: "https://media.sadarbersuara.id",
     })
     expect(directive(csp, "media-src")).toEqual([
       "'self'",
       "blob:",
-      "https://media.suaramadani.id",
+      "https://media.sadarbersuara.id",
     ])
     expect(directive(csp, "img-src")).not.toContain(
-      "https://media.suaramadani.id",
+      "https://media.sadarbersuara.id",
     )
   })
 

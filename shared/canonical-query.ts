@@ -113,6 +113,17 @@ export function querySpecFor(pathname: string): QuerySpec | null {
   }
   if (/^\/wilayah\/[^/]+\.json$/.test(pathname)) return NO_PARAMS
   if (/^\/logo\/[^/]+$/.test(pathname)) return NO_PARAMS
+  return apiSpecFor(pathname)
+}
+
+// Public data API, item 4
+function apiSpecFor(pathname: string): QuerySpec | null {
+  if (pathname === "/api/v1/isu") return ISSUE_LIST_QUERY
+  if (pathname === "/api/v1/tuntutan") return DEMAND_LIST_QUERY
+  if (/^\/api\/v1(?:\/data|\/(?:isu|tuntutan)\/[^/]+)?$/.test(pathname)) {
+    return NO_PARAMS
+  }
+  if (/^\/api\/v1\/data\/[^/]+\.csv$/.test(pathname)) return NO_PARAMS
   return null
 }
 

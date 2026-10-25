@@ -304,6 +304,107 @@ describe("email-send", () => {
     expect(text).not.toContain("setelah moderator menerbitkannya")
   })
 
+  test("Given a forwarded copy, when its mail goes out, then it names the original code and the new campus", async () => {
+    const reportId = await addReport()
+    await su.query(
+      `UPDATE reports SET forwarded_from_org_id = $2, forwarded_from_report_id = gen_random_uuid(),
+         forwarded_from_code = 'NTB-26-ASAL1' WHERE id = $1`,
+      [reportId, orgB],
+    )
+    const id = await notification("report_forwarded", { reportId })
+    expect(
+      await createEmailSendHandler(deps())({ orgId: orgA, notificationId: id }),
+    ).toBe("sent")
+    const text = sent[0]?.text ?? ""
+    expect(text).toContain("NTB-26-ASAL1")
+    expect(text).toContain("nta")
+  })
+
+  test("Given an appeal decision, when its mail goes out, then it carries the appeal outcome, not the first one", async () => {
+    const moderator = await insertUser(su, "moderator.banding@contoh.id")
+    const { rows } = await su.query<{ id: string }>(
+      `INSERT INTO content_complaints (org_id, issue_id, public_code, user_id,
+         submission_id, reason, part, explanation, status, decision,
+         decision_reason, decision_text, decided_by, decided_at,
+         appeal_text, appealed_at, appeal_decision, appeal_reason,
+         appeal_decision_text, appeal_decided_by, appeal_decided_at)
+       VALUES ($1, $2, 'ADU-NTA-26-BNDG1', $3, gen_random_uuid(),
+         'personal_data', 'title_summary', 'Ringkasan menyebut alamat warga.',
+         'appeal_decided', 'keep', 'no_violation',
+         'Keputusan pertama tidak mengubah isu.', $3, $5,
+         'Alamat masih terlihat jelas.', $5, 'edit', 'standard_11',
+         'Alamat warga kami hapus setelah banding.', $4, $5)
+       RETURNING id`,
+      [orgA, issueId, reporter, moderator, NOW],
+    )
+    const complaintId = rows[0]?.id ?? ""
+    try {
+      const { rows: notes } = await su.query<{ id: string }>(
+        `INSERT INTO notifications (org_id, user_id, event_id, template, complaint_id)
+         VALUES ($1, $2, uuidv7(), 'complaint_appeal_decided', $3) RETURNING id`,
+        [orgA, reporter, complaintId],
+      )
+      expect(
+        await createEmailSendHandler(deps())({
+          orgId: orgA,
+          notificationId: notes[0]?.id ?? "",
+        }),
+      ).toBe("sent")
+      const text = sent[0]?.text ?? ""
+      expect(text).toContain("Alamat warga kami hapus setelah banding.")
+      expect(text).not.toContain("Keputusan pertama tidak mengubah isu.")
+    } finally {
+      await su.query("DELETE FROM content_complaints WHERE id = $1", [
+        complaintId,
+      ])
+    }
+  })
+
+  test("Given a decided-reply mail for a reply still pending, when it is claimed, then it throws and sends nothing", async () => {
+    const { rows } = await su.query<{ id: string }>(
+      `INSERT INTO agency_replies (org_id, issue_id, user_id, submission_id,
+         agency, sender_role, body)
+       VALUES ($1, $2, $3, gen_random_uuid(), 'Dinas Pendidikan',
+         'Staf humas', 'Atap sudah kami perbaiki.') RETURNING id`,
+      [orgA, issueId, reporter],
+    )
+    const replyId = rows[0]?.id ?? ""
+    const { rows: notes } = await su.query<{ id: string }>(
+      `INSERT INTO notifications (org_id, user_id, event_id, template, reply_id)
+       VALUES ($1, $2, uuidv7(), 'reply_decided', $3) RETURNING id`,
+      [orgA, reporter, replyId],
+    )
+    const id = notes[0]?.id ?? ""
+    await expect(
+      createEmailSendHandler(deps())({ orgId: orgA, notificationId: id }),
+    ).rejects.toThrow("reply decision missing")
+    expect(sent).toHaveLength(0)
+    expect(await status(id)).toEqual({ status: "pending", error: null })
+  })
+
+  test("Given a reporter template on an issue row, when it is claimed, then it throws and sends nothing", async () => {
+    const id = await notification("report_verified", { issueId })
+    await expect(
+      createEmailSendHandler(deps())({ orgId: orgA, notificationId: id }),
+    ).rejects.toThrow("does not fit its row")
+    expect(sent).toHaveLength(0)
+  })
+
+  test("Given a send claimed a minute ago, when the job redelivers, then it is left to its owner", async () => {
+    const id = await notification("report_verified", {
+      reportId: await addReport(),
+    })
+    await su.query(
+      "UPDATE notifications SET status = 'sending', claimed_at = $2 WHERE id = $1",
+      [id, new Date(NOW.getTime() - 60_000)],
+    )
+    expect(
+      await createEmailSendHandler(deps())({ orgId: orgA, notificationId: id }),
+    ).toBe("busy")
+    expect(sent).toHaveLength(0)
+    expect((await status(id))?.status).toBe("sending")
+  })
+
   test("the ceiling defers to 07:00 WIB the next day", async () => {
     await logRows("notification", EMAIL_QUOTA.notificationCeiling)
     const id = await notification("report_verified", {
@@ -423,7 +524,8 @@ describe("email-send", () => {
     )
     expect(rows).toEqual([
       { address_hash: "h-new", purpose: "sign_up", client_hash: "client-a" },
-      { address_hash: "h-old", purpose: "sign_in", client_hash: null },
+      // Sign-in caps count per client
+      { address_hash: "h-old", purpose: "sign_in", client_hash: "client-a" },
     ])
   })
 
@@ -653,6 +755,28 @@ describe("email-send", () => {
     await expect(
       limited({ orgId: orgA, notificationId: id, deferrals: 24 }),
     ).rejects.toThrow("429")
+  })
+
+  test("an SES throttle on 400 defers, never fails", async () => {
+    const id = await notification("report_verified", {
+      reportId: await addReport(),
+    })
+    const throttled = createEmailSendHandler(
+      deps({
+        email: {
+          send: async () => {
+            throw new EmailSendError("ses", 400, null, "ThrottlingException")
+          },
+        },
+      }),
+    )
+    expect(await throttled({ orgId: orgA, notificationId: id })).toBe(
+      "deferred",
+    )
+    expect((await deferredJob(id))?.start_after).toEqual(
+      new Date(NOW.getTime() + 60_000),
+    )
+    expect(await status(id)).toEqual({ status: "pending", error: null })
   })
 })
 

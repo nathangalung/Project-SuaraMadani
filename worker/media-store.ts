@@ -47,6 +47,14 @@ export function localStore(filesDir: () => string): MediaStoreClient {
   }
 }
 
+/** Signed requests never plaintext. */
+function httpsEndpoint(value: string): string {
+  if (!URL.canParse(value) || new URL(value).protocol !== "https:") {
+    throw new Error("MEDIA_R2_ENDPOINT must be an https:// URL")
+  }
+  return value
+}
+
 export function mediaStoreFromEnv(filesDir: string): MediaStoreClient {
   const env = process.env
   if (
@@ -56,7 +64,7 @@ export function mediaStoreFromEnv(filesDir: string): MediaStoreClient {
     env.MEDIA_R2_SECRET_ACCESS_KEY
   ) {
     return r2Store({
-      endpoint: env.MEDIA_R2_ENDPOINT,
+      endpoint: httpsEndpoint(env.MEDIA_R2_ENDPOINT),
       bucket: env.MEDIA_R2_BUCKET,
       accessKeyId: env.MEDIA_R2_ACCESS_KEY_ID,
       secretAccessKey: env.MEDIA_R2_SECRET_ACCESS_KEY,

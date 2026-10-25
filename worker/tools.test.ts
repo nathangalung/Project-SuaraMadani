@@ -70,9 +70,9 @@ describe("withScratch", () => {
 describe("sweepScratch", () => {
   test("boot removes dirs a killed job left", async () => {
     const dir = await mkdtemp(join(tmpdir(), "sweep-"))
-    await mkdir(join(dir, "sm-media-abc123"))
-    await Bun.write(join(dir, "sm-media-abc123", "in.heic"), "x")
-    await mkdir(join(dir, "sm-media-def456"))
+    await mkdir(join(dir, "sb-media-abc123"))
+    await Bun.write(join(dir, "sb-media-abc123", "in.heic"), "x")
+    await mkdir(join(dir, "sb-media-def456"))
     await mkdir(join(dir, "keep-me"))
     expect(await sweepScratch(dir)).toBe(2)
     expect(await readdir(dir)).toEqual(["keep-me"])

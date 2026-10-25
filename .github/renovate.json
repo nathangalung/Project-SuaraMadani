@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:best-practices"],
+  "extends": ["config:best-practices", "customManagers:githubActionsVersions"],
   "minimumReleaseAge": "14 days",
   "automerge": false,
   "packageRules": [
@@ -8,6 +8,11 @@
       "description": "Dev compose and postgres.Dockerfile move together",
       "matchPackageNames": ["postgis/postgis"],
       "groupName": "postgis"
+    },
+    {
+      "description": "SC-11: preset says 3 days, last rule wins",
+      "matchDatasources": ["npm"],
+      "minimumReleaseAge": "14 days"
     }
   ]
 }

@@ -73,6 +73,8 @@ export const sessions = pgTable(
     activeOrganizationId: uuid("active_organization_id"),
     // TOTP re-check, freshAge
     stepUpAt: at("step_up_at"),
+    // Idle timeout, written per minute
+    lastSeenAt: at("last_seen_at"),
     stepUpFailures: smallint("step_up_failures").notNull().default(0),
   },
   (t) => [index("sessions_user_id_idx").on(t.userId)],

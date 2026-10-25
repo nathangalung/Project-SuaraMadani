@@ -11,8 +11,8 @@ const as = (role: string) =>
     max: 1,
     options: `-c role=${role}`,
   })
-const backup = as("sm_backup")
-const app = as("sm_app")
+const backup = as("sb_backup")
+const app = as("sb_app")
 
 async function code(run: Promise<unknown>): Promise<string | undefined> {
   try {

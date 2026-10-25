@@ -129,6 +129,8 @@ const KIND_BY_TYPE = new Map<string, EvidenceKind>([
 const KIND_BY_EXTENSION = new Map<string, EvidenceKind>([
   ["jpg", "image"],
   ["jpeg", "image"],
+  ["jpe", "image"],
+  ["jfif", "image"],
   ["png", "image"],
   ["webp", "image"],
   ["heic", "image"],
@@ -144,7 +146,11 @@ export function evidenceKind(file: {
   type: string
   name: string
 }): EvidenceKind | undefined {
-  if (file.type !== "") return KIND_BY_TYPE.get(file.type.toLowerCase())
-  const extension = file.name.split(".").pop()?.toLowerCase() ?? ""
-  return KIND_BY_EXTENSION.get(extension)
+  const dot = file.name.lastIndexOf(".")
+  const extension = dot > 0 ? file.name.slice(dot + 1).toLowerCase() : ""
+  const byName = KIND_BY_EXTENSION.get(extension)
+  if (file.type === "") return byName
+  const byType = KIND_BY_TYPE.get(file.type.toLowerCase())
+  // ASVS V5.2.2: extension must agree
+  return extension === "" || byName === byType ? byType : undefined
 }

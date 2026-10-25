@@ -14,6 +14,10 @@ function hotp(secret: string, counter: number): string {
   return String(value).padStart(DIGITS, "0")
 }
 
+export function currentStep(now: number): number {
+  return Math.floor(now / PERIOD_MS)
+}
+
 /** Step the code belongs to. */
 export function matchedStep(
   secret: string,
@@ -21,7 +25,7 @@ export function matchedStep(
   now: number,
 ): number | null {
   if (!/^\d{6}$/.test(code)) return null
-  const current = Math.floor(now / PERIOD_MS)
+  const current = currentStep(now)
   for (const step of [current + 1, current, current - 1]) {
     if (timingSafeEqual(Buffer.from(hotp(secret, step)), Buffer.from(code))) {
       return step

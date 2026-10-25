@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
-# Usage: deploy.sh [rollback] <sha>
+# Usage: deploy.sh <sha> <app-digest> <pg-digest>
+#    or: deploy.sh rollback <sha>
 # Called through deploy-gate.sh only
 set -Eeuo pipefail
 
 # shellcheck source=lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-HISTORY="$INFRA/.deployed-history"
+HISTORY="$DEPLOYED_HISTORY"
 # Applied migrations, even failed deploys
 MIGRATED="$INFRA/.migrated-history"
-LOCK="/run/lock/suara-madani-deploy.lock"
-STATE_DIR="${STATE_DIR:-/var/lib/suara-madani}"
+LOCK="/run/lock/sadar-bersuara-deploy.lock"
+STATE_DIR="${STATE_DIR:-/var/lib/sadar-bersuara}"
 SHA_RE='^[0-9a-f]{40}$'
 
 usage() {
-  echo "usage: deploy.sh <sha> | deploy.sh rollback <sha>" >&2
+  echo "usage: deploy.sh <sha> <app-digest> <pg-digest> | deploy.sh rollback <sha>" >&2
   exit 2
 }
 
@@ -25,19 +26,34 @@ if [[ "${1:-}" == "rollback" ]]; then
 fi
 sha="${1:-}"
 [[ "$sha" =~ $SHA_RE ]] || usage
+if [[ "$mode" == "deploy" ]]; then
+  app_digest="${2:-}"
+  pg_digest="${3:-}"
+  [[ "$app_digest" =~ $DIGEST_RE && "$pg_digest" =~ $DIGEST_RE ]] || usage
+fi
 
 exec 9>"$LOCK"
 flock -n 9 || die "another deploy is running"
 
 load_env
+check_backup_passes
+check_tls_endpoints
 render_tunnel_config
 mapfile -t SERVICES < <(app_services)
-app_image="$(env_get APP_IMAGE)"
 files_root="$(env_get FILES_ROOT)"
 files_root="${files_root:-/mnt/files}"
-[[ -n "$app_image" ]] || die "APP_IMAGE missing"
-image="$app_image:$sha"
-export IMAGE_TAG="$sha"
+[[ -n "$(env_get APP_IMAGE)" ]] || die "APP_IMAGE missing"
+[[ -n "$(env_get POSTGRES_IMAGE)" ]] || die "POSTGRES_IMAGE missing"
+# SC-04: never a mutable tag
+if [[ "$mode" == "rollback" ]]; then
+  APP_REF="$(deployed_ref app "$sha")"
+  POSTGRES_REF="$(deployed_ref postgres "$sha")"
+else
+  APP_REF="$(env_get APP_IMAGE)@$app_digest"
+  POSTGRES_REF="$(env_get POSTGRES_IMAGE)@$pg_digest"
+fi
+export APP_REF POSTGRES_REF
+image="$APP_REF"
 
 # Newest tag, newest contract index
 migration_info() {
@@ -49,7 +65,7 @@ migration_info() {
 }
 
 pgboss_of() {
-  docker image inspect --format '{{index .Config.Labels "org.suaramadani.pg-boss"}}' "$1" 2>/dev/null || true
+  docker image inspect --format '{{index .Config.Labels "org.sadarbersuara.pg-boss"}}' "$1" 2>/dev/null || true
 }
 
 running_image() {
@@ -98,15 +114,15 @@ tenant_hosts() {
   local apex
   apex="$(env_get APEX_HOST)"
   echo "$apex"
-  compose exec -T -u postgres postgres psql -X -At -d suara_madani \
+  compose exec -T -u postgres postgres psql -X -At -d sadar_bersuara \
     -c "SELECT host FROM organizations ORDER BY host"
 }
 
+# Optional "edge": Cloudflare settings only
 smoke() {
   local hosts
   mapfile -t hosts < <(tenant_hosts)
-  docker run --rm -v "$INFRA/smoke.ts:/app/smoke.ts:ro" "$image" \
-    bun smoke.ts "${hosts[@]}"
+  smoke_run "$image" "$@" "${hosts[@]}"
 }
 
 previous_sha() {
@@ -127,14 +143,18 @@ on_exit() {
     flock -u 9
     # Its compose, configs, Postgres tag
     git -C "$ROOT" checkout --quiet --detach "$prev" || exit 1
-    exec "$INFRA/deploy.sh" rollback "$prev"
+    # Release failed even when restored
+    "$INFRA/deploy.sh" rollback "$prev" || true
   fi
   exit 1
 }
 
 start="$(date -u +%FT%TZ)"
 log "$mode $sha start $start"
-compose pull --quiet "${SERVICES[@]}"
+compose pull --quiet "${SERVICES[@]}" postgres
+# Digest belongs to this commit
+revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")"
+[[ "$revision" == "$sha" ]] || die "image revision $revision, expected $sha"
 read -r newest_tag contract_idx < <(migration_info "$image")
 
 if [[ "$mode" == "rollback" ]]; then
@@ -158,6 +178,9 @@ copy_assets
 if [[ " ${SERVICES[*]} " != *" worker-whatsapp "* ]]; then
   compose stop worker-whatsapp
 fi
+# Recreated containers lose logs
+RESTIC_RETRY_LOCK=1m "$INFRA/logs-ship.sh" ship ||
+  log "log copy failed, deploy continues"
 # worker-media waits for clamd
 compose up -d
 # Covers clamav start_period 300s
@@ -169,7 +192,22 @@ live="$(healthz_sha)"
 smoke
 
 finished=1
-echo "$sha $start $newest_tag $contract_idx $mode" >>"$HISTORY"
+echo "$sha $start $newest_tag $contract_idx $mode ${APP_REF##*@} ${POSTGRES_REF##*@}" >>"$HISTORY"
 # Local images kept 7 days
 docker image prune -af --filter "until=168h" >/dev/null
 log "$mode $sha done"
+# Release fine, operator acts
+warned=0
+# Runbook First Setup, Umami step
+if umami_default_active; then
+  log "umami still accepts admin/umami, change it now"
+  warned=1
+fi
+# README Cloudflare Checklist
+if ! smoke edge; then
+  log "cloudflare TLS or http settings differ from the checklist"
+  warned=1
+fi
+if ((warned)); then
+  exit 3
+fi

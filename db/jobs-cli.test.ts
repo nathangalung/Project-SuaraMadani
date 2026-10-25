@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test"
 import { PgBoss } from "pg-boss"
-import { runJobsCli } from "./jobs-cli.ts"
+import { main, runJobsCli } from "./jobs-cli.ts"
 import { migrate } from "./migrate.ts"
 import { superuserPool, testUrl } from "./testing.ts"
 
@@ -57,6 +57,13 @@ describe("db/jobs-cli.ts", () => {
     expect((await cli("show", "pgboss")).code).toBe(2)
   })
 
+  test("a delete without a job id prints usage and deletes nothing", async () => {
+    const { code, lines } = await cli("delete", "takedown-dlq")
+    expect(code).toBe(2)
+    expect(lines[0]).toStartWith("usage: bun db/jobs-cli.ts list")
+    expect((await cli("list")).lines).toContain("takedown-dlq\t1")
+  })
+
   test("shows, previews and redrives to the source queue", async () => {
     const shown = await cli("show", "takedown-dlq")
     expect(JSON.parse(shown.lines[0] ?? "{}")).toMatchObject({
@@ -82,5 +89,63 @@ describe("db/jobs-cli.ts", () => {
       "deleted\t1",
     ])
     expect((await cli("list")).lines).toContain("takedown-dlq\t0")
+  })
+})
+
+describe("bun db/jobs-cli.ts", () => {
+  test("Given the migrator URL, when list runs, then it prints every dead letter queue and exits 0", async () => {
+    const logged = spyOn(console, "log").mockImplementation(() => {})
+    try {
+      const env = {
+        DATABASE_MIGRATOR_URL: testUrl("TEST_DATABASE_MIGRATOR_URL"),
+      }
+      expect(await main(["list"], env)).toBe(0)
+      const lines = logged.mock.calls.map(([line]) => String(line))
+      expect(lines.some((line) => line.startsWith("takedown-dlq\t"))).toBe(true)
+    } finally {
+      logged.mockRestore()
+    }
+  })
+
+  test("Given an unknown command, when main runs, then it prints usage and exits 2", async () => {
+    const logged = spyOn(console, "log").mockImplementation(() => {})
+    try {
+      const env = {
+        DATABASE_MIGRATOR_URL: testUrl("TEST_DATABASE_MIGRATOR_URL"),
+      }
+      expect(await main(["bogus"], env)).toBe(2)
+      const lines = logged.mock.calls.map(([line]) => String(line))
+      expect(lines[0]).toStartWith("usage: bun db/jobs-cli.ts list")
+    } finally {
+      logged.mockRestore()
+    }
+  })
+
+  test("Given a database without pg-boss, when main runs, then it fails and leaves no client open", async () => {
+    const url = new URL(testUrl("TEST_DATABASE_MIGRATOR_URL"))
+    url.pathname = "/postgres"
+    const open = async () => {
+      const { rows } = await su.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM pg_stat_activity
+         WHERE datname = 'postgres' AND application_name = 'migrate'`,
+      )
+      return rows[0]?.n ?? -1
+    }
+    await expect(
+      main(["list"], { DATABASE_MIGRATOR_URL: url.href }),
+    ).rejects.toThrow("pg-boss is not installed")
+    // Backend exit lags pool.end
+    let left = await open()
+    for (let i = 0; i < 20 && left > 0; i++) {
+      await Bun.sleep(50)
+      left = await open()
+    }
+    expect(left).toBe(0)
+  })
+
+  test("refuses to start without the migrator URL", async () => {
+    await expect(main(["list"], {})).rejects.toThrow(
+      "DATABASE_MIGRATOR_URL is not set",
+    )
   })
 })

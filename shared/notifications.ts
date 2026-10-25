@@ -35,10 +35,23 @@ export const COMPLAINT_TEMPLATES = [
 ] as const
 export type ComplaintTemplate = (typeof COMPLAINT_TEMPLATES)[number]
 
+// Admin digest, no subject row
+export const DEADLINE_TEMPLATE = "referral_deadline" as const
+
+// Reporter "Sudah beres?", PLAN §5.7
+export const SURVEY_TEMPLATE = "claim_survey" as const
+
+// Right of reply sender
+const REPLY_TEMPLATES = ["reply_received", "reply_decided"] as const
+export type ReplyTemplate = (typeof REPLY_TEMPLATES)[number]
+
 export type NotificationTemplate =
   | EmailTemplate
   | "issue_published"
   | ComplaintTemplate
+  | typeof DEADLINE_TEMPLATE
+  | typeof SURVEY_TEMPLATE
+  | ReplyTemplate
 
 export const NOTIFICATION_TEMPLATES: readonly NotificationTemplate[] = [
   ...REPORT_STATUSES.map((status) => `report_${status}` as const),
@@ -47,6 +60,9 @@ export const NOTIFICATION_TEMPLATES: readonly NotificationTemplate[] = [
   ...COMPLAINT_TEMPLATES,
   ...DEMAND_ACTIONS.map((action) => `demand_${action}` as const),
   "demand_update",
+  DEADLINE_TEMPLATE,
+  SURVEY_TEMPLATE,
+  ...REPLY_TEMPLATES,
 ]
 
 export type DemandTemplate = `demand_${DemandAction}` | "demand_update"
@@ -59,6 +75,10 @@ export function isComplaintTemplate(
   template: string,
 ): template is ComplaintTemplate {
   return (COMPLAINT_TEMPLATES as readonly string[]).includes(template)
+}
+
+export function isReplyTemplate(template: string): template is ReplyTemplate {
+  return (REPLY_TEMPLATES as readonly string[]).includes(template)
 }
 
 export function templateForReport(status: ReportStatus): NotificationTemplate {
@@ -74,6 +94,14 @@ export function jakartaDayStart(now: Date): Date {
 export function nextSendMorning(now: Date): Date {
   const start = jakartaDayStart(now).getTime()
   return new Date(start + DAY_MS + MORNING_HOUR_WIB * 3_600_000)
+}
+
+/** Before 07:00 WIB: wait. */
+export function quietUntil(now: Date): Date | undefined {
+  const morning = new Date(
+    jakartaDayStart(now).getTime() + MORNING_HOUR_WIB * 3_600_000,
+  )
+  return now < morning ? morning : undefined
 }
 
 // Reserved by RFC 2606, 6761

@@ -1,5 +1,6 @@
 import { eq, sql } from "drizzle-orm"
 import { type Db, database } from "./client.server.ts"
+import { requestScope } from "./request-scope.ts"
 import type { MemberRole } from "./schema/auth.ts"
 import {
   type CounterKind,
@@ -65,11 +66,13 @@ export async function withTenant<T>(
   const started = now()
   let codeAttempts = 0
   let deadlocks = 0
+  // audit_log.request_id default reads it
+  const reqId = requestScope()?.reqId ?? ""
   for (;;) {
     try {
       return await db.transaction(async (tx) => {
         await tx.execute(
-          sql`select set_config('app.org_id', ${orgId}, true), set_config('app.member_role', ${options.role ?? ""}, true)`,
+          sql`select set_config('app.org_id', ${orgId}, true), set_config('app.member_role', ${options.role ?? ""}, true), set_config('app.request_id', ${reqId}, true)`,
         )
         return fn(tx)
       }, options.isolationLevel && { isolationLevel: options.isolationLevel })

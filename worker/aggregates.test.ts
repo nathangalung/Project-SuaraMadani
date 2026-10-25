@@ -26,11 +26,11 @@ import {
 } from "./aggregates.ts"
 
 const su = superuserPool()
-// Runs as sm_app, real grants
+// Runs as sb_app, real grants
 const appPool = new Pool({
   connectionString: testUrl("TEST_DATABASE_SUPERUSER_URL"),
   max: 2,
-  options: "-c role=sm_app",
+  options: "-c role=sb_app",
 })
 const appDb = drizzle({ client: appPool, schema })
 const suDb = drizzle({ client: su, schema })
@@ -147,7 +147,7 @@ afterAll(async () => {
   await su.end()
 })
 
-describe("aggregate refresh as sm_app", () => {
+describe("aggregate refresh as sb_app", () => {
   test("writes one snapshot per org", async () => {
     const result = await refreshDashboards(appDb, { now: () => NOW })
     expect(result).toEqual({ orgs: 2, failed: 0 })
@@ -316,7 +316,7 @@ describe("aggregate refresh as sm_app", () => {
       })
       for (let waited = 0; ; waited++) {
         const { rows } = await su.query(
-          "SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE '%FROM issues%'",
+          "SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE '%FROM issues%'",
         )
         if (rows.length > 0) break
         if (waited > 200) throw new Error("refresh never blocked")
@@ -339,6 +339,61 @@ describe("aggregate refresh as sm_app", () => {
       const snapshot = await snapshotOf(id)
       expect(snapshot.trendTotal).toBe(snapshot.reports.total)
     }
+  })
+})
+
+describe("refresh faults", () => {
+  // Lock waits fail fast
+  const impatient = new Pool({
+    connectionString: testUrl("TEST_DATABASE_SUPERUSER_URL"),
+    max: 2,
+    options: "-c role=sb_app -c lock_timeout=300",
+  })
+  const impatientDb = drizzle({ client: impatient, schema })
+  afterAll(() => impatient.end())
+
+  const computedAt = async (orgId: string) =>
+    (
+      await su.query<{ computed_at: Date }>(
+        "SELECT computed_at FROM dashboard_snapshots WHERE org_id = $1",
+        [orgId],
+      )
+    ).rows[0]?.computed_at.getTime()
+
+  async function holding<T>(lock: string, run: () => Promise<T>): Promise<T> {
+    const holder = await su.connect()
+    try {
+      await holder.query("BEGIN")
+      await holder.query(lock)
+      return await run()
+    } finally {
+      await holder.query("ROLLBACK")
+      holder.release()
+    }
+  }
+
+  test("Given one campus snapshot is locked, when refresh runs, then the other lands and the old row stays served", async () => {
+    const before = await computedAt(orgA)
+    const later = new Date(NOW.getTime() + 7_200_000)
+    const run = holding(
+      `SELECT 1 FROM dashboard_snapshots WHERE org_id = '${orgA}' FOR UPDATE`,
+      () => refreshDashboards(impatientDb, { now: () => later }),
+    )
+    await expect(run).rejects.toThrow("dashboard refresh failed for 1 of")
+    expect(await computedAt(orgA)).toBe(before)
+    expect(await computedAt(orgB)).toBe(later.getTime())
+  })
+
+  test("Given the national view is locked, when refresh runs, then campus snapshots land and the job fails for retry", async () => {
+    const later = new Date(NOW.getTime() + 10_800_000)
+    const run = holding(
+      // Holds its exclusive lock
+      "REFRESH MATERIALIZED VIEW national_aggregates",
+      () => refreshDashboards(impatientDb, { now: () => later }),
+    )
+    await expect(run).rejects.toThrow("national refresh failed")
+    expect(await computedAt(orgA)).toBe(later.getTime())
+    expect(await computedAt(orgB)).toBe(later.getTime())
   })
 })
 

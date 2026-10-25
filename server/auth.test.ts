@@ -4,22 +4,35 @@ import {
   beforeEach,
   describe,
   expect,
+  spyOn,
   test,
 } from "bun:test"
 import { createHmac } from "node:crypto"
 import { APIError } from "better-auth/api"
 import { DrizzleQueryError } from "drizzle-orm/errors"
+import { RouterContextProvider } from "react-router"
+import { sessionContext, tenantContext } from "../app/context.ts"
+import { twoFactorAction } from "../app/features/moderation/two-factor.server.ts"
 import { addPhone } from "../app/features/report/add-phone.server.ts"
 import { createDatabase } from "../db/client.server.ts"
 import { migrate } from "../db/migrate.ts"
-import { insertOrg, resetData, superuserPool, testUrl } from "../db/testing.ts"
+import {
+  insertOrg,
+  insertUser,
+  resetData,
+  superuserPool,
+  testUrl,
+} from "../db/testing.ts"
 import { EMAIL_QUOTA } from "../shared/notifications.ts"
 import { AGE_CONSENT_VERSION } from "../shared/report-fields.ts"
 import {
   type Auth,
   authLog,
   createAuth,
+  drainEmails,
+  getAuth,
   readSessionWith,
+  resetAuth,
   staffAccess,
 } from "./auth.server.ts"
 import type { EmailMessage } from "./email.ts"
@@ -36,6 +49,8 @@ const texts: {
 }[] = []
 const whatsapp = {
   isReady: true,
+  // Ready, then the send fails
+  sendFails: null as "unavailable" | "spacing" | null,
   logs: new Map<string, "reserved" | "sent" | "failed">(),
 }
 
@@ -44,12 +59,13 @@ const fakeWhatsApp: WhatsAppGateway = {
   ready: async () => whatsapp.isReady,
   sendCode: async (to, code, purpose) => {
     if (!whatsapp.isReady) return { ok: false, reason: "unavailable" }
+    if (whatsapp.sendFails) return { ok: false, reason: whatsapp.sendFails }
     const logId = crypto.randomUUID()
     texts.push({
       to,
       code,
       purpose: purpose?.purpose,
-      client: purpose?.purpose === "sign-up" ? purpose.client : undefined,
+      client: purpose?.client,
     })
     whatsapp.logs.set(logId, "reserved")
     return { ok: true, logId }
@@ -57,10 +73,12 @@ const fakeWhatsApp: WhatsAppGateway = {
   status: async (logId) => whatsapp.logs.get(logId) ?? null,
 }
 
+const securityLines: Record<string, unknown>[] = []
 const auth = createAuth({
   db: database.db,
   hosts: ["itb.localhost", "ugm.localhost"],
   dev: true,
+  securityLog: (line) => securityLines.push(line),
   email: {
     send: async (message) => {
       sent.push(message)
@@ -342,7 +360,7 @@ describe("Daftar", () => {
     expect(row?.age_declared_at).toBeInstanceOf(Date)
     const setCookie = res.headers.getSetCookie().join("\n")
     // Dev http lacks __Secure- prefix
-    expect(setCookie).toContain("sm.session_token=")
+    expect(setCookie).toContain("sb.session_token=")
     expect(setCookie.toLowerCase()).not.toContain("domain=")
     expect(setCookie).toContain("HttpOnly")
     expect(setCookie).toContain("SameSite=Lax")
@@ -542,7 +560,7 @@ describe("Masuk", () => {
     const code = /\b(\d{6})\b/.exec(sent.at(-1)?.text ?? "")?.[1] ?? ""
     const done = await post("/account/verify-code", { ...signInBody, code })
     expect(done.status).toBe(200)
-    expect(cookies(done)).toContain("sm.session_token=")
+    expect(cookies(done)).toContain("sb.session_token=")
   })
 
   test("the channel that got the code becomes verified", async () => {
@@ -565,8 +583,42 @@ describe("Masuk", () => {
       email_verified: true,
       phone_verified: true,
     })
-    await requestCode(body)
-    expect(texts.at(-1)?.purpose).toBe("sign-in")
+    await requestCode(body, { "x-client-ip": "203.0.113.10" })
+    // Proven: per-client sign-in caps
+    expect(texts.at(-1)).toMatchObject({
+      purpose: "sign-in",
+      client: "203.0.113.10",
+    })
+  })
+
+  test("signing in again ends the earlier session", async () => {
+    // ASVS V7.2.4: old token ends
+    const email = "ulang.masuk@contoh.id"
+    const cookie = cookies(await signUp(email))
+    const body = {
+      mode: "sign-in" as const,
+      identifier: email,
+      channel: "email" as const,
+    }
+    const code = await requestCode(body, { cookie })
+    const again = await post(
+      "/account/verify-code",
+      { ...body, code },
+      { cookie },
+    )
+    expect(again.status).toBe(200)
+    const read = (value: string) =>
+      readSessionWith(
+        auth,
+        new Headers({ cookie: value, host: "itb.localhost" }),
+      )
+    expect((await read(cookie)).session).toBeNull()
+    expect((await read(cookies(again))).session?.user.email).toBe(email)
+    const { rows } = await su.query(
+      "SELECT 1 FROM sessions WHERE user_id = (SELECT id FROM users WHERE email = $1)",
+      [email],
+    )
+    expect(rows).toHaveLength(1)
   })
 
   test("an unknown account gets no code", async () => {
@@ -577,6 +629,124 @@ describe("Masuk", () => {
     )
     expect(res.status).toBe(404)
     expect((await res.json()).code).toBe("ACCOUNT_NOT_FOUND")
+  })
+
+  test("a refused code is a security event, no contact", async () => {
+    // OWASP A09: alertable auth failures
+    const email = "salah.kode@contoh.id"
+    await signUp(email)
+    const body = {
+      mode: "sign-in" as const,
+      identifier: email,
+      channel: "email" as const,
+    }
+    await requestCode(body)
+    securityLines.length = 0
+    const res = await post("/account/verify-code", { ...body, code: "000000" })
+    expect(res.status).toBeGreaterThanOrEqual(400)
+    expect(securityLines).toHaveLength(1)
+    expect(securityLines[0]).toMatchObject({
+      msg: "security",
+      event: "auth_refused",
+      host: "itb.localhost",
+      path: "/account/verify-code",
+      status: res.status,
+    })
+    expect(JSON.stringify(securityLines)).not.toContain(email)
+    securityLines.length = 0
+    const noCaptcha = await post("/account/send-code", body)
+    expect(noCaptcha.status).toBe(403)
+    expect(securityLines[0]).toMatchObject({
+      event: "auth_refused",
+      code: "CAPTCHA_FAILED",
+    })
+  })
+
+  test("every sign-in step is a security event", async () => {
+    // ASVS V16.3.1: outcome, factor, subject
+    const email = "jejak.masuk@contoh.id"
+    await signUp(email)
+    const body = {
+      mode: "sign-in" as const,
+      identifier: email,
+      channel: "email" as const,
+    }
+    const code = await requestCode(body)
+    securityLines.length = 0
+    await post("/account/verify-code", { ...body, code: "000000" })
+    const ok = await post("/account/verify-code", { ...body, code })
+    expect(ok.status).toBe(200)
+    const { rows } = await su.query<{ id: string }>(
+      "SELECT id FROM users WHERE email = $1",
+      [email],
+    )
+    const subject = securityLines[0]?.subject_hash
+    expect(subject).toMatch(/^[0-9a-f]{64}$/)
+    expect(securityLines).toEqual([
+      expect.objectContaining({ event: "auth_refused", factor: "email" }),
+      expect.objectContaining({
+        event: "auth_ok",
+        host: "itb.localhost",
+        path: "/account/verify-code",
+        factor: "email",
+        user_id: rows[0]?.id,
+        subject_hash: subject,
+      }),
+    ])
+    securityLines.length = 0
+    await post("/sign-out", {}, { cookie: cookies(ok) })
+    expect(securityLines).toEqual([
+      expect.objectContaining({
+        event: "auth_ok",
+        path: "/sign-out",
+        factor: "sign_out",
+        user_id: rows[0]?.id,
+      }),
+    ])
+    expect(JSON.stringify(securityLines)).not.toContain(email)
+  })
+
+  test("a failed code email reaches the error stream", async () => {
+    // ASVS V16.3.4: provider outage
+    const failing = createAuth({
+      db: database.db,
+      hosts: ["itb.localhost"],
+      dev: true,
+      securityLog: () => {},
+      email: {
+        send: async () => {
+          throw new Error("provider down for gagal.kirim@contoh.id")
+        },
+      },
+      hashKey: () => Buffer.alloc(32, 5),
+      verifyCaptcha: async () => ({ ok: true }),
+      whatsapp: fakeWhatsApp,
+      secrets: [{ version: 1, value: "test-secret-test-secret-test-secret-1" }],
+    })
+    const lines: string[] = []
+    const spy = spyOn(console, "error").mockImplementation((line) => {
+      lines.push(String(line))
+    })
+    try {
+      const res = await failing.handler(
+        new Request(`${origin}/api/auth/account/send-code`, {
+          method: "POST",
+          headers: { "content-type": "application/json", origin },
+          body: JSON.stringify(newAccount("gagal.kirim@contoh.id")),
+        }),
+      )
+      expect(res.status).toBe(200)
+      await drainEmails()
+    } finally {
+      spy.mockRestore()
+    }
+    const failed = lines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((line) => line.msg === "otp email failed")
+    expect(failed).toEqual([
+      expect.objectContaining({ level: "error", error: "Error" }),
+    ])
+    expect(lines.join()).not.toContain("gagal.kirim@contoh.id")
   })
 
   test("three wrong codes end the code; a code works once", async () => {
@@ -894,14 +1064,14 @@ describe("staff step-up", () => {
     )
     expect(verify.status).toBe(200)
     const enrolled = cookies(verify)
-    expect(enrolled).toContain("sm.session_token=")
+    expect(enrolled).toContain("sb.session_token=")
 
     const again = await signIn(email)
     expect(again.status).toBe(200)
     expect(await again.json()).toMatchObject({ twoFactorRedirect: true })
-    expect(cookies(again)).not.toContain("sm.session_token")
+    expect(cookies(again)).not.toContain("sb.session_token")
     const challenge = cookies(again)
-    expect(challenge).toContain("sm.two_factor")
+    expect(challenge).toContain("sb.two_factor")
 
     // WhatsApp code alone: same challenge
     const viaWhatsApp = {
@@ -914,16 +1084,21 @@ describe("staff step-up", () => {
       code: await requestCode(viaWhatsApp),
     })
     expect(await chat.json()).toMatchObject({ twoFactorRedirect: true })
-    expect(cookies(chat)).not.toContain("sm.session_token")
+    expect(cookies(chat)).not.toContain("sb.session_token")
 
+    // Enrolment spent this step, reset
+    await su.query(
+      "UPDATE two_factors SET last_totp_step = NULL WHERE user_id = (SELECT id FROM users WHERE email = $1)",
+      [email],
+    )
     const stepUp = await post(
       "/two-factor/verify-totp",
-      { code: totp(secret, Date.now() + 30_000) },
+      { code: totp(secret) },
       { cookie: challenge },
     )
     expect(stepUp.status).toBe(200)
     const staff = cookies(stepUp)
-    expect(staff).toContain("sm.session_token=")
+    expect(staff).toContain("sb.session_token=")
 
     // Real admin of real org
     await su.query(
@@ -979,6 +1154,12 @@ describe("staff second factor", () => {
       backupCodes: string[]
     }
     const secret = new URL(totpURI).searchParams.get("secret") ?? ""
+    // ASVS V6.5.2: 119-bit codes
+    expect(backupCodes).toHaveLength(10)
+    for (const backup of backupCodes) {
+      expect(backup).toMatch(/^[A-Za-z0-9]{5}(-[A-Za-z0-9]{5}){3}$/)
+    }
+    expect(new Set(backupCodes).size).toBe(10)
     const code = totp(secret)
     const enrol = await post(
       "/two-factor/verify-totp",
@@ -986,6 +1167,10 @@ describe("staff second factor", () => {
       { cookie: emailOnly },
     )
     expect(enrol.status).toBe(200)
+    expect(securityLines.at(-1)).toMatchObject({
+      event: "auth_ok",
+      factor: "totp",
+    })
 
     const challenge = async () => {
       const res = await signIn(email)
@@ -998,11 +1183,24 @@ describe("staff second factor", () => {
       { cookie: await challenge() },
     )
     expect(replay.status).toBe(401)
-    expect(cookies(replay)).not.toContain("sm.session_token=")
+    expect(cookies(replay)).not.toContain("sb.session_token=")
 
-    const next = await post(
+    // ASVS V6.5.5: no future step
+    const future = await post(
       "/two-factor/verify-totp",
       { code: totp(secret, Date.now() + 30_000) },
+      { cookie: await challenge() },
+    )
+    expect(future.status).toBe(401)
+    expect((await future.json()).code).toBe("INVALID_CODE")
+    // Enrolment spent this step, reset
+    await su.query(
+      "UPDATE two_factors SET last_totp_step = NULL WHERE user_id = (SELECT id FROM users WHERE email = $1)",
+      [email],
+    )
+    const next = await post(
+      "/two-factor/verify-totp",
+      { code: totp(secret) },
       { cookie: await challenge() },
     )
     expect(next.status).toBe(200)
@@ -1021,7 +1219,11 @@ describe("staff second factor", () => {
       { cookie: await challenge() },
     )
     expect(backup.status).toBe(200)
-    expect(cookies(backup)).toContain("sm.session_token=")
+    expect(cookies(backup)).toContain("sb.session_token=")
+    expect(securityLines.at(-1)).toMatchObject({
+      event: "auth_ok",
+      factor: "backup_code",
+    })
 
     // Step-up: in-process, session cookie
     const signedIn = new Headers({
@@ -1048,7 +1250,189 @@ describe("staff second factor", () => {
   })
 })
 
+describe("in-process second factor", () => {
+  /** Lines added by one step. */
+  async function linesOf(step: () => Promise<unknown>) {
+    const before = securityLines.length
+    await step()
+    return securityLines.slice(before)
+  }
+
+  // A code no window accepts
+  function wrongCode(secret: string): string {
+    const near = [-30_000, 0, 30_000].map((d) => totp(secret, Date.now() + d))
+    return ["000000", "111111", "222222", "333333"].find(
+      (code) => !near.includes(code),
+    ) as string
+  }
+
+  test("TOTP and backup codes are logged without an HTTP request", async () => {
+    // ASVS V16.3.1: the /masuk/dua-langkah path
+    const email = "dalam.proses@contoh.id"
+    const cookie = cookies(await signUp(email))
+    const signedIn = new Headers({ cookie, origin, host: "itb.localhost" })
+    let secret = ""
+    const enrol = await linesOf(async () => {
+      const result = await auth.api.enableTwoFactor({
+        headers: signedIn,
+        body: { method: "totp" },
+      })
+      if (result.method !== "totp") throw new Error("no TOTP")
+      secret = new URL(result.totpURI).searchParams.get("secret") ?? ""
+    })
+    expect(enrol).toEqual([
+      expect.objectContaining({
+        event: "auth_ok",
+        factor: "totp_enrol",
+        host: "itb.localhost",
+      }),
+    ])
+    const verified = await linesOf(() =>
+      auth.api.verifyTOTP({ headers: signedIn, body: { code: totp(secret) } }),
+    )
+    expect(verified).toEqual([
+      expect.objectContaining({ event: "auth_ok", factor: "totp" }),
+    ])
+
+    const challenge = new Headers({
+      cookie: cookies(await signIn(email)),
+      origin,
+      host: "itb.localhost",
+    })
+    let status = 0
+    const wrongTotp = await linesOf(async () => {
+      const res = await auth.api.verifyTOTP({
+        headers: challenge,
+        body: { code: wrongCode(secret) },
+        asResponse: true,
+      })
+      status = res.status
+    })
+    expect(status).toBe(401)
+    expect(wrongTotp).toEqual([
+      expect.objectContaining({
+        event: "auth_refused",
+        factor: "totp",
+        host: "itb.localhost",
+        code: "INVALID_CODE",
+      }),
+    ])
+    const wrongBackup = await linesOf(async () => {
+      const res = await auth.api.verifyBackupCode({
+        headers: challenge,
+        body: { code: "AAAAA-AAAAA-AAAAA-AAAAA" },
+        asResponse: true,
+      })
+      status = res.status
+    })
+    expect(status).toBe(401)
+    expect(wrongBackup).toEqual([
+      expect.objectContaining({ event: "auth_refused", factor: "backup_code" }),
+    ])
+
+    // The page action, real auth
+    const context = new RouterContextProvider()
+    context.set(tenantContext, {
+      id: crypto.randomUUID(),
+      slug: "itb",
+      host: "itb.localhost",
+      name: "",
+      campusCode: "ITB",
+      campusName: "",
+      theme: {},
+      settings: {},
+    })
+    context.set(sessionContext, null)
+    const page = (body: Record<string, string>) =>
+      twoFactorAction(
+        {
+          request: new Request("http://itb.localhost/masuk/dua-langkah", {
+            method: "POST",
+            headers: challenge,
+            body: new URLSearchParams(body),
+          }),
+          context,
+        },
+        auth,
+      )
+    let outcome: unknown
+    const pageTotp = await linesOf(async () => {
+      outcome = await page({ intent: "verify", code: wrongCode(secret) })
+    })
+    expect(outcome).toMatchObject({ kind: "error", error: "wrong" })
+    expect(pageTotp).toEqual([
+      expect.objectContaining({ event: "auth_refused", factor: "totp" }),
+    ])
+    const pageBackup = await linesOf(async () => {
+      outcome = await page({
+        intent: "backup",
+        code: "BBBBB-BBBBB-BBBBB-BBBBB",
+      })
+    })
+    expect(outcome).toEqual({ kind: "error", error: "backup_wrong" })
+    expect(pageBackup).toEqual([
+      expect.objectContaining({ event: "auth_refused", factor: "backup_code" }),
+    ])
+  })
+
+  test("in-process sign-out leaves the line to its caller", async () => {
+    // sign-out.server.ts writes it
+    const cookie = cookies(await signUp("keluar.dalam@contoh.id"))
+    const lines = await linesOf(() =>
+      auth.api.signOut({
+        headers: new Headers({ cookie, origin, host: "itb.localhost" }),
+      }),
+    )
+    expect(lines).toEqual([])
+  })
+})
+
 describe("server-only auth calls", () => {
+  test("step-up rotation: new token, same start, never over HTTP", async () => {
+    // ASVS V7.2.4: re-authentication rotates
+    const cookie = cookies(await signUp("putar@contoh.id"))
+    // TOTP account, past idle limit
+    const owner = "(SELECT id FROM users WHERE email = 'putar@contoh.id')"
+    await su.query(
+      `UPDATE users SET two_factor_enabled = true WHERE id = ${owner}`,
+    )
+    await su.query(
+      `UPDATE sessions SET created_at = now() - interval '2 hours',
+         last_seen_at = now() - interval '1 minute' WHERE user_id = ${owner}`,
+    )
+    const headers = new Headers({ host: "itb.localhost", origin, cookie })
+    const before = await readSessionWith(auth, headers)
+    expect(before.session).not.toBeNull()
+    const rotated = await auth.api.rotateSession({
+      headers,
+      returnHeaders: true,
+    })
+    const fresh = rotated.headers
+      .getSetCookie()
+      .map((c) => c.split(";")[0])
+      .join("; ")
+    // Step-up counts as activity
+    const { rows } = await su.query<{ last_seen_at: Date | null }>(
+      "SELECT last_seen_at FROM sessions WHERE id = $1",
+      [rotated.response.id],
+    )
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.last_seen_at).not.toBeNull()
+    const after = await readSessionWith(
+      auth,
+      new Headers({ host: "itb.localhost", cookie: fresh }),
+    )
+    expect(after.session).not.toBeNull()
+    expect(after.session?.session.id).toBe(rotated.response.id)
+    expect(after.session?.session.id).not.toBe(before.session?.session.id)
+    expect(after.session?.session.createdAt).toEqual(
+      before.session?.session.createdAt as Date,
+    )
+    expect((await readSessionWith(auth, headers)).session).toBeNull()
+    const res = await post("/session/rotate", {}, { cookie: fresh })
+    expect(res.status).toBe(404)
+  })
+
   test("pending backup codes are read in-process, never over HTTP", async () => {
     const email = "kode.tertunda@contoh.id"
     const first = await signUp(email)
@@ -1068,6 +1452,53 @@ describe("server-only auth calls", () => {
       { cookie },
     )
     expect(res.status).toBe(404)
+  })
+})
+
+describe("session token transfer", () => {
+  // ASVS V3.3.4: Set-Cookie only
+  test("no auth response body carries the session token", async () => {
+    const email = "token.badan@contoh.id"
+    const first = await signUp(email)
+    const cookie = cookies(first)
+    const token = (value: string) =>
+      decodeURIComponent(/session_token=([^.;]+)/.exec(value)?.[1] ?? "-")
+    expect(await first.text()).not.toContain(token(cookie))
+    const read = await auth.handler(
+      new Request(`${origin}/api/auth/get-session`, { headers: { cookie } }),
+    )
+    expect(read.status).toBe(404)
+    const inProcess = await auth.api.getSession({
+      headers: new Headers({ host: "itb.localhost", cookie }),
+    })
+    expect(inProcess?.user.email).toBe(email)
+
+    const enable = await post("/two-factor/enable", {}, { cookie })
+    const { totpURI, backupCodes } = (await enable.json()) as {
+      totpURI: string
+      backupCodes: string[]
+    }
+    const secret = new URL(totpURI).searchParams.get("secret") ?? ""
+    const enrol = await post(
+      "/two-factor/verify-totp",
+      { code: totp(secret) },
+      { cookie },
+    )
+    expect(enrol.status).toBe(200)
+    const enrolBody = await enrol.text()
+    expect(JSON.parse(enrolBody)).not.toHaveProperty("token")
+    expect(enrolBody).not.toContain(token(cookies(enrol)))
+
+    const challenge = cookies(await signIn(email))
+    const backup = await post(
+      "/two-factor/verify-backup-code",
+      { code: backupCodes[0] },
+      { cookie: challenge },
+    )
+    expect(backup.status).toBe(200)
+    const backupBody = await backup.text()
+    expect(JSON.parse(backupBody)).not.toHaveProperty("token")
+    expect(backupBody).not.toContain(token(cookies(backup)))
   })
 })
 
@@ -1094,6 +1525,19 @@ describe("auth body fields", () => {
     expect(res.status).toBe(200)
     const { totpURI } = (await res.json()) as { totpURI: string }
     expect(new URL(totpURI).searchParams.get("issuer")).toBe("Sadar Bersuara")
+  })
+
+  test("enrollment needs a sign-in within 300 s", async () => {
+    // ASVS V7.5.1: MFA change re-authenticates
+    const cookie = await signedIn("lama.enrol@contoh.id")
+    await su.query(
+      `UPDATE sessions SET created_at = now() - interval '301 seconds'
+       WHERE user_id = (SELECT id FROM users WHERE email = $1)`,
+      ["lama.enrol@contoh.id"],
+    )
+    const res = await post("/two-factor/enable", { method: "totp" }, { cookie })
+    expect(res.status).toBe(403)
+    expect((await res.json()).code).toBe("SESSION_NOT_FRESH")
   })
 
   test("sign-out takes no redirect fields", async () => {
@@ -1199,6 +1643,36 @@ describe("rate limits", () => {
     expect(await send("192.0.2.4")).toBe(429)
   })
 
+  test("other clients never lock the owner out", async () => {
+    const email = "pemilik.kode@contoh.id"
+    await insertUser(su, email)
+    const body = { mode: "sign-in", identifier: email, channel: "email" }
+    const send = (ip: string) => prodPost("/account/send-code", body, ip)
+    for (let i = 1; i <= 9; i++) {
+      expect(await send(`198.51.100.${i}`)).toBe(200)
+    }
+    expect(await send("203.0.113.77")).toBe(200)
+    // Same client waits 60 s
+    expect(await send("203.0.113.77")).toBe(429)
+  })
+
+  test("one proven address gets 20 codes a day", async () => {
+    const email = "batas@contoh.id"
+    await insertUser(su, email)
+    const hash = createHmac("sha256", Buffer.alloc(32, 5))
+      .update(email)
+      .digest("hex")
+    await su.query(
+      `INSERT INTO email_log (kind, address_hash, status, purpose, client_hash, created_at)
+       SELECT 'otp', $1, 'sent', 'sign_in', 'klien' || g, now() - interval '1 hour'
+       FROM generate_series(1, 19) g`,
+      [hash],
+    )
+    const body = { mode: "sign-in", identifier: email, channel: "email" }
+    expect(await prodPost("/account/send-code", body, "203.0.113.78")).toBe(200)
+    expect(await prodPost("/account/send-code", body, "203.0.113.79")).toBe(429)
+  })
+
   test("one client has a daily cap on Daftar codes by email", async () => {
     const ip = "203.0.113.8"
     const send = (i: number) =>
@@ -1281,8 +1755,63 @@ describe("readSession", () => {
     )
     const read = await readSessionWith(auth, headers)
     expect(read.session?.user.email).toBe("geser@contoh.id")
-    expect(read.setCookie.join("\n")).toContain("sm.session_token=")
+    expect(read.setCookie.join("\n")).toContain("sb.session_token=")
     expect(read.setCookie.join("\n")).toContain("Max-Age=604800")
+  })
+
+  test("a session past 30 days ends, sliding or not", async () => {
+    // ASVS V7.3.2: absolute lifetime
+    const headers = await signedIn("tua@contoh.id")
+    await su.query(
+      "UPDATE sessions SET created_at = now() - interval '30 days 1 minute' WHERE user_id = (SELECT id FROM users WHERE email = $1)",
+      ["tua@contoh.id"],
+    )
+    const read = await readSessionWith(auth, headers)
+    expect(read.session).toBeNull()
+    expect(read.setCookie.join("\n")).toContain("sb.session_token=;")
+    const { rows } = await su.query(
+      "SELECT 1 FROM sessions WHERE user_id = (SELECT id FROM users WHERE email = $1)",
+      ["tua@contoh.id"],
+    )
+    expect(rows).toHaveLength(0)
+  })
+
+  test("a TOTP account idle 30 minutes is signed out", async () => {
+    // ASVS V7.3.1: staff inactivity timeout
+    const idOf = "(SELECT id FROM users WHERE email = $1)"
+    const staff = await signedIn("diam@contoh.id")
+    await su.query(
+      `UPDATE users SET two_factor_enabled = true WHERE id = ${idOf}`,
+      ["diam@contoh.id"],
+    )
+    await su.query(
+      `UPDATE sessions SET created_at = now() - interval '2 hours',
+         last_seen_at = now() - interval '10 minutes' WHERE user_id = ${idOf}`,
+      ["diam@contoh.id"],
+    )
+    expect((await readSessionWith(auth, staff)).session).not.toBeNull()
+    const { rows } = await su.query<{ idle: number }>(
+      `SELECT extract(epoch FROM now() - last_seen_at)::int AS idle
+       FROM sessions WHERE user_id = ${idOf}`,
+      ["diam@contoh.id"],
+    )
+    expect(rows[0]?.idle).toBeLessThan(5)
+    await su.query(
+      `UPDATE sessions SET last_seen_at = now() - interval '31 minutes'
+       WHERE user_id = ${idOf}`,
+      ["diam@contoh.id"],
+    )
+    const idle = await readSessionWith(auth, staff)
+    expect(idle.session).toBeNull()
+    expect(idle.setCookie.join("\n")).toContain("sb.session_token=;")
+    // Reporter: 7-day sliding window
+    const reporter = await signedIn("warga.diam@contoh.id")
+    await su.query(
+      `UPDATE sessions SET created_at = now() - interval '2 hours'
+       WHERE user_id = ${idOf}`,
+      ["warga.diam@contoh.id"],
+    )
+    expect((await readSessionWith(auth, reporter)).session).not.toBeNull()
   })
 
   test("an auth error reads as signed out", async () => {
@@ -1295,6 +1824,20 @@ describe("readSession", () => {
     } as unknown as Auth
     const read = await readSessionWith(failing, new Headers())
     expect(read).toEqual({ session: null, setCookie: [] })
+  })
+
+  test("a database error is not signed out", async () => {
+    // Better Auth wraps adapter errors
+    const failing = {
+      api: {
+        getSession: async () => {
+          throw new APIError("INTERNAL_SERVER_ERROR")
+        },
+      },
+    } as unknown as Auth
+    await expect(readSessionWith(failing, new Headers())).rejects.toThrow(
+      APIError,
+    )
   })
 })
 
@@ -1334,6 +1877,72 @@ describe("auth config", () => {
   test("matches the database schema", async () => {
     const context = await auth.$context
     await context.explicitSchemaCheck?.()
+  })
+
+  // ASVS V3.3.3: host-only names
+  test("production cookies carry the __Host- prefix", async () => {
+    const mails: EmailMessage[] = []
+    const production = createAuth({
+      db: database.db,
+      hosts: ["itb.localhost"],
+      dev: false,
+      email: {
+        send: async (message) => {
+          mails.push(message)
+        },
+      },
+      hashKey: () => Buffer.alloc(32, 5),
+      verifyCaptcha: async () => ({ ok: true }),
+      whatsapp: fakeWhatsApp,
+      secrets: [{ version: 1, value: "test-secret-test-secret-test-secret-1" }],
+    })
+    const context = await production.$context
+    const made = [
+      ...Object.values(context.authCookies),
+      context.createAuthCookie("two_factor"),
+    ]
+    for (const cookie of made) {
+      expect(cookie.name).toMatch(/^__Host-sb\./)
+      expect(cookie.attributes).toMatchObject({ secure: true, path: "/" })
+      expect(cookie.attributes.domain).toBeUndefined()
+    }
+    const dev = await auth.$context
+    expect(dev.authCookies.sessionToken.name).toBe("sb.session_token")
+    expect(dev.authCookies.sessionToken.attributes.secure).toBe(false)
+
+    // Round trip through Better Auth
+    const https = "https://itb.localhost"
+    const send = (path: string, body: unknown) =>
+      production.handler(
+        new Request(`${https}/api/auth${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: https },
+          body: JSON.stringify(body),
+        }),
+      )
+    const account = newAccount("host.prefix@contoh.id")
+    expect((await send("/account/send-code", account)).status).toBe(200)
+    for (let i = 0; i < 100 && mails.length === 0; i++) await Bun.sleep(10)
+    const code = /\b(\d{6})\b/.exec(mails.at(-1)?.text ?? "")?.[1]
+    const done = await send("/account/verify-code", {
+      ...account,
+      code,
+      ...ageBox,
+    })
+    expect(done.status).toBe(200)
+    const line = done.headers
+      .getSetCookie()
+      .find((c) => c.startsWith("__Host-sb.session_token="))
+    expect(line).toContain("Secure")
+    expect(line).toContain("Path=/")
+    expect(line?.toLowerCase()).not.toContain("domain=")
+    const read = await production.api.getSession({
+      headers: new Headers({
+        host: "itb.localhost",
+        cookie: line?.split(";")[0] ?? "",
+      }),
+    })
+    expect(read?.user.email).toBe("host.prefix@contoh.id")
   })
 })
 
@@ -1377,5 +1986,282 @@ describe("staffAccess", () => {
         now: new Date("2026-10-13T21:00:01Z"),
       }),
     ).toBe(false)
+  })
+})
+
+describe("account invariants", () => {
+  const draft = (email: string) => ({
+    name: "Warga Uji",
+    email,
+    emailVerified: true,
+  })
+
+  async function refusal(create: () => Promise<unknown>) {
+    const error = await create().catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(APIError)
+    return (error as APIError).body?.code
+  }
+
+  test("Given an in-process account create without a phone, then it is refused and nothing is written", async () => {
+    const email = `tanpa-hp-${crypto.randomUUID()}@contoh.id`
+    const { internalAdapter } = await auth.$context
+    const create = () =>
+      internalAdapter.createUser(draft(email), { method: "in-process" })
+    expect(await refusal(create)).toBe("PHONE_REQUIRED")
+    expect(await userRow(email)).toBeUndefined()
+  })
+
+  test("Given an in-process account create without the 18+ box, then it is refused and nothing is written", async () => {
+    const email = `tanpa-umur-${crypto.randomUUID()}@contoh.id`
+    const { internalAdapter } = await auth.$context
+    const create = () =>
+      internalAdapter.createUser(
+        { ...draft(email), phoneNumber: nextPhone() },
+        { method: "in-process" },
+      )
+    expect(await refusal(create)).toBe("AGE_DECLARATION_REQUIRED")
+    expect(await userRow(email)).toBeUndefined()
+  })
+})
+
+describe("process auth", () => {
+  // Hosts come from organizations
+  const HOST = "procauth.localhost"
+
+  beforeAll(async () => {
+    await su.query("DELETE FROM organizations WHERE slug = 'procauth'")
+    await insertOrg(su, "procauth")
+  })
+
+  afterAll(async () => {
+    resetAuth()
+    await su.query("DELETE FROM organizations WHERE slug = 'procauth'")
+  })
+
+  async function withEnv<T>(
+    name: string,
+    value: string | undefined,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    const saved = process.env[name]
+    resetAuth()
+    try {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+      return await run()
+    } finally {
+      if (saved === undefined) delete process.env[name]
+      else process.env[name] = saved
+      resetAuth()
+    }
+  }
+
+  test("Given a bad keyring at boot, when it is fixed, then getAuth retries instead of keeping the failure", async () => {
+    const saved = process.env.BETTER_AUTH_SECRETS
+    await withEnv("BETTER_AUTH_SECRETS", "1:pendek", async () => {
+      await expect(getAuth()).rejects.toThrow("needs 32 bytes")
+      process.env.BETTER_AUTH_SECRETS = saved
+      const fixed = await getAuth()
+      expect(await getAuth()).toBe(fixed)
+    })
+  })
+
+  test("Given the process auth, when a code is asked without Turnstile, then it is refused before any send", async () => {
+    resetAuth()
+    const auth = await getAuth()
+    const sends = async () =>
+      (
+        await su.query<{ n: number }>(
+          "SELECT count(*)::int AS n FROM email_log",
+        )
+      ).rows[0]?.n
+    const before = await sends()
+    const res = await auth.handler(
+      new Request(`http://${HOST}/api/auth/account/send-code`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: `http://${HOST}`,
+        },
+        body: JSON.stringify({
+          mode: "sign-in",
+          identifier: "warga@contoh.id",
+          channel: "email",
+        }),
+      }),
+    )
+    expect(res.status).toBe(403)
+    expect((await res.json()).code).toBe("CAPTCHA_FAILED")
+    expect(await sends()).toBe(before)
+  })
+
+  test("Given a reserved WhatsApp send, when its status is asked without the job key, then there is none to report", async () => {
+    const statusWith = async (key: string | undefined, id: string) =>
+      withEnv("WHATSAPP_JOB_KEY", key, async () => {
+        const res = await (await getAuth()).handler(
+          new Request(`http://${HOST}/api/auth/account/code-status`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              origin: `http://${HOST}`,
+            },
+            body: JSON.stringify({ id }),
+          }),
+        )
+        expect(res.status).toBe(200)
+        return res.json()
+      })
+    const { rows } = await su.query<{ id: string }>(
+      `INSERT INTO whatsapp_log (phone_hash, status)
+       VALUES ('status-tanpa-kunci', 'reserved') RETURNING id`,
+    )
+    const id = rows[0]?.id ?? ""
+    try {
+      const key = Buffer.alloc(32, 7).toString("base64")
+      expect(await statusWith(key, id)).toEqual({ status: "reserved" })
+      expect(await statusWith(undefined, id)).toEqual({ status: null })
+    } finally {
+      await su.query("DELETE FROM whatsapp_log WHERE id = $1", [id])
+    }
+  })
+
+  test("Given a malformed WhatsApp job key, when auth starts, then it refuses", async () => {
+    await withEnv("WHATSAPP_JOB_KEY", "pendek", async () => {
+      await expect(getAuth()).rejects.toThrow("WHATSAPP_JOB_KEY needs 32 bytes")
+    })
+  })
+
+  test("Given a connected sender, when the job key is set or not, then WhatsApp reads ready only with the key", async () => {
+    const readyWith = async (key: string | undefined) =>
+      withEnv("WHATSAPP_JOB_KEY", key, async () => {
+        const auth = await getAuth()
+        const res = await auth.handler(
+          new Request(`http://${HOST}/api/auth/account/check-new`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              origin: `http://${HOST}`,
+            },
+            body: JSON.stringify({
+              name: "Warga",
+              email: `baru.${crypto.randomUUID()}@contoh.id`,
+              phone: nextPhone(),
+            }),
+          }),
+        )
+        expect(res.status).toBe(200)
+        return (await res.json()).whatsappReady
+      })
+    await su.query(
+      `INSERT INTO whatsapp_sender (id, provider, status, last_seen_at)
+       VALUES (1, 'baileys', 'connected', now())
+       ON CONFLICT (id) DO UPDATE SET status = 'connected', last_seen_at = now()`,
+    )
+    try {
+      expect(await readyWith(Buffer.alloc(32, 7).toString("base64"))).toBe(true)
+      expect(await readyWith(undefined)).toBe(false)
+    } finally {
+      await su.query("DELETE FROM whatsapp_sender")
+    }
+  })
+})
+
+describe("code edge cases", () => {
+  test("Given WhatsApp drops between the readiness check and the send, then the code is refused with the email hint", async () => {
+    await signUp("putus@contoh.id")
+    whatsapp.sendFails = "unavailable"
+    try {
+      const res = await post(
+        "/account/send-code",
+        { mode: "sign-in", identifier: "putus@contoh.id", channel: "whatsapp" },
+        captcha,
+      )
+      expect(res.status).toBe(503)
+      expect((await res.json()).code).toBe("WHATSAPP_UNAVAILABLE")
+    } finally {
+      whatsapp.sendFails = null
+    }
+    expect((await signIn("putus@contoh.id")).status).toBe(200)
+  })
+
+  test("Given the WhatsApp sender spaces codes, when another is asked, then it is 429 and email still works", async () => {
+    await signUp("jeda@contoh.id")
+    whatsapp.sendFails = "spacing"
+    try {
+      const res = await post(
+        "/account/send-code",
+        { mode: "sign-in", identifier: "jeda@contoh.id", channel: "whatsapp" },
+        captcha,
+      )
+      expect(res.status).toBe(429)
+      expect((await res.json()).code).toBe("OTP_LIMIT")
+    } finally {
+      whatsapp.sendFails = null
+    }
+    expect((await signIn("jeda@contoh.id")).status).toBe(200)
+  })
+
+  test("Given no account, when a sign-in code is verified, then the answer is only an invalid code", async () => {
+    const res = await post("/account/verify-code", {
+      mode: "sign-in",
+      identifier: "tidak.pernah@contoh.id",
+      channel: "email",
+      code: "123456",
+    })
+    expect(res.status).toBe(400)
+    expect((await res.json()).code).toBe("INVALID_OTP")
+  })
+
+  test("Given an email only stored, never proven, when it is looked up, then it is reported unproven, not found", async () => {
+    const email = `belum.terbukti.${crypto.randomUUID()}@contoh.id`
+    expect((await signUp(email, "whatsapp")).status).toBe(200)
+    const res = await post("/account/lookup", { identifier: email })
+    expect(await res.json()).toEqual({ found: false, unproven: true })
+    const unknown = await post("/account/lookup", {
+      identifier: `tidak.ada.${crypto.randomUUID()}@contoh.id`,
+    })
+    expect(await unknown.json()).toEqual({ found: false })
+  })
+
+  test("Given another sign-up commits the same email mid-verify, then this one is 409 ACCOUNT_EXISTS", async () => {
+    const email = `balapan.${crypto.randomUUID()}@contoh.id`
+    const body = newAccount(email)
+    const code = await requestCode(body)
+    const holder = await su.connect()
+    try {
+      await holder.query("BEGIN")
+      await holder.query(
+        `INSERT INTO users (name, email, email_verified, age_declared_at, age_consent_version)
+         VALUES ('Lain', $1, true, now(), $2)`,
+        [email, AGE_CONSENT_VERSION],
+      )
+      const verifying = post("/account/verify-code", {
+        ...body,
+        code,
+        ...ageBox,
+      })
+      // Wait until the insert blocks
+      let waiting = 0
+      for (let i = 0; i < 200 && waiting === 0; i++) {
+        const { rows } = await su.query<{ n: number }>(
+          `SELECT count(*)::int AS n FROM pg_stat_activity
+           WHERE datname = current_database() AND wait_event_type = 'Lock'
+             AND query ILIKE 'insert into "users"%'`,
+        )
+        waiting = rows[0]?.n ?? 0
+        if (waiting === 0) await Bun.sleep(10)
+      }
+      expect(waiting).toBe(1)
+      await holder.query("COMMIT")
+      const res = await verifying
+      expect(res.status).toBe(409)
+      expect((await res.json()).code).toBe("ACCOUNT_EXISTS")
+    } finally {
+      holder.release()
+    }
+    const { rows } = await su.query("SELECT name FROM users WHERE email = $1", [
+      email,
+    ])
+    expect(rows).toEqual([{ name: "Lain" }])
   })
 })

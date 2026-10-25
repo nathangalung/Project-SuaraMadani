@@ -343,19 +343,27 @@ export function credsSaver(save: () => Promise<void>): () => void {
   }
 }
 
+const noop = () => {}
 // Silent: no text logged
 const SILENT = {
   level: "silent",
   child: () => SILENT,
-  trace: () => {},
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
+  trace: noop,
+  debug: noop,
+  info: noop,
+  warn: noop,
+  error: noop,
 }
 
+type Baileys = typeof import("baileys")
+
 /** Real socket, Baileys loaded here. */
-export function baileysFactory(db: Db, credsKey: Buffer): SocketFactory {
+export function baileysFactory(
+  db: Db,
+  credsKey: Buffer,
+  // Tests fake the socket
+  load: () => Promise<Baileys> = () => import("baileys"),
+): SocketFactory {
   const store = sealedStore(db, credsKey)
   const sent = sentCache()
   return {
@@ -365,7 +373,7 @@ export function baileysFactory(db: Db, credsKey: Buffer): SocketFactory {
     },
     clear: () => store.clear(),
     async open(onUpdate) {
-      const baileys = await import("baileys")
+      const baileys = await load()
       const { state, saveCreds } = await authState(store, {
         replacer: baileys.BufferJSON.replacer,
         reviver: baileys.BufferJSON.reviver,

@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import { inRequestScope } from "../../../db/request-scope.ts"
 import { signOut } from "./sign-out.server.ts"
 
-const cleared = "sm.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+const cleared = "sb.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
 
 function fakeSignOut(response: Response) {
   const calls: Headers[] = []
@@ -21,13 +22,13 @@ describe("signOut", () => {
     )
     const request = new Request("http://itb.localhost/keluar", {
       method: "POST",
-      headers: { cookie: "sm.session_token=abc" },
+      headers: { cookie: "sb.session_token=abc" },
     })
     const response = await signOut(request, api)
     expect(response.status).toBe(303)
     expect(response.headers.get("Location")).toBe("/")
     expect(response.headers.getSetCookie()).toEqual([cleared])
-    expect(api.calls[0]?.get("cookie")).toBe("sm.session_token=abc")
+    expect(api.calls[0]?.get("cookie")).toBe("sb.session_token=abc")
   })
 
   test("returns to /masuk only, other targets go home", async () => {
@@ -47,6 +48,30 @@ describe("signOut", () => {
       const response = await signOut(post(next), api)
       expect(response.headers.get("Location")).toBe("/")
     }
+  })
+
+  test("a sign-out is a security event", async () => {
+    const api = fakeSignOut(
+      new Response("{}", { headers: { "Set-Cookie": cleared } }),
+    )
+    const lines: Record<string, unknown>[] = []
+    const request = new Request("http://itb.localhost/keluar", {
+      method: "POST",
+    })
+    await inRequestScope({ reqId: "r1", userId: "user-1" }, () =>
+      signOut(request, api, (line) => lines.push(line)),
+    )
+    expect(lines).toEqual([
+      {
+        msg: "security",
+        event: "auth_ok",
+        host: "itb.localhost",
+        path: "/keluar",
+        factor: "sign_out",
+        user_id: "user-1",
+        req_id: "r1",
+      },
+    ])
   })
 
   test("still returns home without a session", async () => {

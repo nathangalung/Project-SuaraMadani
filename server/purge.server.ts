@@ -1,5 +1,5 @@
 import { type FetchLike, withDeadline } from "./http.ts"
-import { type LogRecord, writeLog } from "./log.ts"
+import { errorRecord, type LogRecord, writeError } from "./log.ts"
 
 type PurgeResult = { skipped: boolean }
 
@@ -33,6 +33,8 @@ export function createPurgeClient(options: PurgeOptions): PurgeClient {
           "content-type": "application/json",
         },
         body: JSON.stringify(body),
+        // API10: token never follows redirects
+        redirect: "error",
         signal: AbortSignal.timeout(timeout),
       }),
       timeout,
@@ -79,10 +81,11 @@ export async function purgeQuietly(
   try {
     await purge.purgeUrls(urls)
   } catch (error) {
-    ;(deps.log ?? writeLog)({
+    // Error stream: runbook, GlitchTip
+    ;(deps.log ?? writeError)({
       msg: "purge failed",
       ...context,
-      error: error instanceof Error ? error.message : String(error),
+      ...errorRecord(error),
     })
   }
 }

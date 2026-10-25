@@ -1,4 +1,8 @@
 [install]
 exact = true
-# Docs: 3 days, Renovate 14
-minimumReleaseAge = 259200
+# 14 days, same as Renovate
+minimumReleaseAge = 1209600
+
+[test]
+# Tests always use the test DB
+preload = ["./db/test-env.ts"]

@@ -3,7 +3,7 @@ CREATE FUNCTION "users_superadmin_guard"() RETURNS trigger
   LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $$
 BEGIN
   IF NEW.superadmin
-    AND current_user <> 'sm_migrator'
+    AND current_user <> 'sb_migrator'
     AND NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) THEN
     RAISE EXCEPTION 'superadmin is set from the CLI only' USING ERRCODE = 'insufficient_privilege';
   END IF;

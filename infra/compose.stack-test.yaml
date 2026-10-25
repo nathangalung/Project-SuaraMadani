@@ -3,9 +3,18 @@ services:
   caddy:
     ports:
       - "127.0.0.1:${STACK_PORT:-5199}:80"
+    # Internal-only containers never publish
+    networks:
+      published: {}
   postgres:
     command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "-c", "archive_mode=off"]
   cloudflared:
     profiles: [off]
   clamav:
     profiles: [off]
+
+networks:
+  published:
+    ipam:
+      config:
+        - subnet: 172.31.21.0/28

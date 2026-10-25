@@ -21,14 +21,21 @@ export function newestUpload(files: B2File[], start: number): number {
   )
 }
 
-function required(name: string): string {
-  const value = process.env[name]
+type Env = Record<string, string | undefined>
+type Fetch = (url: string, init: RequestInit) => Promise<Response>
+
+function required(env: Env, name: string): string {
+  const value = env[name]
   if (!value) throw new Error(`${name} is not set`)
   return value
 }
 
-async function getJson<T>(url: string, authorization: string): Promise<T> {
-  const res = await fetch(url, {
+async function getJson<T>(
+  fetcher: Fetch,
+  url: string,
+  authorization: string,
+): Promise<T> {
+  const res = await fetcher(url, {
     headers: { authorization },
     signal: AbortSignal.timeout(TIMEOUT_MS),
   })
@@ -36,13 +43,19 @@ async function getJson<T>(url: string, authorization: string): Promise<T> {
   return (await res.json()) as T
 }
 
-async function main(): Promise<void> {
-  const basic = btoa(`${required("B2_LIST_KEY_ID")}:${required("B2_LIST_KEY")}`)
+/** Newest upload, ISO time. */
+export async function newestCopy(
+  env: Env = process.env,
+  fetcher: Fetch = fetch,
+): Promise<string> {
+  const id = required(env, "B2_LIST_KEY_ID")
+  const basic = btoa(`${id}:${required(env, "B2_LIST_KEY")}`)
+  const bucketName = required(env, "B2_BUCKET")
   const auth = await getJson<Auth>(
+    fetcher,
     `${API}/b2_authorize_account`,
     `Basic ${basic}`,
   )
-  const bucketName = required("B2_BUCKET")
   const bucket = auth.apiInfo.storageApi.allowed.buckets?.find(
     (b) => b.name === bucketName,
   )
@@ -56,6 +69,7 @@ async function main(): Promise<void> {
       ...(start ? { startFileName: start } : {}),
     })
     const page: Page = await getJson<Page>(
+      fetcher,
       `${auth.apiInfo.storageApi.apiUrl}/b2api/v4/b2_list_file_names?${query}`,
       auth.authorizationToken,
     )
@@ -63,7 +77,7 @@ async function main(): Promise<void> {
     start = page.nextFileName
   }
   if (newest === 0) throw new Error("B2 copy is empty")
-  console.log(new Date(newest).toISOString())
+  return new Date(newest).toISOString()
 }
 
-if (import.meta.main) await main()
+if (import.meta.main) console.log(await newestCopy())

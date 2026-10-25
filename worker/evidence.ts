@@ -49,12 +49,10 @@ export function createEvidenceHandler(
     // Missing file is retried
     const input = await readFile(originalPath(deps.filesDir, orgId, evidenceId))
     const source: ScanSource = { clamd, bytes: async () => input, signal }
-    // PDF first, outage retries
-    if (row.kind === "pdf") {
-      const verdict = await scanOriginal(rows, orgId, evidenceId, source)
-      if (verdict === "malware") return "malware"
-      source.done = true
-    }
+    // ASVS V5.4.3: every kind, first
+    const verdict = await scanOriginal(rows, orgId, evidenceId, source)
+    if (verdict === "malware") return "malware"
+    source.done = verdict === "clean"
     const review = (reason: EvidenceFailure) =>
       manualReview(rows, orgId, evidenceId, reason, source)
     let mime: string

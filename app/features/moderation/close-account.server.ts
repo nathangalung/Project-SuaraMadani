@@ -1,14 +1,24 @@
-import { and, eq, inArray, sql } from "drizzle-orm"
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm"
 import { auditLog } from "../../../db/schema/audit.ts"
 import { members, sessions, users } from "../../../db/schema/auth.ts"
+import { fixSurveys, ratings } from "../../../db/schema/claims.ts"
 import { demandFollows, demandRatings } from "../../../db/schema/demands.ts"
-import { issueReports, issues } from "../../../db/schema/issues.ts"
+import {
+  issueReports,
+  issues,
+  resolutionClaims,
+} from "../../../db/schema/issues.ts"
 import { follows } from "../../../db/schema/notifications.ts"
+import { agencyReplies } from "../../../db/schema/replies.ts"
 import { evidence, reports } from "../../../db/schema/reports.ts"
 import { type Tx, withTenant } from "../../../db/tenant.server.ts"
+import { surveyDecision } from "../../../shared/claims.ts"
 import { publicFiles } from "../../../shared/evidence.ts"
 import type { CloseAccountReason } from "../../../shared/moderation.ts"
+import { surveyTally } from "../issues/claims.server.ts"
+import { type PurgeDeps, purgeIssuePages } from "../issues/publish.server.ts"
 import { recomputeIssue } from "./merge.server.ts"
+import { applyIssueAction } from "./referrals.server.ts"
 import { queueTakedown } from "./takedown.server.ts"
 
 export type CloseAccountInput = {
@@ -27,6 +37,7 @@ type Removed = {
   reports: number
   issues: string[]
   unpublished: string[]
+  decided: { code: string; version: number }[]
 }
 
 // Never close a colleague's account
@@ -98,6 +109,16 @@ async function removeAtCampus(
   await tx.delete(follows).where(eq(follows.userId, userId))
   await tx.delete(demandFollows).where(eq(demandFollows.userId, userId))
   await tx.delete(demandRatings).where(eq(demandRatings.userId, userId))
+  await tx.delete(ratings).where(eq(ratings.userId, userId))
+  // Reply text stays, sender forgotten
+  await tx
+    .update(agencyReplies)
+    .set({ userId: null })
+    .where(eq(agencyReplies.userId, userId))
+  const surveyed = await tx
+    .delete(fixSurveys)
+    .where(eq(fixSurveys.userId, userId))
+    .returning({ claimId: fixSurveys.claimId })
   await tx
     .delete(members)
     .where(and(eq(members.organizationId, orgId), eq(members.userId, userId)))
@@ -122,19 +143,79 @@ async function removeAtCampus(
         : "account.close_minor",
     entityType: "user",
     entityId: userId,
-    changedColumns: ["members", "reports", "sessions"],
+    changedColumns: ["agency_replies", "members", "reports", "sessions"],
     reasonCode: input.reason,
   })
+  // Remaining answers may now decide
+  const decided = await decideRounds(
+    tx,
+    orgId,
+    [...new Set(surveyed.map((row) => row.claimId))].sort(),
+  )
   return {
     reports: ids.length,
     issues: codes.map((row) => row.code).sort(),
     unpublished: emptied.map((row) => row.code).sort(),
+    decided,
   }
+}
+
+/** Rounds the departed reporter left. */
+async function decideRounds(
+  tx: Tx,
+  orgId: string,
+  claimIds: string[],
+): Promise<{ code: string; version: number }[]> {
+  const decided: { code: string; version: number }[] = []
+  for (const claimId of claimIds) {
+    // Issue lock first, like answers
+    const [open] = await tx
+      .select({
+        issueId: issues.id,
+        advocacy: issues.advocacyStatus,
+        gov: issues.govStatus,
+        version: issues.version,
+      })
+      .from(resolutionClaims)
+      .innerJoin(
+        issues,
+        and(
+          eq(issues.orgId, resolutionClaims.orgId),
+          eq(issues.id, resolutionClaims.issueId),
+        ),
+      )
+      .where(
+        and(
+          eq(resolutionClaims.id, claimId),
+          isNull(resolutionClaims.closedAt),
+          isNotNull(issues.publishedAt),
+        ),
+      )
+      .for("update", { of: issues })
+    if (open?.gov !== "claimed_resolved") continue
+    const decision = surveyDecision(await surveyTally(tx, claimId))
+    if (decision === "wait") continue
+    const result = await applyIssueAction(tx, orgId, {
+      issueId: open.issueId,
+      seen: {
+        advocacy: open.advocacy,
+        government: open.gov,
+        version: open.version,
+      },
+      actorId: null,
+      basis: "survey",
+      action: decision === "confirm" ? "confirm_resolved" : "reopen",
+      note: null,
+    })
+    if (result.ok) decided.push(result)
+  }
+  return decided
 }
 
 /** Minor or data owner. */
 export async function closeAccount(
   input: CloseAccountInput,
+  deps: PurgeDeps = {},
 ): Promise<CloseAccountResult> {
   const removed = await withTenant(
     input.tenant.id,
@@ -142,5 +223,9 @@ export async function closeAccount(
     { role: "admin" },
   )
   if (typeof removed === "string") return { ok: false, reason: removed }
-  return { ok: true, ...removed }
+  const { decided, ...result } = removed
+  for (const issue of decided) {
+    await purgeIssuePages(input.tenant.host, issue, deps)
+  }
+  return { ok: true, ...result }
 }

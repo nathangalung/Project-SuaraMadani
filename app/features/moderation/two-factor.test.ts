@@ -1,4 +1,5 @@
-import { afterAll, describe, expect, test } from "bun:test"
+import { afterAll, describe, expect, spyOn, test } from "bun:test"
+import { APIError } from "better-auth/api"
 import { RouterContextProvider } from "react-router"
 import { insertOrg, insertUser, superuserPool } from "../../../db/testing.ts"
 import type { Auth } from "../../../server/auth.server.ts"
@@ -14,6 +15,7 @@ import {
   secretFromUri,
   staffHome,
   twoFactorAction,
+  twoFactorLoader,
   twoFactorView,
 } from "./two-factor.server.ts"
 
@@ -127,9 +129,10 @@ describe("twoFactorView", () => {
 
 describe("hasChallengeCookie", () => {
   test.each([
-    ["sm.two_factor=abc", true],
-    ["a=1; __Secure-sm.two_factor=abc", true],
-    ["sm.session_token=abc", false],
+    ["sb.two_factor=abc", true],
+    ["a=1; __Secure-sb.two_factor=abc", true],
+    ["a=1; __Host-sb.two_factor=abc", true],
+    ["sb.session_token=abc", false],
     ["", false],
   ])("%p is %p", (cookie, expected) => {
     expect(hasChallengeCookie(cookie)).toBe(expected)
@@ -153,6 +156,17 @@ describe("readBackupCode", () => {
 
   test("adds the dash when it was left out", () => {
     expect(readBackupCode("xwFYIHb7up")).toBe("xwFYI-Hb7up")
+  })
+
+  test("reads the 20-character codes", () => {
+    // ASVS V6.5.2: 112-bit minimum
+    expect(readBackupCode("xwFYI-Hb7up-Q2rTz-9kLmN")).toBe(
+      "xwFYI-Hb7up-Q2rTz-9kLmN",
+    )
+    expect(readBackupCode("xwFYIHb7upQ2rTz9kLmN")).toBe(
+      "xwFYI-Hb7up-Q2rTz-9kLmN",
+    )
+    expect(readBackupCode("xwFYI-Hb7up-Q2rTz")).toBeNull()
   })
 
   test.each(["123456", "xwFYI-Hb7u", "xwFYI_Hb7up", ""])(
@@ -202,7 +216,7 @@ describe("twoFactorAction", () => {
   const challengeRequest = (body: Record<string, string>) =>
     new Request("http://tf.localhost/masuk/dua-langkah", {
       method: "POST",
-      headers: { cookie: "sm.two_factor=signed" },
+      headers: { cookie: "sb.two_factor=signed" },
       body: new URLSearchParams(body),
     })
 
@@ -214,7 +228,7 @@ describe("twoFactorAction", () => {
           calls.push(input.body)
           return Promise.resolve(
             new Response(null, {
-              headers: { "Set-Cookie": "sm.session_token=t; Path=/" },
+              headers: { "Set-Cookie": "sb.session_token=t; Path=/" },
             }),
           )
         },
@@ -231,7 +245,7 @@ describe("twoFactorAction", () => {
     if (!(result instanceof Response)) throw new Error("no redirect")
     // Loader sends staff to /kelola
     expect(result.headers.get("Location")).toBe("/masuk/dua-langkah")
-    expect(result.headers.get("Set-Cookie")).toContain("sm.session_token=t")
+    expect(result.headers.get("Set-Cookie")).toContain("sb.session_token=t")
   })
 
   test("a wrong or malformed backup code is reported", async () => {
@@ -305,7 +319,104 @@ describe("twoFactorAction", () => {
       body: new URLSearchParams({ intent: "verify", uri: URI, ...body }),
     })
 
+  /** Security lines of one event. */
+  function eventLines(lines: unknown[][], event: string) {
+    return lines.flatMap((args) => {
+      const line = JSON.parse(String(args[0])) as Record<string, unknown>
+      return line.event === event ? [line] : []
+    })
+  }
+
+  const signedOutAuth = {
+    api: {
+      signOut: () =>
+        Promise.resolve(
+          new Response(null, {
+            headers: { "Set-Cookie": "sb.session_token=; Max-Age=0" },
+          }),
+        ),
+    },
+  } as unknown as Auth
+
+  test("a stale TOTP session's sign-out is logged", async () => {
+    // ASVS V16.3.1: hook skips in-process
+    const lines: unknown[][] = []
+    const spy = spyOn(console, "log").mockImplementation((...args) => {
+      lines.push(args)
+    })
+    await withEnrolling(async (context, userId) => {
+      const base = session(true, new Date(now.getTime() - 60_000), now)
+      context.set(sessionContext, {
+        ...base,
+        user: { ...base.user, id: userId },
+      })
+      const result = await twoFactorAction(
+        {
+          request: new Request("http://te.localhost/masuk/dua-langkah", {
+            method: "POST",
+            body: new URLSearchParams({ intent: "sign_out" }),
+          }),
+          context,
+        },
+        signedOutAuth,
+      )
+      if (!(result instanceof Response)) throw new Error("no redirect")
+      expect(result.headers.get("Location")).toBe("/masuk")
+      expect(eventLines(lines, "auth_ok")).toEqual([
+        expect.objectContaining({
+          factor: "sign_out",
+          user_id: userId,
+          host: "te.localhost",
+          path: "/masuk/dua-langkah",
+        }),
+      ])
+    }).finally(() => spy.mockRestore())
+  })
+
+  test("a stale session signs in again to enrol", async () => {
+    const lines: unknown[][] = []
+    const spy = spyOn(console, "log").mockImplementation((...args) => {
+      lines.push(args)
+    })
+    await withEnrolling(async (context, userId) => {
+      const auth = {
+        api: {
+          enableTwoFactor: () =>
+            Promise.reject(
+              new APIError("FORBIDDEN", { code: "SESSION_NOT_FRESH" }),
+            ),
+          signOut: () =>
+            Promise.resolve(
+              new Response(null, {
+                headers: { "Set-Cookie": "sb.session_token=; Max-Age=0" },
+              }),
+            ),
+        },
+      } as unknown as Auth
+      const result = await twoFactorAction(
+        {
+          request: new Request("http://te.localhost/masuk/dua-langkah", {
+            method: "POST",
+            body: new URLSearchParams({ intent: "enroll" }),
+          }),
+          context,
+        },
+        auth,
+      )
+      if (!(result instanceof Response)) throw new Error("no redirect")
+      expect(result.headers.get("Location")).toBe("/masuk")
+      expect(result.headers.get("Set-Cookie")).toContain("Max-Age=0")
+      expect(eventLines(lines, "auth_ok")).toEqual([
+        expect.objectContaining({ factor: "sign_out", user_id: userId }),
+      ])
+    }).finally(() => spy.mockRestore())
+  })
+
   test("enrollment needs the saved tick, codes stay shown", async () => {
+    const lines: unknown[][] = []
+    const spy = spyOn(console, "log").mockImplementation((...args) => {
+      lines.push(args)
+    })
     await withEnrolling(async (context, userId) => {
       const viewed: unknown[] = []
       let verified = 0
@@ -339,7 +450,15 @@ describe("twoFactorAction", () => {
       })
       expect(verified).toBe(0)
       expect(viewed).toEqual([{ userId }])
-    })
+      // ASVS V16.3.1: reveal is logged
+      const shown = lines.flatMap((args) => {
+        const line = JSON.parse(String(args[0])) as Record<string, unknown>
+        return line.event === "backup_codes_viewed" ? [line] : []
+      })
+      expect(shown).toEqual([
+        expect.objectContaining({ msg: "security", user_id: userId }),
+      ])
+    }).finally(() => spy.mockRestore())
   })
 
   test("a wrong code while enrolling re-reads the pending codes", async () => {
@@ -439,5 +558,194 @@ describe("twoFactorAction", () => {
       await su.query("DELETE FROM users WHERE id = $1", [userId])
       await su.query("DELETE FROM organizations WHERE id = $1", [orgId])
     }
+  })
+
+  /** Redirect, status or view. */
+  async function loaded(run: () => Promise<unknown>) {
+    try {
+      return { view: await run() }
+    } catch (error) {
+      if (error instanceof Response) {
+        return { location: error.headers.get("Location") }
+      }
+      if (error instanceof Error) throw error
+      return { status: (error as { init?: { status?: number } }).init?.status }
+    }
+  }
+
+  const page = (cookie?: string) =>
+    new Request("http://te.localhost/masuk/dua-langkah", {
+      headers: cookie ? { cookie } : {},
+    })
+
+  describe("twoFactorLoader", () => {
+    test("Given no session and no challenge, when opened, then sign in first", async () => {
+      expect(
+        await loaded(() =>
+          twoFactorLoader({ request: page(), context: challengeContext() }),
+        ),
+      ).toEqual({ location: "/masuk" })
+    })
+
+    test("Given a pending challenge, when opened, then the code form", async () => {
+      expect(
+        await loaded(() =>
+          twoFactorLoader({
+            request: page("sb.two_factor=signed"),
+            context: challengeContext(),
+          }),
+        ),
+      ).toEqual({ view: { mode: "challenge" } })
+    })
+
+    test("Given staff without TOTP, when opened, then enrollment for their email", async () => {
+      await withEnrolling(async (context) => {
+        const email = context.get(sessionContext)?.user.email
+        expect(
+          await loaded(() => twoFactorLoader({ request: page(), context })),
+        ).toEqual({ view: { mode: "enroll", email } })
+      })
+    })
+
+    test("Given staff with a fresh TOTP session, when opened, then on to /kelola", async () => {
+      await withEnrolling(async (context, userId) => {
+        const base = session(true, new Date(), new Date(0))
+        context.set(sessionContext, {
+          ...base,
+          user: { ...base.user, id: userId },
+        })
+        expect(
+          await loaded(() => twoFactorLoader({ request: page(), context })),
+        ).toEqual({ location: "/kelola" })
+      })
+    })
+
+    test("Given a reporter account, when opened, then 403", async () => {
+      await withEnrolling(async (context, userId) => {
+        await su.query(
+          "UPDATE members SET role = 'reporter' WHERE user_id = $1",
+          [userId],
+        )
+        expect(
+          await loaded(() => twoFactorLoader({ request: page(), context })),
+        ).toEqual({ status: 403 })
+      })
+    })
+  })
+
+  const enroll = () =>
+    new Request("http://te.localhost/masuk/dua-langkah", {
+      method: "POST",
+      body: new URLSearchParams({ intent: "enroll" }),
+    })
+
+  test("Given staff without TOTP, when enrolling, then the key, its secret and backup codes are shown", async () => {
+    await withEnrolling(async (context) => {
+      const sent: unknown[] = []
+      const auth = {
+        api: {
+          enableTwoFactor: (input: { body: unknown }) => {
+            sent.push(input.body)
+            return Promise.resolve({
+              method: "totp",
+              totpURI: URI,
+              backupCodes: ["ab12C-3dE45", "fg67H-8iJ90"],
+            })
+          },
+        },
+      } as unknown as Auth
+      expect(
+        await twoFactorAction({ request: enroll(), context }, auth),
+      ).toEqual({
+        kind: "enrolled",
+        uri: URI,
+        secret: "JBSWY3DPEHPK3PXP",
+        backupCodes: ["ab12C-3dE45", "fg67H-8iJ90"],
+      })
+      expect(sent).toEqual([{ method: "totp" }])
+    })
+  })
+
+  test("Given an enrollment key without a secret, when enrolling, then failed", async () => {
+    await withEnrolling(async (context) => {
+      const auth = {
+        api: {
+          enableTwoFactor: () =>
+            Promise.resolve({
+              method: "totp",
+              totpURI: "https://contoh.id/?secret=X",
+              backupCodes: [],
+            }),
+        },
+      } as unknown as Auth
+      expect(
+        await twoFactorAction({ request: enroll(), context }, auth),
+      ).toEqual({ kind: "error", error: "failed" })
+    })
+  })
+
+  test("Given Better Auth fails unexpectedly, when enrolling, then the error propagates", async () => {
+    await withEnrolling(async (context) => {
+      const auth = {
+        api: {
+          enableTwoFactor: () => Promise.reject(new Error("database down")),
+        },
+      } as unknown as Auth
+      await expect(
+        twoFactorAction({ request: enroll(), context }, auth),
+      ).rejects.toThrow("database down")
+    })
+  })
+
+  test("Given pending codes cannot be read, when the tick is missing, then no codes and the failure is logged", async () => {
+    const lines: unknown[][] = []
+    const spy = spyOn(console, "error").mockImplementation((...args) => {
+      lines.push(args)
+    })
+    await withEnrolling(async (context) => {
+      const auth = {
+        api: {
+          viewBackupCodes: () => Promise.reject(new Error("no codes")),
+        },
+      } as unknown as Auth
+      expect(
+        await twoFactorAction(
+          { request: verifyRequest({ code: "123456" }), context },
+          auth,
+        ),
+      ).toEqual({
+        kind: "error",
+        error: "unsaved",
+        uri: URI,
+        backupCodes: [],
+        saved: false,
+      })
+    }).finally(() => spy.mockRestore())
+    const logged = lines.map(
+      (args) => JSON.parse(String(args[0])) as Record<string, unknown>,
+    )
+    expect(logged).toEqual([
+      expect.objectContaining({ msg: "backup codes unavailable" }),
+    ])
+  })
+
+  test("Given an intent that does not fit the step, when posted, then 400", async () => {
+    await withEnrolling(async (context) => {
+      for (const intent of ["backup", "sign_out", "nonsense"]) {
+        const result = await loaded(() =>
+          twoFactorAction(
+            {
+              request: new Request("http://te.localhost/masuk/dua-langkah", {
+                method: "POST",
+                body: new URLSearchParams({ intent, code: "xwFYIHb7up" }),
+              }),
+              context,
+            },
+            {} as Auth,
+          ),
+        )
+        expect([intent, result]).toEqual([intent, { status: 400 }])
+      }
+    })
   })
 })

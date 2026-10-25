@@ -9,6 +9,7 @@ import {
 import { drizzle } from "drizzle-orm/node-postgres"
 import { migrate } from "../../../db/migrate.ts"
 import { evidence, reports } from "../../../db/schema/reports.ts"
+import { withTenant } from "../../../db/tenant.server.ts"
 import {
   insertOrg,
   insertRegions,
@@ -19,13 +20,17 @@ import {
   testUrl,
 } from "../../../db/testing.ts"
 import type { ReportStatus } from "../../../shared/status.ts"
+import { forwardReport } from "../report/forward.server.ts"
 import { runMerge } from "./merge.server.ts"
 import {
+  closeImpact,
+  forwardCopyCode,
   getManagedIssue,
   getReviewReport,
   listMergeTargets,
   listQueue,
 } from "./queue.server.ts"
+import { reviewReport } from "./verify.server.ts"
 
 const su = superuserPool()
 const suDb = drizzle({ client: su })
@@ -170,9 +175,131 @@ describe("getReviewReport", () => {
     expect(await getManagedIssue(orgB, "admin", merged.code)).toBeNull()
   })
 
+  test("Given a rejected report, when read for review, then the standard and text are shown", async () => {
+    const report = await seedReport("in_review")
+    const text = "Laporan menyebut nama pegawai. Kirim ulang tanpa nama."
+    const result = await withTenant(
+      orgA,
+      (tx) =>
+        reviewReport(
+          tx,
+          orgA,
+          {
+            reportId: report.id,
+            from: "in_review",
+            actorId: reporter,
+            action: "reject",
+            reason: "standard_4",
+            reasonText: text,
+          },
+          { notify: false },
+        ),
+      { role: "admin" },
+    )
+    expect(result.ok).toBe(true)
+    const found = await getReviewReport(orgA, "admin", report.code)
+    expect(found?.decision).toEqual({
+      reason: "standard_4",
+      text,
+      decidedAt: expect.any(Date),
+    })
+  })
+
   test("another tenant's report is not found", async () => {
     const report = await seedReport("in_review")
     expect(await getReviewReport(orgB, "admin", report.code)).toBeNull()
+  })
+})
+
+describe("forwarded reports", () => {
+  test("Given a report forwarded to another campus, when either side reads it, then each names the other and the copy is found", async () => {
+    const report = await seedReport("in_review")
+    const forwarded = await forwardReport({
+      source: { id: orgA, campusCode: "ITB" },
+      reportId: report.id,
+      targetOrgId: orgB,
+      actorId: reporter,
+      notify: false,
+    })
+    if (!forwarded.ok) throw new Error(forwarded.reason)
+    const original = await getReviewReport(orgA, "admin", report.code)
+    expect(original).toMatchObject({
+      status: "forwarded",
+      forwardedFrom: null,
+      forwardedTo: { id: orgB, name: "ugm" },
+    })
+    const copy = await getReviewReport(orgB, "admin", forwarded.code)
+    expect(copy).toMatchObject({ forwardedFrom: "itb", forwardedTo: null })
+    expect(await forwardCopyCode(orgB, report.id)).toBe(forwarded.code)
+  })
+
+  test("Given a report never forwarded, when its copy is looked up, then none", async () => {
+    const report = await seedReport("in_review")
+    expect(await forwardCopyCode(orgB, report.id)).toBeNull()
+  })
+})
+
+describe("closeImpact", () => {
+  async function reportOf(userId: string, status: ReportStatus = "verified") {
+    const [row] = await suDb
+      .insert(reports)
+      .values(reportValues(orgA, userId, { status, verifiedAt: new Date() }))
+      .returning({ id: reports.id })
+    if (!row) throw new Error("report not inserted")
+    return row.id
+  }
+
+  test("Given a reporter with two reports, one in an issue, when previewed, then both and the issue are counted", async () => {
+    const user = await insertUser(su, `tutup.${crypto.randomUUID()}@contoh.id`)
+    const first = await reportOf(user)
+    await reportOf(user, "submitted")
+    await reportOf(reporter)
+    const merged = await runMerge(orgA, {
+      reportIds: [first],
+      target: {
+        kind: "new",
+        title: "Atap sekolah runtuh di Coblong",
+        summary: "Beberapa laporan menyebut atap ruang kelas runtuh.",
+      },
+      actorId: reporter,
+      campusCode: "ITB",
+      now: new Date(),
+      notify: false,
+    })
+    if (!merged.ok) throw new Error(merged.reason)
+    expect(await closeImpact(orgA, "admin", first, reporter)).toEqual({
+      reports: 2,
+      issues: 1,
+      staff: false,
+    })
+  })
+
+  test("Given the admin's own or a colleague's report, when previewed, then it is staff", async () => {
+    const editor = await insertUser(
+      su,
+      `editor.${crypto.randomUUID()}@contoh.id`,
+    )
+    await su.query(
+      "INSERT INTO members (organization_id, user_id, role) VALUES ($1, $2, 'editor')",
+      [orgA, editor],
+    )
+    const own = await reportOf(reporter, "submitted")
+    expect(await closeImpact(orgA, "admin", own, reporter)).toMatchObject({
+      staff: true,
+    })
+    const colleague = await reportOf(editor, "submitted")
+    expect(await closeImpact(orgA, "admin", colleague, reporter)).toMatchObject(
+      { staff: true },
+    )
+  })
+
+  test("Given a report id of no report here, when previewed, then nothing", async () => {
+    const report = await seedReport("submitted", orgB)
+    expect(await closeImpact(orgA, "admin", report.id, reporter)).toEqual({
+      reports: 0,
+      issues: 0,
+      staff: false,
+    })
   })
 })
 

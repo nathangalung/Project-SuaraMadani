@@ -2,14 +2,18 @@ import { type BetterAuthPlugin, betterAuth } from "better-auth"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import {
   APIError,
+  createAuthEndpoint,
   createAuthMiddleware,
   getSessionFromCtx,
+  sessionMiddleware,
 } from "better-auth/api"
-import { symmetricDecrypt } from "better-auth/crypto"
+import { setSessionCookie } from "better-auth/cookies"
+import { generateRandomString, symmetricDecrypt } from "better-auth/crypto"
 import { organization, twoFactor } from "better-auth/plugins"
 import { and, eq, isNull, lt, or } from "drizzle-orm"
 import type { SessionContext } from "../app/context.ts"
 import { type Db, database } from "../db/client.server.ts"
+import { processGlobal } from "../db/process-global.ts"
 import {
   authSchema,
   MEMBER_ROLES,
@@ -24,6 +28,7 @@ import { organizations } from "../db/schema/organizations.ts"
 import { ageDeclarationSchema } from "../shared/report-schema.ts"
 import { ACCOUNT_PATHS, accountOtp } from "./account-otp.server.ts"
 import { clientKey } from "./api/upload.server.ts"
+import { parseAuthSecrets } from "./auth-secrets.ts"
 import { createEmailSender, type EmailSender } from "./email.ts"
 import {
   addressHash,
@@ -33,9 +38,15 @@ import {
   valueHash,
 } from "./email-log.ts"
 import { renderOtpMail } from "./emails/render.ts"
-import { errorRecord, writeError, writeLog } from "./log.ts"
+import {
+  errorRecord,
+  type LogRecord,
+  securityRecord,
+  writeError,
+  writeLog,
+} from "./log.ts"
 import { parseSealKey } from "./seal.ts"
-import { matchedStep } from "./totp-step.ts"
+import { currentStep, matchedStep } from "./totp-step.ts"
 import {
   type TurnstileResult,
   turnstileSecret,
@@ -59,10 +70,15 @@ export type AuthDeps = {
   ) => Promise<TurnstileResult>
   whatsapp: WhatsAppGateway
   secrets?: { version: number; value: string }[]
+  // OWASP A09: refusals, tests capture
+  securityLog?: (line: LogRecord) => void
 }
 
 const OTP_SEND_PATH = ACCOUNT_PATHS.send
 const TOTP_VERIFY_PATH = "/two-factor/verify-totp"
+const TOTP_ENABLE_PATH = "/two-factor/enable"
+// Better Auth freshAge, seconds
+const FRESH_AGE_S = 300
 
 // null: any value, else pinned
 type BodyRule = Readonly<Record<string, string | null>>
@@ -81,7 +97,6 @@ const OPEN_AUTH_PATHS: ReadonlyMap<string, BodyRule> = new Map<
   string,
   BodyRule
 >([
-  ["/get-session", {}],
   ["/sign-out", {}],
   [ACCOUNT_PATHS.lookup, { identifier: null }],
   [ACCOUNT_PATHS.checkNew, { name: null, email: null, phone: null }],
@@ -89,14 +104,19 @@ const OPEN_AUTH_PATHS: ReadonlyMap<string, BodyRule> = new Map<
   [ACCOUNT_PATHS.verify, { ...SEND_FIELDS, code: null, ageDeclaration: null }],
   [ACCOUNT_PATHS.status, { id: null }],
   // TOTP enrollment, refused once enabled
-  ["/two-factor/enable", { method: "totp" }],
+  [TOTP_ENABLE_PATH, { method: "totp" }],
   // No trustDevice: TOTP every sign-in
   [TOTP_VERIFY_PATH, { code: null }],
   ["/two-factor/verify-backup-code", { code: null }],
   // Team changes: own code
 ])
 // Unrouted endpoints our server calls
-const SERVER_ONLY_CALLS: ReadonlySet<string> = new Set(["viewBackupCodes"])
+const SERVER_ONLY_CALLS: ReadonlySet<string> = new Set([
+  // ASVS V3.3.4: body carries token
+  "getSession",
+  "viewBackupCodes",
+  "rotateSession",
+])
 /** Set upstream, missing from types. */
 function operationOf(ctx: object): string {
   return "operationId" in ctx && typeof ctx.operationId === "string"
@@ -106,20 +126,26 @@ function operationOf(ctx: object): string {
 // Editor waits for Phase 2
 export const STAFF_ROLES: readonly MemberRole[] = ["editor", "admin"]
 const STAFF_SESSION_MS = 12 * 60 * 60 * 1000
+// Starting Values: absolute lifetime
+const SESSION_MAX_MS = 30 * 24 * 60 * 60 * 1000
+// Starting Values: TOTP accounts idle
+const TOTP_IDLE_MS = 30 * 60 * 1000
+// One write a minute
+const SEEN_WRITE_MS = 60 * 1000
 // Campus NAT shares addresses
 const CGNAT_LIMIT = { window: 60, max: 20 }
 
 // Awaited on shutdown
-const inFlightEmails = new Set<Promise<void>>()
+const inFlightEmails = processGlobal(
+  "otp-emails",
+  () => new Set<Promise<void>>(),
+)
 
 function track(send: Promise<void>): void {
   const tracked = send
     .catch((error: unknown) => {
-      // Never log the address
-      writeLog({
-        msg: "otp email failed",
-        error: error instanceof Error ? error.message : String(error),
-      })
+      // Scrubbed, error stream
+      writeError({ msg: "otp email failed", ...errorRecord(error) })
     })
     .finally(() => inFlightEmails.delete(tracked))
   inFlightEmails.add(tracked)
@@ -255,6 +281,149 @@ function accountOtpStepUp(plugin: BetterAuthPlugin): BetterAuthPlugin {
   }
 }
 
+const BACKUP_VERIFY_PATH = "/two-factor/verify-backup-code"
+// ASVS V16.3.1: factor per path
+const FACTORS: ReadonlyMap<string, string> = new Map([
+  [TOTP_VERIFY_PATH, "totp"],
+  [BACKUP_VERIFY_PATH, "backup_code"],
+  [TOTP_ENABLE_PATH, "totp_enrol"],
+  ["/sign-out", "sign_out"],
+])
+// Successes worth a line
+const LOGGED_SUCCESS = new Set([ACCOUNT_PATHS.verify, ...FACTORS.keys()])
+// The staff page calls these
+const IN_PROCESS_LOGGED = new Set([
+  TOTP_VERIFY_PATH,
+  BACKUP_VERIFY_PATH,
+  TOTP_ENABLE_PATH,
+])
+
+type EventContext = {
+  request?: Request
+  headers?: Headers
+  path: string
+  body?: unknown
+}
+
+/** Host, or undefined: no line. */
+function eventHost(ctx: EventContext): string | null | undefined {
+  if (ctx.request) return new URL(ctx.request.url).host
+  // In-process sign-out: caller logs
+  if (!IN_PROCESS_LOGGED.has(ctx.path)) return undefined
+  return ctx.headers?.get("host") ?? null
+}
+
+function bodyField(body: unknown, name: string): unknown {
+  return typeof body === "object" && body !== null
+    ? (body as Record<string, unknown>)[name]
+    : undefined
+}
+
+/** Factor, keyed subject, no contact. */
+function eventFields(ctx: EventContext, host: string | null, key: Buffer) {
+  const channel = bodyField(ctx.body, "channel")
+  const coded = ctx.path === ACCOUNT_PATHS.verify || ctx.path === OTP_SEND_PATH
+  const subject =
+    bodyField(ctx.body, "identifier") ??
+    bodyField(ctx.body, channel === "whatsapp" ? "phone" : "email")
+  return {
+    host,
+    path: ctx.path,
+    factor: coded
+      ? channel === "whatsapp"
+        ? "whatsapp"
+        : "email"
+      : (FACTORS.get(ctx.path) ?? null),
+    // Joins email_log.address_hash
+    subject_hash:
+      typeof subject === "string" && subject ? addressHash(subject, key) : null,
+  }
+}
+
+/** Refused step, no contacts. */
+function refusalRecord(ctx: EventContext, error: unknown, key: Buffer) {
+  const host = eventHost(ctx)
+  if (host === undefined || !(error instanceof APIError)) return null
+  const code = (error.body as { code?: unknown } | undefined)?.code
+  return securityRecord("auth_refused", {
+    ...eventFields(ctx, host, key),
+    status: error.statusCode,
+    code: typeof code === "string" ? code : null,
+  })
+}
+
+/** Completed step, no contacts. */
+function successRecord(
+  ctx: EventContext & {
+    context: {
+      returned?: unknown
+      newSession?: { user: { id: string; twoFactorEnabled?: unknown } } | null
+      session?: { user: { id: string } } | null
+    }
+  },
+  key: Buffer,
+  signedOut: string | undefined,
+) {
+  const host = eventHost(ctx)
+  if (host === undefined || !LOGGED_SUCCESS.has(ctx.path)) return null
+  const returned = ctx.context.returned
+  if (returned instanceof Error) return null
+  if (returned instanceof Response && !returned.ok) return null
+  const fresh = ctx.context.newSession?.user
+  return securityRecord("auth_ok", {
+    ...eventFields(ctx, host, key),
+    user_id: fresh?.id ?? ctx.context.session?.user.id ?? signedOut ?? null,
+    // Code sign-in, TOTP follows
+    second_factor: fresh?.twoFactorEnabled === true,
+  })
+}
+
+/** ASVS V3.3.4: no body token. */
+function withoutToken(returned: unknown): Record<string, unknown> | null {
+  if (typeof returned !== "object" || returned === null) return null
+  if (returned instanceof Response || returned instanceof Error) return null
+  const { token, session, ...rest } = returned as Record<string, unknown>
+  const nested =
+    typeof session === "object" && session !== null && "token" in session
+  if (token === undefined && !nested) return null
+  if (session === undefined) return rest
+  if (!nested) return { ...rest, session }
+  const { token: _dropped, ...kept } = session as Record<string, unknown>
+  return { ...rest, session: kept }
+}
+
+/** ASVS V7.2.4: step-up rotates token. */
+function sessionRotation() {
+  return {
+    id: "session-rotation",
+    endpoints: {
+      rotateSession: createAuthEndpoint(
+        "/session/rotate",
+        { method: "POST", use: [sessionMiddleware] },
+        async (ctx) => {
+          const { session, user } = ctx.context.session
+          // Same start, 12 h holds
+          const fresh = await ctx.context.internalAdapter.createSession(
+            user.id,
+            false,
+            {
+              createdAt: session.createdAt,
+              expiresAt: session.expiresAt,
+              // TOTP step-up is activity
+              lastSeenAt: new Date(),
+            },
+            true,
+          )
+          if (!fresh) throw new APIError("INTERNAL_SERVER_ERROR")
+          await ctx.context.internalAdapter.deleteSession(session.token)
+          await setSessionCookie(ctx, { session: fresh, user })
+          return ctx.json({ id: fresh.id })
+        },
+      ),
+    },
+  } satisfies BetterAuthPlugin
+}
+
 type HookContext = Parameters<Parameters<typeof createAuthMiddleware>[0]>[0]
 
 /** Session user, else challenge user. */
@@ -266,6 +435,19 @@ async function twoFactorUserId(ctx: HookContext): Promise<string | null> {
   if (!signed) return null
   const found = await ctx.context.internalAdapter.findVerificationValue(signed)
   return found?.value ?? null
+}
+
+/** ASVS V7.5.1: recent code sign-in. */
+async function requireFreshSignIn(ctx: HookContext): Promise<void> {
+  const found = await getSessionFromCtx(ctx, { disableRefresh: true })
+  // No session: endpoint answers 401
+  if (!found) return
+  const age = Date.now() - new Date(found.session.createdAt).getTime()
+  if (age <= FRESH_AGE_S * 1000) return
+  throw new APIError("FORBIDDEN", {
+    code: "SESSION_NOT_FRESH",
+    message: "Sign in again",
+  })
 }
 
 // ASVS V6.5.1: upstream allows replay
@@ -285,8 +467,16 @@ async function claimTotpStep(ctx: HookContext, db: Db): Promise<void> {
     data: row.secret,
   })
   // No match: endpoint counts failure
-  const step = matchedStep(secret, code, Date.now())
+  const now = Date.now()
+  const step = matchedStep(secret, code, now)
   if (step === null) return
+  // ASVS V6.5.5: current or previous
+  if (step > currentStep(now)) {
+    throw new APIError("UNAUTHORIZED", {
+      code: "INVALID_CODE",
+      message: "Invalid code",
+    })
+  }
   const claimed = await db
     .update(twoFactors)
     .set({ lastTotpStep: step })
@@ -305,6 +495,20 @@ async function claimTotpStep(ctx: HookContext, db: Db): Promise<void> {
   }
 }
 
+// ASVS V6.5.2: 119-bit codes
+const BACKUP_CODE_LENGTH = 20
+
+/** Ten codes, xxxxx-xxxxx-xxxxx-xxxxx. */
+function backupCodes(): string[] {
+  return Array.from(
+    { length: 10 },
+    () =>
+      generateRandomString(BACKUP_CODE_LENGTH, "a-z", "0-9", "A-Z")
+        .match(/.{5}/g)
+        ?.join("-") ?? "",
+  )
+}
+
 // Hook fills NOT NULL columns
 const userFields = {
   ageDeclaredAt: { ...userAdditionalFields.ageDeclaredAt, required: false },
@@ -317,9 +521,13 @@ const userFields = {
 } as const
 
 export function createAuth(deps: AuthDeps) {
+  const securityLog = deps.securityLog ?? writeLog
+  // Sign-out deletes the session first
+  const signingOut = new WeakMap<object, string>()
   const twoFactorPlugin = twoFactor({
     allowPasswordless: true,
     issuer: "Sadar Bersuara",
+    backupCodeOptions: { customBackupCodesGenerate: backupCodes },
   })
   return betterAuth({
     appName: "Sadar Bersuara",
@@ -361,13 +569,18 @@ export function createAuth(deps: AuthDeps) {
       },
     },
     session: {
+      additionalFields: {
+        lastSeenAt: { type: "date", required: false, input: false },
+      },
       expiresIn: 7 * 24 * 60 * 60,
       updateAge: 24 * 60 * 60,
-      freshAge: 300,
+      freshAge: FRESH_AGE_S,
     },
     advanced: {
-      cookiePrefix: "sm",
-      useSecureCookies: !deps.dev,
+      // ASVS V3.3.3: host-only names
+      cookiePrefix: deps.dev ? "sb" : "__Host-sb",
+      useSecureCookies: false,
+      defaultCookieAttributes: { secure: !deps.dev },
       database: { generateId: "uuid" },
       ipAddress: { ipAddressHeaders: ["x-client-ip"] },
     },
@@ -391,42 +604,64 @@ export function createAuth(deps: AuthDeps) {
     },
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
-        // Server-only and in-process, never routed
-        if (!ctx.request && SERVER_ONLY_CALLS.has(operationOf(ctx))) return
-        const rule = OPEN_AUTH_PATHS.get(ctx.path)
-        if (!rule) {
-          throw new APIError("NOT_FOUND", {
-            code: "ENDPOINT_DISABLED",
-            message: "Not found",
-          })
-        }
-        // Explicit guard, beside allowlist
-        if (
-          typeof ctx.body === "object" &&
-          ctx.body !== null &&
-          Object.hasOwn(ctx.body, "trustDevice")
-        ) {
-          throw new APIError("BAD_REQUEST", {
-            code: "TRUST_DEVICE_DISABLED",
-            message: "Trusted devices are disabled",
-          })
-        }
-        // First: refused requests burn nothing
-        refuseBodyFields(ctx.body, rule)
-        if (ctx.path === OTP_SEND_PATH) {
-          const result = await deps.verifyCaptcha(
-            ctx.headers?.get("x-captcha-response") ?? null,
-            ctx.headers?.get("x-client-ip") ?? null,
-          )
-          if (!result.ok) {
-            throw new APIError("FORBIDDEN", {
-              code: "CAPTCHA_FAILED",
-              message: "Security check failed",
+        try {
+          // Server-only and in-process, never routed
+          if (!ctx.request && SERVER_ONLY_CALLS.has(operationOf(ctx))) return
+          const rule = OPEN_AUTH_PATHS.get(ctx.path)
+          if (!rule) {
+            throw new APIError("NOT_FOUND", {
+              code: "ENDPOINT_DISABLED",
+              message: "Not found",
             })
           }
+          // Explicit guard, beside allowlist
+          if (
+            typeof ctx.body === "object" &&
+            ctx.body !== null &&
+            Object.hasOwn(ctx.body, "trustDevice")
+          ) {
+            throw new APIError("BAD_REQUEST", {
+              code: "TRUST_DEVICE_DISABLED",
+              message: "Trusted devices are disabled",
+            })
+          }
+          // First: refused requests burn nothing
+          refuseBodyFields(ctx.body, rule)
+          if (ctx.path === OTP_SEND_PATH) {
+            const result = await deps.verifyCaptcha(
+              ctx.headers?.get("x-captcha-response") ?? null,
+              ctx.headers?.get("x-client-ip") ?? null,
+            )
+            if (!result.ok) {
+              throw new APIError("FORBIDDEN", {
+                code: "CAPTCHA_FAILED",
+                message: "Security check failed",
+              })
+            }
+          }
+          if (ctx.path === TOTP_ENABLE_PATH) await requireFreshSignIn(ctx)
+          if (ctx.path === "/sign-out" && ctx.request) {
+            const found = await getSessionFromCtx(ctx, { disableRefresh: true })
+            if (found) signingOut.set(ctx.context, found.user.id)
+          }
+          // Last: claims the TOTP step
+          if (ctx.path === TOTP_VERIFY_PATH) await claimTotpStep(ctx, deps.db)
+        } catch (error) {
+          const record = refusalRecord(ctx, error, deps.hashKey())
+          if (record) securityLog(record)
+          throw error
         }
-        // Last: claims the TOTP step
-        if (ctx.path === TOTP_VERIFY_PATH) await claimTotpStep(ctx, deps.db)
+      }),
+      after: createAuthMiddleware(async (ctx) => {
+        const key = deps.hashKey()
+        const record =
+          refusalRecord(ctx, ctx.context.returned, key) ??
+          successRecord(ctx, key, signingOut.get(ctx.context))
+        if (record) securityLog(record)
+        // Cookie only over HTTP
+        if (!ctx.request) return
+        const body = withoutToken(ctx.context.returned)
+        if (body) return ctx.json(body)
       }),
     },
     plugins: [
@@ -436,6 +671,7 @@ export function createAuth(deps: AuthDeps) {
       }),
       twoFactorPlugin,
       accountOtpStepUp(twoFactorPlugin),
+      sessionRotation(),
       // TODO(P5): passkey, rpID at apex
       organization({
         allowUserToCreateOrganization: false,
@@ -449,7 +685,8 @@ export function createAuth(deps: AuthDeps) {
 
 export type Auth = ReturnType<typeof createAuth>
 
-let authPromise: Promise<Auth> | undefined
+// Shared with the SSR bundle
+const auth = processGlobal("auth", (): { promise?: Promise<Auth> } => ({}))
 
 async function authFromEnv(): Promise<Auth> {
   const { db } = database()
@@ -464,6 +701,8 @@ async function authFromEnv(): Promise<Auth> {
     verifyCaptcha: (token, remoteIp) =>
       verifyTurnstile(token, { secret: turnstileSecret(), remoteIp }),
     whatsapp: whatsappFromEnv(db),
+    // ASVS V11.2.3: refuse weak keys
+    secrets: parseAuthSecrets(process.env.BETTER_AUTH_SECRETS),
   })
 }
 
@@ -488,16 +727,16 @@ function whatsappFromEnv(db: Db): WhatsAppGateway {
 
 /** New campus host, rebuilt lazily. */
 export function resetAuth(): void {
-  authPromise = undefined
+  auth.promise = undefined
 }
 
 /** Lazy: dev never runs server/index.ts. */
 export function getAuth(): Promise<Auth> {
-  authPromise ??= authFromEnv().catch((error: unknown) => {
-    authPromise = undefined
+  auth.promise ??= authFromEnv().catch((error: unknown) => {
+    auth.promise = undefined
     throw error
   })
-  return authPromise
+  return auth.promise
 }
 
 export type SessionRead = {
@@ -514,7 +753,7 @@ export async function readSessionWith(
     .getSession({ headers, returnHeaders: true })
     .catch((error: unknown) => {
       // Concurrent sign-out: signed out
-      if (error instanceof APIError) return null
+      if (error instanceof APIError && error.statusCode < 500) return null
       throw error
     })
   if (!found) return { session: null, setCookie: [] }
@@ -522,6 +761,23 @@ export async function readSessionWith(
   const value = found.response
   if (!value) return { session: null, setCookie }
   const { user, session } = value
+  const now = Date.now()
+  const lastSeen = new Date(session.lastSeenAt ?? session.createdAt).getTime()
+  if (
+    // ASVS V7.3.2: absolute cap
+    now - new Date(session.createdAt).getTime() > SESSION_MAX_MS ||
+    // ASVS V7.3.1: staff and superadmin
+    (user.twoFactorEnabled === true && now - lastSeen > TOTP_IDLE_MS)
+  ) {
+    const ended = await auth.api.signOut({ headers, returnHeaders: true })
+    return { session: null, setCookie: ended.headers.getSetCookie() }
+  }
+  if (now - lastSeen >= SEEN_WRITE_MS) {
+    const context = await auth.$context
+    await context.internalAdapter.updateSession(session.token, {
+      lastSeenAt: new Date(now),
+    })
+  }
   return {
     session: {
       user: {
@@ -564,7 +820,7 @@ export async function memberRole(
   return role && MEMBER_ROLES.includes(role) ? role : null
 }
 
-/** Flag, sm_app cannot write. */
+/** Flag, sb_app cannot write. */
 export async function isSuperadmin(
   userId: string,
   db: Db = database().db,

@@ -1,5 +1,5 @@
 import { dashboardSnapshots } from "../../../db/schema/dashboard.ts"
-import { withTenant } from "../../../db/tenant.server.ts"
+import { type Tx, withTenant } from "../../../db/tenant.server.ts"
 import type {
   DashboardView,
   IssueRanking,
@@ -161,6 +161,37 @@ function demandMap(overview: DemandOverview, base: MapBase): MapView {
   }
 }
 
+export type StoredSnapshot = {
+  computedAt: string
+  nextAt: string
+  stale: boolean
+  data: DashboardSnapshot
+}
+
+/** Current version or null. */
+function readSnapshot(
+  orgId: string,
+  now = new Date(),
+): Promise<StoredSnapshot | null> {
+  return withTenant(orgId, (tx) => readSnapshotIn(tx, now))
+}
+
+/** Same, inside a caller's transaction. */
+export async function readSnapshotIn(
+  tx: Tx,
+  now: Date,
+): Promise<StoredSnapshot | null> {
+  const [row] = await tx.select().from(dashboardSnapshots).limit(1)
+  if (!row || row.data.v !== SNAPSHOT_VERSION) return null
+  const computed = row.computedAt.getTime()
+  return {
+    computedAt: row.computedAt.toISOString(),
+    nextAt: new Date(computed + REFRESH_MINUTES * 60_000).toISOString(),
+    stale: now.getTime() - computed > STALE_AFTER_MINUTES * 60_000,
+    data: row.data,
+  }
+}
+
 /** Reads the stored snapshot only. */
 export async function readDashboard(
   orgId: string,
@@ -169,27 +200,24 @@ export async function readDashboard(
   demands?: DemandOverview,
   now = new Date(),
 ): Promise<Dashboard> {
-  const [row] = await withTenant(orgId, (tx) =>
-    tx.select().from(dashboardSnapshots).limit(1),
-  )
-  if (!row || row.data.v !== SNAPSHOT_VERSION) return { kind: "empty" }
+  const stored = await readSnapshot(orgId, now)
+  if (!stored) return { kind: "empty" }
   const {
     verifiedProvinces: _p,
     verifiedProvinceTotals: _t,
     ...summary
-  } = row.data
-  const computed = row.computedAt.getTime()
+  } = stored.data
   const base = mapBase(query)
   return {
     kind: "ready",
-    computedAt: row.computedAt.toISOString(),
-    nextAt: new Date(computed + REFRESH_MINUTES * 60_000).toISOString(),
-    stale: now.getTime() - computed > STALE_AFTER_MINUTES * 60_000,
+    computedAt: stored.computedAt,
+    nextAt: stored.nextAt,
+    stale: stored.stale,
     summary,
     map:
       query.lapisan === "tuntutan" && demands
         ? demandMap(demands, base)
-        : reportMap(row.data, base),
+        : reportMap(stored.data, base),
   }
 }
 

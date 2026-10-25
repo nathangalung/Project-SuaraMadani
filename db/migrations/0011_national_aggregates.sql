@@ -1,7 +1,7 @@
 -- Apex national view, PLAN 5.11
--- Owner sm_aggregates bypasses RLS
-GRANT USAGE ON SCHEMA public TO sm_aggregates;--> statement-breakpoint
-GRANT SELECT ON public.organizations, public.issues, public.reports TO sm_aggregates;--> statement-breakpoint
+-- Owner sb_aggregates bypasses RLS
+GRANT USAGE ON SCHEMA public TO sb_aggregates;--> statement-breakpoint
+GRANT SELECT ON public.organizations, public.issues, public.reports TO sb_aggregates;--> statement-breakpoint
 -- NO DATA: migrator is RLS-subject
 CREATE MATERIALIZED VIEW public.national_aggregates AS
 WITH published AS (
@@ -53,8 +53,8 @@ SELECT c.dimension, c.key,
 FROM cells c
 WITH NO DATA;--> statement-breakpoint
 -- New owner needs CREATE briefly
-GRANT CREATE ON SCHEMA public TO sm_aggregates;--> statement-breakpoint
-ALTER MATERIALIZED VIEW public.national_aggregates OWNER TO sm_aggregates;--> statement-breakpoint
-REVOKE CREATE ON SCHEMA public FROM sm_aggregates;--> statement-breakpoint
+GRANT CREATE ON SCHEMA public TO sb_aggregates;--> statement-breakpoint
+ALTER MATERIALIZED VIEW public.national_aggregates OWNER TO sb_aggregates;--> statement-breakpoint
+REVOKE CREATE ON SCHEMA public FROM sb_aggregates;--> statement-breakpoint
 -- Runs as owner, all campuses
 REFRESH MATERIALIZED VIEW public.national_aggregates;

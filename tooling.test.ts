@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { mkdir, mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
@@ -195,6 +195,133 @@ describe("comment rule", () => {
   })
 })
 
+// Renamed 21 October 2026
+describe("product name", () => {
+  // Kept lines, see ADR-19
+  const kept: Record<string, string[]> = {
+    "PLAN.md": [
+      "Nama tampilan diganti dari",
+      'kata "madani" juga dipakai',
+      "Ganti nama paket menjadi",
+    ],
+    "docs/architecture.md": ["repository folder, name kept"],
+    "docs/decisions.md": [
+      "- **Context:** The display name changed",
+      "- **Kept, by design:**",
+      "- **Consequences:** No production host",
+    ],
+  }
+  // Frontend is the teammate's
+  const skipped =
+    /^(app|public|messages|project\.inlang)\/|^(DESIGN\.md|\.env|tooling\.test\.ts)$/
+  const backend = /^[^/]+$|^(server|worker|db|shared|infra|docs|e2e|\.github)\//
+
+  // Repo files, not ignored
+  const repoFiles = () => {
+    const listed = Bun.spawnSync(
+      [
+        "git",
+        "-c",
+        `safe.directory=${root}`,
+        "ls-files",
+        "-co",
+        "--exclude-standard",
+        "-z",
+      ],
+      { cwd: root },
+    )
+    expect(listed.exitCode).toBe(0)
+    return listed.stdout
+      .toString()
+      .split("\0")
+      .filter((file) => backend.test(file) && !skipped.test(file))
+  }
+
+  // Lines matching, minus kept
+  async function scan(
+    pattern: RegExp,
+    keep: (file: string, line: string) => boolean,
+  ) {
+    const hits: string[] = []
+    let scanned = 0
+    for (const file of repoFiles()) {
+      // Tracked but deleted
+      const source = Bun.file(join(root, file))
+      if (!(await source.exists())) continue
+      scanned++
+      const lines = (await source.text()).split("\n")
+      lines.forEach((line, index) => {
+        if (pattern.test(line) && !keep(file, line)) {
+          hits.push(`${file}:${index + 1}`)
+        }
+      })
+    }
+    expect(scanned).toBeGreaterThan(300)
+    return hits
+  }
+
+  test("backend says Sadar Bersuara only", async () => {
+    const hits = await scan(/suara[^a-z]{0,3}madani/i, (file, line) =>
+      Boolean(kept[file]?.some((fragment) => line.includes(fragment))),
+    )
+    expect(hits).toEqual([])
+  })
+
+  // Roles, env, cookies, prefixes
+  test("backend abbreviation is sb", async () => {
+    const hits = await scan(
+      /\bsm(?:[_.-][a-z]|\\[._])|\bSM_[A-Z]|__(Host|Secure)-sm\b|"sm"/,
+      // Frontend draft key, documented
+      (_file, line) => line.includes("sm.report-draft"),
+    )
+    expect(hits).toEqual([])
+  })
+
+  // Bun only, no npm
+  test("backend runs Bun, not npm", async () => {
+    const hits = await scan(
+      /\bnpx\s|\bnpm\s+(install|i|ci|run|exec|view|info|test)\b/,
+      // Quoted third-party README
+      (_file, line) => line.includes("Opt out with"),
+    )
+    expect(hits).toEqual([])
+  })
+
+  // Bins carry node shebangs
+  test("--bun on every bunx", async () => {
+    const hits = await scan(
+      /\bbunx\s+(?!--bun\b)/,
+      // Recorded audit evidence
+      (file, line) =>
+        file === "docs/nfr-audit.md" && line.includes("'bunx biome explain"),
+    )
+    expect(hits).toEqual([])
+  })
+
+  test("package scripts run bins on the Bun runtime", async () => {
+    const { scripts } = await readJson("package.json")
+    const names = new Set(Object.keys(scripts))
+    const bins = new Set(await readdir(join(root, "node_modules/.bin")))
+    const hits = Object.entries(scripts as Record<string, string>).flatMap(
+      ([name, script]) =>
+        script.split(/&&|\|\||;/).flatMap((part) => {
+          const words = part
+            .trim()
+            .split(/\s+/)
+            .filter((word) => !/^[A-Z_]+=/.test(word))
+          const [first = "", flag, target = ""] = words
+          if (bins.has(first)) return [`${name}: ${first} on node`]
+          // bun <name> prefers the script
+          if (first === "bun" && flag === "--bun" && names.has(target)) {
+            return [`${name}: bun --bun ${target} runs a script`]
+          }
+          return []
+        }),
+    )
+    expect(hits).toEqual([])
+  })
+})
+
 describe("tsconfig", () => {
   test("each path alias has one target", async () => {
     const { compilerOptions } = await readJson("tsconfig.json")
@@ -240,8 +367,6 @@ describe("dead config references", () => {
   })
 
   test("every .env.example key has a reader", async () => {
-    // Read inside the library
-    const libraryRead = new Set(["BETTER_AUTH_SECRETS"])
     const env = await Bun.file(join(root, ".env.example")).text()
     const keys = [...env.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)].map((m) => m[1])
     const sources: string[] = []
@@ -253,11 +378,77 @@ describe("dead config references", () => {
     sources.push(await Bun.file(join(root, "infra/compose.dev.yaml")).text())
     const corpus = sources.join("\n")
     const unread = keys.filter(
-      (key) =>
-        key &&
-        !libraryRead.has(key) &&
-        !new RegExp(`\\b${key}\\b`).test(corpus),
+      (key) => key && !new RegExp(`\\b${key}\\b`).test(corpus),
     )
     expect(unread).toEqual([])
+  })
+})
+
+// OWASP A03: supply chain
+describe("supply chain", () => {
+  test("actions and images pinned by digest", async () => {
+    // SC-07: convention becomes a gate
+    const loose: string[] = []
+    const scan = async (pattern: string, check: (line: string) => boolean) => {
+      for await (const file of new Bun.Glob(pattern).scan({ cwd: root })) {
+        const lines = (await Bun.file(join(root, file)).text()).split("\n")
+        lines.forEach((line, i) => {
+          if (!check(line)) loose.push(`${file}:${i + 1}`)
+        })
+      }
+    }
+    const action = /^\s*(- )?uses:\s*(\S+)/
+    await scan(".github/workflows/*.yml", (line) => {
+      const ref = action.exec(line)?.[2]
+      return !ref || ref.startsWith("./") || /@[0-9a-f]{40}$/.test(ref)
+    })
+    const image = /^\s*image:\s*(\S+)/
+    await scan("infra/compose*.yaml", (line) => {
+      const ref = image.exec(line)?.[1]
+      // Own images: digest from deploy.sh
+      return !ref || ref.startsWith("${") || /@sha256:[0-9a-f]{64}$/.test(ref)
+    })
+    const stages = new Set<string>()
+    await scan("infra/*Dockerfile", (line) => {
+      const from = /^FROM\s+(\S+)(?:\s+AS\s+(\S+))?/i.exec(line)
+      if (!from?.[1]) return true
+      const pinned =
+        stages.has(from[1]) || /@sha256:[0-9a-f]{64}$/.test(from[1])
+      if (from[2]) stages.add(from[2])
+      return pinned
+    })
+    const literal = /\b[a-z0-9.-]+(?:\/[a-z0-9._-]+)+:[0-9][\w.-]*/g
+    await scan("infra/*.sh", (line) =>
+      [...line.matchAll(literal)].every((m) =>
+        line.slice((m.index ?? 0) + m[0].length).startsWith("@sha256:"),
+      ),
+    )
+    expect(loose).toEqual([])
+  })
+
+  test("no dependency install scripts run", async () => {
+    const { trustedDependencies } = await readJson("package.json")
+    expect(trustedDependencies).toEqual([])
+  })
+
+  test("sample data stays out of the image", async () => {
+    const patterns = (await Bun.file(join(root, ".dockerignore")).text())
+      .split("\n")
+      .filter((line) => line && !line.startsWith("#") && !line.startsWith("!"))
+    const files: string[] = []
+    for (const pattern of ["db/seed/sample*.ts", "worker/fixtures.ts"]) {
+      for await (const file of new Bun.Glob(pattern).scan({ cwd: root })) {
+        if (!file.endsWith(".test.ts")) files.push(file)
+      }
+    }
+    const shipped = files.filter(
+      (file) => !patterns.some((p) => new Bun.Glob(p).match(file)),
+    )
+    expect(files.length).toBeGreaterThan(4)
+    expect(shipped).toEqual([])
+    // Image steps run these
+    for (const kept of ["db/seed/regions.ts", "db/seed/organizations.ts"]) {
+      expect(patterns.some((p) => new Bun.Glob(p).match(kept))).toBe(false)
+    }
   })
 })

@@ -19,5 +19,8 @@ infra
 **/*.test.ts
 **/*.test.tsx
 db/testing.ts
+# Sample seed, dev only
+db/seed/sample*.ts
+worker/fixtures.ts
 *.md
 !README.md

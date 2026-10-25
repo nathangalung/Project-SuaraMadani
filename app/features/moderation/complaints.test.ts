@@ -8,7 +8,9 @@ import {
 } from "bun:test"
 import { eq } from "drizzle-orm"
 import { drizzle } from "drizzle-orm/node-postgres"
+import { RouterContextProvider } from "react-router"
 import { migrate } from "../../../db/migrate.ts"
+import type { MemberRole } from "../../../db/schema/auth.ts"
 import { redactionOriginals } from "../../../db/schema/moderation.ts"
 import { evidence, reports } from "../../../db/schema/reports.ts"
 import { pgError, withTenant } from "../../../db/tenant.server.ts"
@@ -22,8 +24,12 @@ import {
   testUrl,
 } from "../../../db/testing.ts"
 import type { PurgeClient } from "../../../server/purge.server.ts"
+import { staffContext } from "../../../server/request-context.server.ts"
+import { sessionContext, tenantContext } from "../../context.ts"
 import { runPublish } from "../issues/publish.server.ts"
+import { complaintPageAction } from "./complaint-actions.server.ts"
 import {
+  countWaitingComplaints,
   type DecideInput,
   decideComplaint,
   getComplaint,
@@ -451,6 +457,237 @@ describe("decideComplaint", () => {
   })
 })
 
+describe("refused effects", () => {
+  test("Given an issue already taken down, when a complaint decides hide, then not_allowed and the complaint stays open", async () => {
+    const s = await seed()
+    await legalTakedown(tenant("a"), {
+      issueId: s.issueId,
+      version: s.version,
+      decision: "remove",
+      reason: "komdigi_order",
+      actorId: first,
+    })
+    const result = await decideComplaint(
+      tenant("a"),
+      input(s, {
+        decision: "hide",
+        reason: "standard_3",
+        subjectVersion: s.version + 1,
+      }),
+    )
+    expect(result).toEqual({ ok: false, reason: "not_allowed" })
+    expect((await complaintRow(s.complaintId))?.status).toBe("open")
+    const { rows } = await su.query(
+      "SELECT 1 FROM audit_log WHERE entity_id = $1",
+      [s.complaintId],
+    )
+    expect(rows).toEqual([])
+  })
+})
+
+describe("countWaitingComplaints", () => {
+  test("Given open and appealed complaints on two campuses, when counted, then only this campus's waiting ones", async () => {
+    await seed()
+    await seed()
+    const decided = await seed()
+    await decideComplaint(tenant("a"), input(decided))
+    const appealed = await seed()
+    await decideComplaint(tenant("a"), input(appealed))
+    await appeal(appealed.complaintId)
+    await seed("b")
+    expect(await countWaitingComplaints(orgs.a, "admin")).toEqual({
+      open: 2,
+      appealed: 1,
+    })
+  })
+
+  test("Given no complaints, when counted, then zeros", async () => {
+    expect(await countWaitingComplaints(orgs.a, "admin")).toEqual({
+      open: 0,
+      appealed: 0,
+    })
+  })
+})
+
+describe("complaintPageAction", () => {
+  function context(actorId: string, role: MemberRole = "admin") {
+    const provider = new RouterContextProvider()
+    provider.set(tenantContext, {
+      id: orgs.a,
+      slug: "cma",
+      host: "cma.localhost",
+      name: "KM CMA",
+      campusCode: "CMA",
+      campusName: "Kampus CMA",
+      theme: {},
+      settings: {},
+    })
+    provider.set(sessionContext, {
+      user: {
+        id: actorId,
+        email: "moderator@contoh.id",
+        emailVerified: true,
+        phoneVerified: true,
+        name: "",
+        twoFactorEnabled: true,
+        updatedAt: new Date(0),
+      },
+      session: {
+        id: crypto.randomUUID(),
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 3_600_000),
+      },
+    })
+    provider.set(staffContext, { role })
+    return provider
+  }
+
+  async function codeOf(complaintId: string): Promise<string> {
+    const { rows } = await su.query<{ public_code: string }>(
+      "SELECT public_code FROM content_complaints WHERE id = $1",
+      [complaintId],
+    )
+    return rows[0]?.public_code ?? ""
+  }
+
+  /** Status, body and Location. */
+  async function post(
+    code: string,
+    fields: Record<string, string>,
+    actorId = first,
+    role: MemberRole = "admin",
+  ) {
+    let value: unknown
+    try {
+      value = await complaintPageAction({
+        request: new Request(`http://cma.localhost/kelola/aduan/${code}`, {
+          method: "POST",
+          body: new URLSearchParams(fields),
+        }),
+        context: context(actorId, role),
+        params: { code },
+      })
+    } catch (error) {
+      if (error instanceof Error) throw error
+      value = error
+    }
+    if (value instanceof Response) {
+      return {
+        status: value.status,
+        location: value.headers.get("Location"),
+      }
+    }
+    const wrapped = value as { data?: unknown; init?: { status?: number } }
+    return { status: wrapped.init?.status ?? 200, body: wrapped.data }
+  }
+
+  const keep = (version: number, stage = "first") => ({
+    intent: "keep",
+    stage,
+    subjectVersion: String(version),
+    reason: "no_violation",
+    statement: "Isu ini tidak memuat data pribadi yang bisa dikenali.",
+  })
+
+  test("Given an editor, when deciding, then 403 and the complaint stays open", async () => {
+    const s = await seed()
+    const code = await codeOf(s.complaintId)
+    expect(await post(code, keep(s.version), first, "editor")).toMatchObject({
+      status: 403,
+    })
+    expect((await complaintRow(s.complaintId))?.status).toBe("open")
+  })
+
+  test("Given a code of no complaint here, when deciding, then 404", async () => {
+    expect(await post("ADU-CMA-26-NONE0", keep(1))).toMatchObject({
+      status: 404,
+    })
+  })
+
+  test("Given a form without a decision, when posted, then 400", async () => {
+    const s = await seed()
+    const code = await codeOf(s.complaintId)
+    expect(await post(code, { stage: "first" })).toMatchObject({
+      status: 400,
+    })
+  })
+
+  test("Given a hide without reason or confirmation, when posted, then 400 names them", async () => {
+    const s = await seed()
+    const code = await codeOf(s.complaintId)
+    expect(
+      await post(code, {
+        intent: "hide",
+        stage: "first",
+        subjectVersion: String(s.version),
+        statement: "Ringkasan memuat alamat rumah warga yang dikenali.",
+      }),
+    ).toEqual({
+      status: 400,
+      body: { decision: "hide", errors: ["decision_reason", "confirm"] },
+    })
+    expect((await complaintRow(s.complaintId))?.status).toBe("open")
+  })
+
+  test("Given a keep decision, when posted, then decided and back to the decision", async () => {
+    const s = await seed()
+    const code = await codeOf(s.complaintId)
+    expect(await post(code, keep(s.version))).toEqual({
+      status: 303,
+      location: `/kelola/aduan/${code}#keputusan`,
+    })
+    expect(await complaintRow(s.complaintId)).toMatchObject({
+      status: "decided",
+      decided_by: first,
+    })
+  })
+
+  test("Given a stale issue version, when posted, then 409", async () => {
+    const s = await seed()
+    const code = await codeOf(s.complaintId)
+    expect(await post(code, keep(s.version - 1))).toEqual({
+      status: 409,
+      body: { conflict: true },
+    })
+    expect((await complaintRow(s.complaintId))?.status).toBe("open")
+  })
+
+  test("Given the first admin, when deciding the appeal, then 403 sameAdmin", async () => {
+    const s = await seed()
+    const code = await codeOf(s.complaintId)
+    await decideComplaint(tenant("a"), input(s))
+    await appeal(s.complaintId)
+    expect(await post(code, keep(s.version, "appeal"))).toEqual({
+      status: 403,
+      body: { sameAdmin: true },
+    })
+    expect((await complaintRow(s.complaintId))?.status).toBe("appealed")
+  })
+
+  test("Given an issue already taken down, when hide is posted, then 400 notAllowed", async () => {
+    const s = await seed()
+    const code = await codeOf(s.complaintId)
+    await legalTakedown(tenant("a"), {
+      issueId: s.issueId,
+      version: s.version,
+      decision: "remove",
+      reason: "komdigi_order",
+      actorId: first,
+    })
+    expect(
+      await post(code, {
+        intent: "hide",
+        stage: "first",
+        subjectVersion: String(s.version + 1),
+        reason: "standard_3",
+        statement: "Ringkasan memuat alamat rumah warga yang dikenali.",
+        confirm: "yes",
+      }),
+    ).toEqual({ status: 400, body: { notAllowed: "hide" } })
+    expect((await complaintRow(s.complaintId))?.status).toBe("open")
+  })
+})
+
 describe("appeal decisions", () => {
   test("the first admin cannot decide the appeal", async () => {
     const s = await seed()
@@ -533,6 +770,49 @@ describe("tenant isolation", () => {
     expect(await listComplaints(orgs.b, "admin", "baru")).toEqual([])
     const own = await listComplaints(orgs.a, "admin", "baru")
     expect(own.map((row) => row.code)).toEqual([code])
+  })
+})
+
+describe("getComplaint", () => {
+  test("Given takedowns from two complaints and a legal order, when one complaint is opened, then only its own takedown is listed", async () => {
+    const hidden = await seed()
+    const removed = await seed()
+    const ordered = await seed()
+    for (const [s, decision, reason] of [
+      [hidden, "hide", "standard_3"],
+      [removed, "remove", "standard_8"],
+    ] as const) {
+      expect(
+        await decideComplaint(tenant("a"), input(s, { decision, reason })),
+      ).toEqual({ ok: true })
+    }
+    expect(
+      await legalTakedown(tenant("a"), {
+        issueId: ordered.issueId,
+        version: ordered.version,
+        decision: "remove",
+        reason: "komdigi_order",
+        actorId: first,
+      }),
+    ).toEqual({ ok: true })
+    const { rows } = await su.query<{ public_code: string }>(
+      "SELECT public_code FROM content_complaints WHERE id = $1",
+      [hidden.complaintId],
+    )
+    const detail = await getComplaint(
+      orgs.a,
+      "admin",
+      rows[0]?.public_code ?? "",
+    )
+    expect(detail?.takedowns).toEqual([
+      {
+        id: expect.any(String),
+        action: "unpublish",
+        purgeStatus: "pending",
+        createdAt: expect.any(Date),
+        doneAt: null,
+      },
+    ])
   })
 })
 

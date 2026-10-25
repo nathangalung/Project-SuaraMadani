@@ -24,10 +24,14 @@ log "pgbackrest $type backup"
 pgbr --type="$type" backup
 pgbr check
 record_backup pgbackrest
+# CBC has no MAC: verify
+log "pgbackrest verify"
+pgbr verify
+record_backup pgbackrest-verify
 
 # B2 copy age, list-only key
 if [[ -n "$(env_get B2_LIST_KEY_ID)" ]]; then
-  image="$(env_get APP_IMAGE):$(current_tag)"
+  image="$(deployed_ref app)"
   newest="$(docker run --rm \
     -e B2_LIST_KEY_ID="$(env_get B2_LIST_KEY_ID)" \
     -e B2_LIST_KEY="$(env_get B2_LIST_KEY)" \

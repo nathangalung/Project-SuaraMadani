@@ -6,6 +6,7 @@ import {
   type TenantContext,
   tenantContext,
 } from "../app/context.ts"
+import { requestScope } from "../db/request-scope.ts"
 import type { MemberRole } from "../db/schema/auth.ts"
 import { getTenantByHost, normalizeHost } from "../db/tenant.server.ts"
 import {
@@ -17,6 +18,7 @@ import {
   staffAccess,
   superadminAccess,
 } from "./auth.server.ts"
+import { type LogRecord, logPath, securityRecord, writeLog } from "./log.ts"
 import { hasSessionCookie } from "./middleware/cache-headers.ts"
 import { isTrustedRequest } from "./middleware/csrf.ts"
 import { apexHost } from "./origin.server.ts"
@@ -33,6 +35,8 @@ export type RootDeps = {
   isSuperadmin: (userId: string) => Promise<boolean>
   apexHost: () => string
   now: () => Date
+  // Security events, tests capture
+  log?: (line: LogRecord) => void
 }
 
 export const staffContext = createContext<{ role: MemberRole } | null>(null)
@@ -107,7 +111,21 @@ export function createRootMiddleware(
     if (!tenant) throw data(null, { status: 404 })
     context.set(tenantContext, tenant)
 
-    if (!isTrustedRequest(request)) throw forbidden(tenant, null)
+    const log = deps.log ?? writeLog
+    if (!isTrustedRequest(request)) {
+      log(securityRecord("csrf_refused", { host, path: logPath(url.pathname) }))
+      throw forbidden(tenant, null)
+    }
+    const refuse = (session: SessionContext | null, staff: boolean) => {
+      log(
+        securityRecord("staff_refused", {
+          host,
+          path: logPath(url.pathname),
+          user_id: session?.user.id ?? null,
+        }),
+      )
+      return forbidden(tenant, session, staff)
+    }
 
     // Better Auth reads session itself
     const read =
@@ -117,6 +135,9 @@ export function createRootMiddleware(
         : null
     const session = read?.session ?? null
     context.set(sessionContext, session)
+    // ASVS V16.2.1: who, per request
+    const scope = requestScope()
+    if (scope && session) scope.userId = session.user.id
 
     // Routes match decoded, case-insensitive
     const path = routedPath(url.pathname)
@@ -133,7 +154,7 @@ export function createRootMiddleware(
           now: deps.now(),
         })
       // Unenrolled superadmin sees enrol link
-      if (!allowed) throw forbidden(tenant, session, superadmin)
+      if (!allowed) throw refuse(session, superadmin)
       context.set(superadminContext, true)
     }
     if (STAFF_PATH.test(path)) {
@@ -150,7 +171,7 @@ export function createRootMiddleware(
         })
       if (!allowed || !role) {
         const staff = role !== null && STAFF_ROLES.includes(role)
-        throw forbidden(tenant, session, staff)
+        throw refuse(session, staff)
       }
       context.set(staffContext, { role })
     }

@@ -23,13 +23,18 @@ import {
 } from "../../../db/testing.ts"
 import { originalPath } from "../../../server/files.server.ts"
 import type { ReportStatus } from "../../../shared/status.ts"
-import { type ForwardInput, forwardReport } from "./forward.server.ts"
+import {
+  type ForwardInput,
+  forwardReport,
+  listForwardTargets,
+} from "./forward.server.ts"
 
 const su = superuserPool()
 const suDb = drizzle({ client: su })
 const BYTES = new Uint8Array([255, 216, 255, 224, 1, 2, 3, 4])
 let orgA = ""
 let orgB = ""
+let orgC = ""
 let reporter = ""
 let moderator = ""
 let filesDir = ""
@@ -104,9 +109,10 @@ beforeAll(async () => {
   await insertRegions(su)
   orgA = await insertOrg(su, "itb")
   orgB = await insertOrg(su, "ugm")
+  orgC = await insertOrg(su, "unpad")
   reporter = await insertUser(su, "pelapor.forward@contoh.id")
   moderator = await insertUser(su, "moderator.forward@contoh.id")
-  filesDir = await mkdtemp(`${tmpdir()}/sm-forward-`)
+  filesDir = await mkdtemp(`${tmpdir()}/sb-forward-`)
 })
 
 beforeEach(async () => {
@@ -280,6 +286,24 @@ describe("forwardReport", () => {
       ok: false,
       reason: "same_campus",
     })
+  })
+
+  test("Given a report forwarded to one campus, when it is forwarded to another, then it is refused as changed", async () => {
+    const seeded = await seedReport()
+    expect((await forwardReport(input(seeded.id))).ok).toBe(true)
+    expect(await forwardReport(input(seeded.id, orgC))).toEqual({
+      ok: false,
+      reason: "changed",
+    })
+    const copies = await copiesOf(seeded.id)
+    expect(copies.map((copy) => copy.org_id)).toEqual([orgB])
+  })
+
+  test("the target list is every other campus by name", async () => {
+    expect(await listForwardTargets(orgA)).toEqual([
+      { id: orgB, name: "ugm" },
+      { id: orgC, name: "unpad" },
+    ])
   })
 
   test("a decided report cannot be forwarded", async () => {

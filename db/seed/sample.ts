@@ -26,6 +26,7 @@ import {
   originalPath,
   publicMediaPath,
 } from "../../server/files.server.ts"
+import { createPurgeClient } from "../../server/purge.server.ts"
 import type { PublicMedia } from "../../shared/evidence.ts"
 import { isReferralChannel, isRejectReason } from "../../shared/moderation.ts"
 import { AGE_CONSENT_VERSION } from "../../shared/report-fields.ts"
@@ -835,6 +836,15 @@ async function backdate(
         await tx.execute(sql`
           UPDATE responses r SET created_at = e.occurred_at
           FROM issue_events e WHERE e.response_id = r.id`)
+        // Claim rounds follow their events
+        await tx.execute(sql`
+          UPDATE resolution_claims c SET claimed_at = e.occurred_at
+          FROM issue_events e
+          WHERE e.claim_id = c.id AND e.action = 'claim_resolved'`)
+        await tx.execute(sql`
+          UPDATE resolution_claims c SET closed_at = e.occurred_at
+          FROM issue_events e
+          WHERE e.claim_id = c.id AND e.action <> 'claim_resolved'`)
       }
       await tx.execute(sql`
         UPDATE evidence e SET created_at = r.created_at,
@@ -951,6 +961,13 @@ async function processEvidence(
 
 let jobsStarted = false
 
+/** Real decisions need pg-boss. */
+async function startJobs(): Promise<void> {
+  if (jobsStarted) return
+  await database().boss.start()
+  jobsStarted = true
+}
+
 /** Real decide, then publish. */
 async function publishSampleEvidence(
   org: Org,
@@ -980,10 +997,7 @@ async function publishSampleEvidence(
   for (const row of ours) {
     const input = planned.get(row.code)
     if (!input || row.status !== "ready" || row.decision) continue
-    if (!jobsStarted) {
-      await database().boss.start()
-      jobsStarted = true
-    }
+    await startJobs()
     const result = await decideEvidence(org.id, {
       evidenceId: row.id,
       actorId: org.actorId,
@@ -1099,10 +1113,7 @@ async function applyComplaints(
 ) {
   if (plan.complaints.length === 0) return
   const second = await sampleSecondAdmin(org)
-  if (!jobsStarted) {
-    await database().boss.start()
-    jobsStarted = true
-  }
+  await startJobs()
   const tenant = {
     id: org.id,
     slug: org.slug,
@@ -1197,10 +1208,8 @@ async function finishTakedowns(
   const store = localStore(() => deps.filesDir)
   const handle = createTakedownHandler({
     filesDir: deps.filesDir,
-    purge: {
-      purgeUrls: async () => ({ skipped: true }),
-      purgeHosts: async () => ({ skipped: true }),
-    },
+    // Unconfigured client skips purges
+    purge: createPurgeClient({ zoneId: "", token: "" }),
     mediaHost: null,
     deleteVideo: store.deleteVideo,
     // Dev has no CDN
@@ -1322,10 +1331,7 @@ export async function seedSample(deps: SampleDeps): Promise<SampleSummary> {
       await publishSampleEvidence(org, plan, { ...deps, filesDir })
     }
     // Tuntutan are admin authored
-    if (!jobsStarted) {
-      await database().boss.start()
-      jobsStarted = true
-    }
+    await startJobs()
     const demands = await seedSampleDemands(org, {
       migrator: deps.migrator,
       media: deps.media,
@@ -1458,26 +1464,23 @@ function publicNames(media: PublicMedia[] | null): string[] {
   )
 }
 
-function required(name: string): string {
-  const value = process.env[name]
-  if (!value) throw new Error(`${name} is not set`)
-  return value
-}
-
-if (import.meta.main) {
-  assertDevTarget({
-    nodeEnv: process.env.NODE_ENV,
-    urls: [
-      process.env.DATABASE_URL,
-      process.env.DATABASE_MIGRATOR_URL,
-      process.env.DATABASE_MEDIA_URL,
-    ],
-  })
-  const app = initDatabase("worker", required("DATABASE_URL"))
-  const migrator = createDatabase(required("DATABASE_MIGRATOR_URL"), "migrate")
-  const media = createDatabase(required("DATABASE_MEDIA_URL"), "worker-media")
+/** Dev CLI, local targets only. */
+export async function main(
+  argv: string[],
+  env: Record<string, string | undefined> = process.env,
+): Promise<void> {
+  const urls = [
+    env.DATABASE_URL,
+    env.DATABASE_MIGRATOR_URL,
+    env.DATABASE_MEDIA_URL,
+  ]
+  assertDevTarget({ nodeEnv: env.NODE_ENV, urls })
+  const [appUrl = "", migratorUrl = "", mediaUrl = ""] = urls
+  const app = initDatabase("worker", appUrl)
+  const migrator = createDatabase(migratorUrl, "migrate")
+  const media = createDatabase(mediaUrl, "worker-media")
   try {
-    const result = process.argv.includes("--reset")
+    const result = argv.includes("--reset")
       ? {
           msg: "sample data removed, audit_log rows kept",
           ...(await resetSample({ migrator: migrator.db })),
@@ -1493,3 +1496,5 @@ if (import.meta.main) {
     await Promise.all([app.pool.end(), migrator.pool.end(), media.pool.end()])
   }
 }
+
+if (import.meta.main) await main(process.argv.slice(2))

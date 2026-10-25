@@ -15,6 +15,8 @@ import {
   superuserPool,
   testUrl,
 } from "../../../db/testing.ts"
+import { hashKey, valueHash } from "../../../server/email-log.ts"
+import { CLAIM_RULES } from "../../../shared/claims.ts"
 import { IMPORTANCE_MIN_RATERS } from "../../../shared/demands.ts"
 import type { SessionContext, TenantContext } from "../../context.ts"
 import {
@@ -30,6 +32,8 @@ import {
   getManagedDemand,
 } from "./manage.server.ts"
 import {
+  hideRaterName,
+  namedRatersForAdmin,
   ownRating,
   type RateDeps,
   rateDemand,
@@ -53,7 +57,10 @@ const FIELDS: DemandFields = {
   raisedOn: "2026-09-01",
 }
 
-const pass: RateDeps = { verifyCaptcha: async () => ({ ok: true }) }
+const pass: RateDeps = {
+  verifyCaptcha: async () => ({ ok: true }),
+  hashKey: () => Buffer.alloc(32, 7),
+}
 
 function tenantOf(demandTenant: DemandTenant): TenantContext {
   return {
@@ -147,13 +154,14 @@ function rate(
   fields: Record<string, string> = {},
   deps: RateDeps = pass,
   tenant: DemandTenant = itb,
+  remoteIp: string | null = null,
 ) {
   return rateDemand({
     tenant: tenantOf(tenant),
     session: userId ? session(userId) : null,
     code,
     form: form(fields),
-    remoteIp: null,
+    remoteIp,
     deps,
   })
 }
@@ -161,7 +169,8 @@ function rate(
 /** n old accounts, same score. */
 async function crowd(code: string, n: number, score: string) {
   for (let i = 0; i < n; i++) {
-    const result = await rate(code, await citizen(30), { score })
+    const ip = `198.51.100.${i + 1}`
+    const result = await rate(code, await citizen(30), { score }, pass, itb, ip)
     expect(result.status).toBe(200)
   }
 }
@@ -208,6 +217,7 @@ describe("rateDemand", () => {
       user,
       {},
       {
+        ...pass,
         verifyCaptcha: async () => ({ ok: false, reason: "rejected" }),
       },
     )
@@ -274,10 +284,61 @@ describe("rateDemand", () => {
     const user = await citizen(30)
     await rate(code, user, { score: "3" })
     const duplicate: RateDeps = {
+      ...pass,
       verifyCaptcha: async () => ({ ok: false, reason: "duplicate" }),
     }
     expect((await rate(code, user, { score: "3" }, duplicate)).status).toBe(200)
     expect((await rate(code, user, { score: "4" }, duplicate)).status).toBe(403)
+  })
+})
+
+describe("address prefix", () => {
+  // PLAN 5.7: one prefix capped
+  test("one address prefix adds at most the cap", async () => {
+    const code = await make()
+    const ip = "203.0.113.7"
+    const first: string[] = []
+    for (let i = 0; i < CLAIM_RULES.prefixCap; i++) {
+      const user = await citizen(30)
+      first.push(user)
+      expect((await rate(code, user, {}, pass, itb, ip)).status).toBe(200)
+    }
+    expect(await rate(code, await citizen(30), {}, pass, itb, ip)).toEqual({
+      status: 429,
+      body: { error: "prefix_cap" },
+    })
+    // Own change, other address pass
+    const own = first[0] ?? ""
+    expect((await rate(code, own, { score: "1" }, pass, itb, ip)).status).toBe(
+      200,
+    )
+    const other = await rate(
+      code,
+      await citizen(30),
+      {},
+      pass,
+      itb,
+      "192.0.2.1",
+    )
+    expect(other.status).toBe(200)
+    const { rows } = await su.query(
+      "SELECT count(DISTINCT client_hash)::int AS n FROM demand_ratings WHERE client_hash IS NOT NULL",
+    )
+    expect(rows).toEqual([{ n: 2 }])
+  })
+
+  test("the admin page flags a prefix-heavy tuntutan", async () => {
+    const burst = await make()
+    for (let i = 0; i < 6; i++) {
+      await rate(burst, await citizen(30), {}, pass, itb, "203.0.113.8")
+    }
+    for (let i = 0; i < 6; i++) {
+      await rate(burst, await citizen(30), {}, pass, itb, `192.0.2.${i + 10}`)
+    }
+    expect((await getManagedDemand(itb.id, burst))?.prefixAnomaly).toBe(true)
+    const spread = await make()
+    await crowd(spread, 12, "4")
+    expect((await getManagedDemand(itb.id, spread))?.prefixAnomaly).toBe(false)
   })
 })
 
@@ -371,6 +432,79 @@ describe("public importance", () => {
       [user],
     )
     expect(rows).toHaveLength(0)
+  })
+})
+
+// PRIV-23: one abusive name
+describe("rater names", () => {
+  test("an admin hides one name, audited, sticks", async () => {
+    const code = await make()
+    const abusive = await citizen(30, "Nama Kasar")
+    const kept = await citizen(30, "Sari Wulandari")
+    await rate(code, abusive, { score: "5", visibility: "named" })
+    await rate(code, kept, { score: "4", visibility: "named" })
+    const listed = await namedRatersForAdmin(itb.id, code)
+    expect(listed.map((r) => [r.name, r.hidden])).toEqual([
+      ["Sari Wulandari", false],
+      ["Nama Kasar", false],
+    ])
+    const purged: string[][] = []
+    const deps = {
+      purge: {
+        purgeUrls: async (urls: string[]) => {
+          purged.push(urls)
+          return { skipped: false }
+        },
+        purgeHosts: async () => ({ skipped: false }),
+      },
+    }
+    const input = {
+      code,
+      userId: abusive,
+      reason: "standard_1" as const,
+      actorId: admin,
+    }
+    expect(await hideRaterName(ugm, input, deps)).toEqual({
+      ok: false,
+      reason: "not_found",
+    })
+    expect(
+      await hideRaterName(
+        itb,
+        { ...input, reason: "komdigi_order" as unknown as "standard_1" },
+        deps,
+      ),
+    ).toEqual({ ok: false, reason: "not_allowed" })
+    expect(await hideRaterName(itb, input, deps)).toEqual({ ok: true })
+    expect(purged[0]).toContain(`https://${itb.host}/tuntutan/${code}`)
+    const shown = (await getDemandPage(itb.id, code))?.named
+    expect(shown?.shown.map((r) => r.name)).toEqual(["Sari Wulandari"])
+    expect(shown?.total).toBe(1)
+    // Re-rating keeps it hidden
+    await rate(code, abusive, { score: "3", visibility: "named" })
+    expect(
+      (await getDemandPage(itb.id, code))?.named.shown.map((r) => r.name),
+    ).toEqual(["Sari Wulandari"])
+    const { rows } = await su.query(
+      `SELECT actor_id, reason_code, changed_columns, value_hashes FROM audit_log
+       WHERE org_id = $1 AND action = 'demand.rater_hide'`,
+      [itb.id],
+    )
+    // Which rater, never in clear
+    expect(rows).toEqual([
+      {
+        actor_id: admin,
+        reason_code: "standard_1",
+        changed_columns: ["name_hidden_at"],
+        value_hashes: { user_id: { old: valueHash(abusive, hashKey()) } },
+      },
+    ])
+    expect(JSON.stringify(rows)).not.toContain(abusive)
+    expect(
+      (await namedRatersForAdmin(itb.id, code)).find(
+        (r) => r.userId === abusive,
+      )?.hidden,
+    ).toBe(true)
   })
 })
 

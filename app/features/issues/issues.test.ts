@@ -407,7 +407,7 @@ describe("listIssueRanking", () => {
 })
 
 describe("getIssuePage evidence", () => {
-  test("lists only published copies of linked reports", async () => {
+  test("lists only published copies of linked reports, none for a row without copies", async () => {
     const code = await seedIssue()
     const [issue] = await suDb
       .select({ id: issues.id })
@@ -445,6 +445,15 @@ describe("getIssuePage evidence", () => {
         ],
       )
     }
+    // Published, yet no public copy
+    await su.query(
+      `INSERT INTO evidence (org_id, report_id, position, kind, declared_name,
+         declared_type, declared_size, status, decision, decided_at,
+         public_media, published_at)
+       VALUES ($1, $2, 3, 'pdf', 'f', 'application/pdf', 1, 'published',
+         'no_redaction', now(), '[]', now())`,
+      [orgA, report?.id],
+    )
     const page = await getIssuePage(orgA, code)
     expect(page?.evidence).toEqual([
       {

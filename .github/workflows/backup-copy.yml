@@ -15,11 +15,14 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # renovate: datasource=github-releases depName=rclone/rclone extractVersion=^v(?<version>.+)$
   RCLONE_VERSION: 1.75.1
   RCLONE_SHA256: 982b5aa772841168f8e380f139e9e787b2a105403e32b94da8676a0e1c0a13ab
 
 jobs:
   copy:
+    # Off until a host exists
+    if: vars.BACKUP_COPY_ENABLED == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     environment: backup
@@ -46,5 +49,7 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_DB_BUCKET }}
           B2_BUCKET: ${{ secrets.B2_BUCKET }}
         run: |
+          # ASVS V12.3.1: keys never plaintext
+          [[ "$RCLONE_CONFIG_R2_ENDPOINT" == https://* ]] || { echo "R2_ENDPOINT must start with https://" >&2; exit 1; }
           "$RUNNER_TEMP/rclone" sync "r2:$R2_BUCKET/pgbackrest" "b2:$B2_BUCKET/pgbackrest" \
             --transfers 8 --stats-one-line --stats 60s

@@ -215,7 +215,7 @@ describe("readNational", () => {
     expect(await readNational({ port: "" })).toEqual({ kind: "empty" })
   })
 
-  test("reads the view as sm_app, campus names live", async () => {
+  test("reads the view as sb_app, campus names live", async () => {
     await su.query("REFRESH MATERIALIZED VIEW public.national_aggregates")
     const view = await readNational({ port: "" })
     if (view.kind !== "ready") throw new Error("not ready")

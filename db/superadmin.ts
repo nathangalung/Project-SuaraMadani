@@ -13,21 +13,29 @@ export async function setSuperadmin(
   return result.rowCount === 1
 }
 
-// bun db/superadmin.ts grant <email>
-if (import.meta.main) {
-  const [command, email] = process.argv.slice(2)
+/** CLI exit code. */
+export async function main(
+  argv: string[],
+  env: Record<string, string | undefined> = process.env,
+): Promise<number> {
+  const [command, email] = argv
   if ((command !== "grant" && command !== "revoke") || !email) {
     console.error("usage: bun db/superadmin.ts grant|revoke <email>")
-    process.exit(2)
+    return 2
   }
-  const pool = new Pool({ connectionString: process.env.DATABASE_MIGRATOR_URL })
-  const found = await setSuperadmin(pool, email, command === "grant")
-  await pool.end()
+  const pool = new Pool({ connectionString: env.DATABASE_MIGRATOR_URL })
+  const found = await setSuperadmin(pool, email, command === "grant").finally(
+    () => pool.end(),
+  )
   if (!found) {
     console.error(
       JSON.stringify({ msg: "no account, sign in once first", command }),
     )
-    process.exit(1)
+    return 1
   }
   console.log(JSON.stringify({ msg: "superadmin updated", command }))
+  return 0
 }
+
+// bun db/superadmin.ts grant <email>
+if (import.meta.main) process.exitCode = await main(process.argv.slice(2))

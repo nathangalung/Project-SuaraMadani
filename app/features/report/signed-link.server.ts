@@ -1,5 +1,6 @@
-import { writeLog } from "../../../server/log.ts"
+import { errorRecord, writeError } from "../../../server/log.ts"
 import {
+  type Keyring,
   type LinkPurpose,
   linkKeyring,
   verifyLink,
@@ -10,20 +11,18 @@ export function readLink(
   token: string,
   purpose: LinkPurpose,
   orgId: string,
+  keyring: () => Keyring = linkKeyring,
 ): { subjectId: string; userId: string } | null {
   if (!token) return null
   try {
-    return verifyLink(linkKeyring(), token, {
+    return verifyLink(keyring(), token, {
       purpose,
       orgId,
       now: new Date(),
     })
   } catch (error) {
     // Missing keyring: links fail closed
-    writeLog({
-      msg: "signed link check failed",
-      error: error instanceof Error ? error.message : String(error),
-    })
+    writeError({ msg: "signed link check failed", ...errorRecord(error) })
     return null
   }
 }

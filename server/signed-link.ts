@@ -3,7 +3,12 @@ import { createHmac, timingSafeEqual } from "node:crypto"
 // Item 16: 30 days
 export const LINK_TTL_MS = 30 * 86_400_000
 
-export type LinkPurpose = "lacak" | "berhenti" | "berhenti-tuntutan"
+export type LinkPurpose =
+  | "lacak"
+  | "berhenti"
+  | "berhenti-tuntutan"
+  // Reporter survey, per claim
+  | "survei"
 
 export type Keyring = { current: number; keys: ReadonlyMap<number, Buffer> }
 

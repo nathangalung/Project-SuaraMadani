@@ -14,7 +14,7 @@ fi
 SSH_HOSTNAME="${1:-}"
 
 # Compose limits plus 1.5 GiB
-MIN_RAM_KB=12582912
+MIN_RAM_KB=13631488
 MIN_CPUS=4
 MOUNTS=(/mnt/pgdata /mnt/files /mnt/docker)
 APP_UID=1000
@@ -67,7 +67,7 @@ check_resources() {
   local ram cpus
   ram="$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)"
   cpus="$(nproc)"
-  ((ram >= MIN_RAM_KB)) || fail "RAM ${ram} kB, need ${MIN_RAM_KB} kB (Phase 1 limits)"
+  ((ram >= MIN_RAM_KB)) || fail "RAM ${ram} kB, need ${MIN_RAM_KB} kB (compose limits)"
   ((cpus >= MIN_CPUS)) || fail "$cpus CPUs, need $MIN_CPUS"
 }
 
@@ -91,11 +91,11 @@ prepare_dirs() {
   run install -d -m 0700 -o "$PG_UID" -g "$PG_UID" /mnt/pgdata/data
   run install -d -m 0700 -o "$DEPLOY_USER" /mnt/pgdata/keys
   run install -d -m 0711 /mnt/docker/docker /mnt/docker/containerd
-  run install -d -m 0750 -o "$DEPLOY_USER" /var/lib/suara-madani
+  run install -d -m 0750 -o "$DEPLOY_USER" /var/lib/sadar-bersuara
   # Decrypted env lives in tmpfs
-  echo "d /run/suara-madani 0700 $DEPLOY_USER $DEPLOY_USER -" |
-    put /etc/tmpfiles.d/suara-madani.conf 0644
-  run systemd-tmpfiles --create /etc/tmpfiles.d/suara-madani.conf
+  echo "d /run/sadar-bersuara 0700 $DEPLOY_USER $DEPLOY_USER -" |
+    put /etc/tmpfiles.d/sadar-bersuara.conf 0644
+  run systemd-tmpfiles --create /etc/tmpfiles.d/sadar-bersuara.conf
   local dir
   for dir in evidence derived scratch; do
     run install -d -m 0750 -o "$APP_UID" -g "$APP_UID" "/mnt/files/$dir"
@@ -154,15 +154,21 @@ configure_network() {
   run ufw default allow outgoing
   run ufw --force enable
   # QUIC buffers for cloudflared
-  put /etc/sysctl.d/90-suara-madani.conf 0644 <<'EOF'
+  put /etc/sysctl.d/90-sadar-bersuara.conf 0644 <<'EOF'
 net.core.rmem_max = 7500000
 net.core.wmem_max = 7500000
 EOF
   run sysctl --system
-  put /etc/apt/apt.conf.d/52suara-madani 0644 <<'EOF'
+  put /etc/apt/apt.conf.d/52sadar-bersuara 0644 <<'EOF'
 Unattended-Upgrade::Automatic-Reboot "false";
 EOF
-  run systemctl enable --now systemd-timesyncd
+  # Steps at boot, then slews
+  run apt-get install -y --no-install-recommends chrony
+  put /etc/chrony/conf.d/90-sadar-bersuara.conf 0644 <<'EOF'
+makestep 1 3
+EOF
+  run systemctl enable chrony
+  run systemctl restart chrony
 }
 
 install_tools() {
@@ -201,13 +207,14 @@ create_deploy_user() {
 }
 
 install_timers() {
-  say "backup timers"
+  say "backup and retention timers"
   local unit
-  for unit in backup-db.service backup-db.timer backup-evidence.service backup-evidence.timer; do
+  for unit in backup-db.service backup-db.timer backup-evidence.service backup-evidence.timer \
+    umami-prune.service umami-prune.timer logs-ship.service logs-ship.timer; do
     put "/etc/systemd/system/$unit" 0644 <"$HOST_DIR/$unit"
   done
   run systemctl daemon-reload
-  run systemctl enable --now backup-db.timer backup-evidence.timer
+  run systemctl enable --now backup-db.timer backup-evidence.timer umami-prune.timer logs-ship.timer
 }
 
 [[ $EUID -eq 0 || $DRY -eq 1 ]] || fail "run as root"

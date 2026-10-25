@@ -297,6 +297,26 @@ export function getEvidenceEditor(
   )
 }
 
+/** RFC 6266, ASCII plus UTF-8. */
+function disposition(name: string): string {
+  const ascii = name.replace(/[^\x20-\x7e]|["\\]/g, "_").slice(0, 120)
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`
+}
+
+/** Download only, never rendered. */
+export function originalResponse(file: Blob, name: string): Response {
+  return new Response(file, {
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "Content-Disposition": disposition(name),
+      "Cache-Control": "private, no-store",
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy":
+        "sandbox; default-src 'none'; frame-ancestors 'none'",
+    },
+  })
+}
+
 /** Inline preview, sandboxed. */
 export function previewResponse(
   request: Request,

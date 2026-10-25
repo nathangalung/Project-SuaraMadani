@@ -9,22 +9,10 @@ type OriginalFile = {
 
 // Never offered for these
 const NO_ORIGINAL = new Set(["awaiting_upload", "missing", "rejected_malware"])
-// Bytes matched the declared type
-const TYPE_CHECKED = new Set(["ready", "published", "rejected_limits"])
-// Failed before the type matched
-const UNCHECKED_FAILURES = new Set(["sha256_mismatch", "unsupported_type"])
 
-/** Clean scan or checked non-PDF. */
+/** ASVS V5.4.3: clean scan only. */
 export function originalAvailable(file: OriginalFile): boolean {
-  if (NO_ORIGINAL.has(file.status)) return false
-  if (file.scanned) return true
-  if (file.kind === "pdf") return false
-  if (TYPE_CHECKED.has(file.status)) return true
-  return (
-    file.status === "needs_manual_review" &&
-    file.failureReason !== null &&
-    !UNCHECKED_FAILURES.has(file.failureReason)
-  )
+  return !NO_ORIGINAL.has(file.status) && file.scanned
 }
 
 // Sniffed type sets extension

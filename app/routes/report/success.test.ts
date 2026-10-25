@@ -14,6 +14,7 @@ import {
 } from "../../../db/testing.ts"
 import { SNAPSHOT_VERSION } from "../../../shared/dashboard.ts"
 import { sessionContext, tenantContext } from "../../context.ts"
+import { loader as layoutLoader } from "./layout"
 import { loader } from "./success"
 
 describe("success loader", () => {
@@ -98,5 +99,28 @@ describe("success loader", () => {
 
   test("a code never sent is not confirmed", async () => {
     expect(await status("ITB", "ITB-26-ZZZZZ")).toBe(404)
+  })
+
+  test("Given a campus that paused intake with a status link, when /lapor loads, then the banner facts say so", async () => {
+    const banner = async (settings: Record<string, unknown>) => {
+      const provider = new RouterContextProvider()
+      provider.set(sessionContext, null)
+      provider.set(tenantContext, {
+        ...args("ITB", SENT).context.get(tenantContext),
+        settings,
+      })
+      const page = await layoutLoader({ context: provider } as never)
+      return { paused: page.paused, statusHref: page.statusHref }
+    }
+    expect(
+      await banner({
+        intakePaused: true,
+        statusUrl: "https://status.contoh.id/",
+      }),
+    ).toEqual({ paused: true, statusHref: "https://status.contoh.id/" })
+    // Script links never shown
+    expect(
+      await banner({ intakePaused: false, statusUrl: "javascript:alert(1)" }),
+    ).toEqual({ paused: false, statusHref: null })
   })
 })

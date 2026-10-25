@@ -1,9 +1,10 @@
 # Production stack, run by deploy.sh
-# Secrets: --env-file /run/suara-madani/app.env
-name: suara-madani
+# Secrets: --env-file /run/sadar-bersuara/app.env
+name: sadar-bersuara
 
 x-app: &app
-  image: ${APP_IMAGE:?}:${IMAGE_TAG:?set by deploy.sh}
+  # SC-04: name@digest from deploy.sh
+  image: ${APP_REF:?set by deploy.sh}
   restart: unless-stopped
   init: true
   read_only: true
@@ -12,6 +13,10 @@ x-app: &app
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
   stop_grace_period: 30s
+  # API4: Starting Values, threads count
+  pids_limit: 512
+  ulimits: &nofile
+    nofile: { soft: 65536, hard: 65536 }
   logging: &logging
     driver: local
     options:
@@ -22,7 +27,12 @@ x-hardened: &hardened
   restart: unless-stopped
   init: true
   security_opt: [no-new-privileges:true]
+  # Postgres, clamav: no ARP spoofing
+  cap_drop: [NET_RAW]
   stop_grace_period: 30s
+  # Postgres: 100 connections plus workers
+  pids_limit: 1024
+  ulimits: *nofile
   logging: *logging
 
 services:
@@ -34,7 +44,7 @@ services:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:?}
     volumes:
       - type: bind
-        source: ${RUN_DIR:-/run/suara-madani}/cloudflared.yml
+        source: ${RUN_DIR:-/run/sadar-bersuara}/cloudflared.yml
         target: /etc/cloudflared/config.yml
         read_only: true
         bind:
@@ -44,7 +54,7 @@ services:
     mem_limit: 128m
     cpus: 0.5
     oom_score_adj: -100
-    networks: [edge]
+    networks: [edge, egress-tunnel]
     depends_on:
       caddy:
         condition: service_started
@@ -55,6 +65,9 @@ services:
     read_only: true
     cap_drop: [ALL]
     cap_add: [NET_BIND_SERVICE]
+    environment:
+      # Same value as web
+      HSTS_POLICY: ${HSTS_POLICY:-max-age=300}
     tmpfs:
       - /data:size=8m
       - /config:size=8m
@@ -80,7 +93,10 @@ services:
     networks:
       edge:
         ipv4_address: 172.31.10.10
-      app: {}
+      # web trusts X-Client-IP from here
+      app:
+        ipv4_address: 172.31.11.10
+      analytics: {}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
       interval: 15s
@@ -92,7 +108,7 @@ services:
     command: ["bun", "server/index.ts"]
     environment:
       APEX_HOST: ${APEX_HOST:?}
-      DATABASE_URL: postgres://sm_app:${SM_APP_PASSWORD:?}@postgres:5432/suara_madani
+      DATABASE_URL: postgres://sb_app:${SB_APP_PASSWORD:?}@postgres:5432/sadar_bersuara
       BETTER_AUTH_SECRETS: ${BETTER_AUTH_SECRETS:?}
       LACAK_LINK_KEYS: ${LACAK_LINK_KEYS:?}
       AUDIT_HMAC_KEY: ${AUDIT_HMAC_KEY:?}
@@ -102,7 +118,11 @@ services:
       WHATSAPP_JOB_KEY: ${WHATSAPP_JOB_KEY:?}
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-brevo}
       EMAIL_FROM: ${EMAIL_FROM:?}
-      BREVO_API_KEY: ${BREVO_API_KEY:?}
+      # Boot checks the chosen provider
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      SES_REGION: ${SES_REGION:-}
+      SES_ACCESS_KEY_ID: ${SES_ACCESS_KEY_ID:-}
+      SES_SECRET_ACCESS_KEY: ${SES_SECRET_ACCESS_KEY:-}
       CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:?}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?}
       ANON_CDN_TTL: ${ANON_CDN_TTL:-60}
@@ -110,6 +130,17 @@ services:
       MEDIA_PUBLIC_ORIGIN: ${MEDIA_PUBLIC_ORIGIN:?}
       FILES_DIR: /files
       HEALTH_BACKUP_CHECKS: ${HEALTH_BACKUP_CHECKS:-true}
+      # Empty: /healthz/jobs status only
+      HEALTH_TOKEN: ${HEALTH_TOKEN:-}
+      # Same value as caddy
+      HSTS_POLICY: ${HSTS_POLICY:-max-age=300}
+      # GlitchTip, boot checks the DSN
+      ERROR_REPORTING: ${ERROR_REPORTING:-false}
+      GLITCHTIP_DSN: ${GLITCHTIP_DSN:-}
+      # Public, root loader reads it
+      UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
+      # Caddy's app address above
+      TRUSTED_PROXY_IP: 172.31.11.10
     volumes:
       - type: bind
         source: ${FILES_ROOT:-/mnt/files}/evidence
@@ -125,7 +156,8 @@ services:
     mem_limit: 768m
     cpus: 2
     oom_score_adj: 0
-    networks: [app, db]
+    # Turnstile, email, purge APIs
+    networks: [app, db, egress-web]
     healthcheck:
       test: ["CMD", "bun", "-e", "const r = await fetch('http://127.0.0.1:3000/healthz'); process.exit(r.ok ? 0 : 1)"]
       interval: 10s
@@ -140,15 +172,19 @@ services:
     <<: *app
     command: ["bun", "worker/index.ts"]
     environment:
-      WORKER_QUEUES: aggregate-refresh,email-send,issue-notify,demand-notify,takedown,maintenance-daily
+      WORKER_QUEUES: aggregate-refresh,email-send,issue-notify,demand-notify,takedown,maintenance-daily,deadline-reminders,survey-send
       WORKER_HEARTBEAT: /tmp/alive
       APEX_HOST: ${APEX_HOST:?}
-      DATABASE_URL: postgres://sm_app:${SM_APP_PASSWORD:?}@postgres:5432/suara_madani
+      DATABASE_URL: postgres://sb_app:${SB_APP_PASSWORD:?}@postgres:5432/sadar_bersuara
       LACAK_LINK_KEYS: ${LACAK_LINK_KEYS:?}
       AUDIT_HMAC_KEY: ${AUDIT_HMAC_KEY:?}
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-brevo}
       EMAIL_FROM: ${EMAIL_FROM:?}
-      BREVO_API_KEY: ${BREVO_API_KEY:?}
+      # Boot checks the chosen provider
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
+      SES_REGION: ${SES_REGION:-}
+      SES_ACCESS_KEY_ID: ${SES_ACCESS_KEY_ID:-}
+      SES_SECRET_ACCESS_KEY: ${SES_SECRET_ACCESS_KEY:-}
       CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:?}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?}
       MEDIA_R2_ENDPOINT: ${MEDIA_R2_ENDPOINT:?}
@@ -157,6 +193,10 @@ services:
       MEDIA_R2_SECRET_ACCESS_KEY: ${MEDIA_R2_SECRET_ACCESS_KEY:?}
       MEDIA_PUBLIC_ORIGIN: ${MEDIA_PUBLIC_ORIGIN:?}
       FILES_DIR: /files
+      ERROR_REPORTING: ${ERROR_REPORTING:-false}
+      GLITCHTIP_DSN: ${GLITCHTIP_DSN:-}
+      # True once /isu/:code/survei exists
+      SURVEY_ENABLED: ${SURVEY_ENABLED:-false}
     volumes:
       - type: bind
         source: ${FILES_ROOT:-/mnt/files}/evidence
@@ -176,7 +216,7 @@ services:
     mem_limit: 512m
     cpus: 1
     oom_score_adj: 200
-    networks: [db]
+    networks: [db, egress-worker]
     healthcheck:
       # Heartbeat after start, each self-check
       test: ["CMD", "sh", "-c", "test $$(( $$(date +%s) - $$(stat -c %Y /tmp/alive) )) -lt 150"]
@@ -197,7 +237,7 @@ services:
     environment:
       WORKER_QUEUES: whatsapp-send
       WORKER_HEARTBEAT: /tmp/alive
-      DATABASE_URL: postgres://sm_app:${SM_APP_PASSWORD:?}@postgres:5432/suara_madani
+      DATABASE_URL: postgres://sb_app:${SB_APP_PASSWORD:?}@postgres:5432/sadar_bersuara
       AUDIT_HMAC_KEY: ${AUDIT_HMAC_KEY:?}
       WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-baileys}
       WHATSAPP_JOB_KEY: ${WHATSAPP_JOB_KEY:?}
@@ -207,11 +247,13 @@ services:
       META_WA_PHONE_NUMBER_ID: ${META_WA_PHONE_NUMBER_ID:-}
       META_WA_TEMPLATE: ${META_WA_TEMPLATE:-}
       META_WA_LANGUAGE: ${META_WA_LANGUAGE:-id}
+      ERROR_REPORTING: ${ERROR_REPORTING:-false}
+      GLITCHTIP_DSN: ${GLITCHTIP_DSN:-}
     mem_limit: 384m
     cpus: 0.5
     oom_score_adj: 300
     # db plus egress to WhatsApp
-    networks: [db]
+    networks: [db, egress-whatsapp]
     healthcheck:
       # Heartbeat after start, each self-check
       test: ["CMD", "sh", "-c", "test $$(( $$(date +%s) - $$(stat -c %Y /tmp/alive) )) -lt 150"]
@@ -229,7 +271,7 @@ services:
     environment:
       WORKER_QUEUES: evidence,evidence-video,evidence-publish,evidence-brief
       WORKER_HEARTBEAT: /tmp/alive
-      DATABASE_MEDIA_URL: postgres://sm_media:${SM_MEDIA_PASSWORD:?}@postgres:5432/suara_madani
+      DATABASE_MEDIA_URL: postgres://sb_media:${SB_MEDIA_PASSWORD:?}@postgres:5432/sadar_bersuara
       MEDIA_R2_ENDPOINT: ${MEDIA_R2_ENDPOINT:?}
       MEDIA_R2_BUCKET: ${MEDIA_R2_BUCKET:?}
       MEDIA_R2_ACCESS_KEY_ID: ${MEDIA_R2_ACCESS_KEY_ID:?}
@@ -240,6 +282,8 @@ services:
       FILES_DIR: /files
       # Decoder scratch on disk
       TMPDIR: /scratch
+      ERROR_REPORTING: ${ERROR_REPORTING:-false}
+      GLITCHTIP_DSN: ${GLITCHTIP_DSN:-}
     volumes:
       - type: bind
         source: ${FILES_ROOT:-/mnt/files}/evidence
@@ -265,7 +309,7 @@ services:
     mem_limit: 1536m
     cpus: 1.5
     oom_score_adj: 500
-    networks: [media, scan]
+    networks: [media, scan, egress-media]
     healthcheck:
       # Heartbeat after start, each self-check
       test: ["CMD", "sh", "-c", "test $$(( $$(date +%s) - $$(stat -c %Y /tmp/alive) )) -lt 150"]
@@ -288,7 +332,7 @@ services:
     restart: "no"
     command: ["bun", "db/migrate.ts"]
     environment:
-      DATABASE_MIGRATOR_URL: postgres://sm_migrator:${SM_MIGRATOR_PASSWORD:?}@postgres:5432/suara_madani
+      DATABASE_MIGRATOR_URL: postgres://sb_migrator:${SB_MIGRATOR_PASSWORD:?}@postgres:5432/sadar_bersuara
     mem_limit: 512m
     cpus: 1
     networks: [db]
@@ -298,16 +342,19 @@ services:
 
   postgres:
     <<: *hardened
-    image: ${POSTGRES_IMAGE:?}:${POSTGRES_TAG:?}
+    image: ${POSTGRES_REF:?set by deploy.sh}
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
-      POSTGRES_DB: suara_madani
-      SM_DATABASE: suara_madani
-      SM_MIGRATOR_PASSWORD: ${SM_MIGRATOR_PASSWORD:?}
-      SM_APP_PASSWORD: ${SM_APP_PASSWORD:?}
-      SM_MEDIA_PASSWORD: ${SM_MEDIA_PASSWORD:?}
-      SM_BACKUP_PASSWORD: ${SM_BACKUP_PASSWORD:?}
+      POSTGRES_DB: sadar_bersuara
+      SB_DATABASE: sadar_bersuara
+      SB_MIGRATOR_PASSWORD: ${SB_MIGRATOR_PASSWORD:?}
+      SB_APP_PASSWORD: ${SB_APP_PASSWORD:?}
+      SB_MEDIA_PASSWORD: ${SB_MEDIA_PASSWORD:?}
+      SB_BACKUP_PASSWORD: ${SB_BACKUP_PASSWORD:?}
+      # Init only, initdb.sql
+      GLITCHTIP_DB_PASSWORD: ${GLITCHTIP_DB_PASSWORD:?}
+      UMAMI_DB_PASSWORD: ${UMAMI_DB_PASSWORD:?}
       PGBACKREST_REPO1_S3_ENDPOINT: ${PGBACKREST_REPO1_S3_ENDPOINT:?}
       PGBACKREST_REPO1_S3_BUCKET: ${PGBACKREST_REPO1_S3_BUCKET:?}
       PGBACKREST_REPO1_S3_KEY: ${PGBACKREST_REPO1_S3_KEY:?}
@@ -323,27 +370,120 @@ services:
     mem_limit: 3g
     cpus: 2
     oom_score_adj: -300
-    networks: [db, media]
+    # pgBackRest to R2
+    networks: [db, media, stats, egress-postgres]
     healthcheck:
-      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "suara_madani"]
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "sadar_bersuara"]
       interval: 5s
       timeout: 3s
       retries: 30
       start_period: 60s
 
+  # Errors, Sentry protocol, no Valkey
+  glitchtip:
+    <<: *hardened
+    image: glitchtip/glitchtip:6.2.6@sha256:a3d8eb1b36c1e1603d55ab32711ea3dd8115874742a781a57391a62a16e0dff6
+    environment:
+      DATABASE_URL: postgres://glitchtip:${GLITCHTIP_DB_PASSWORD:?}@postgres:5432/glitchtip
+      # Empty: Postgres queue and cache
+      VALKEY_URL: ""
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY:?}
+      SERVER_ROLE: all_in_one
+      # UI through SSH forward only
+      GLITCHTIP_DOMAIN: http://localhost:8000
+      ALLOWED_HOSTS: glitchtip,localhost
+      # Brevo cap stays app-only
+      EMAIL_URL: consolemail://
+      DEFAULT_FROM_EMAIL: ${EMAIL_FROM:?}
+      ENABLE_USER_REGISTRATION: "False"
+      ENABLE_ORGANIZATION_CREATION: "False"
+      ENABLE_ADMIN: "False"
+      ENABLE_OPENAPI: "False"
+      GLITCHTIP_ENABLE_MCP: "False"
+      GLITCHTIP_ENABLE_UPTIME: "False"
+      GLITCHTIP_ENABLE_LOGS: "False"
+      GLITCHTIP_ENABLE_DUCKDB: "False"
+      GLITCHTIP_RETENTION_DAYS: "30"
+      # max_connections is 100
+      DATABASE_POOL_MAX_SIZE: "5"
+      VTASKS_CONCURRENCY: "5"
+      # Half of 512m, no floor
+      GRANIAN_WORKERS_MAX_RSS: "256"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    volumes:
+      - glitchtip-uploads:/code/uploads
+    mem_limit: 512m
+    cpus: 0.5
+    oom_score_adj: 600
+    # web, workers reach it
+    networks:
+      db: {}
+      media: {}
+      ops:
+        ipv4_address: 172.31.17.10
+    healthcheck:
+      test: ["CMD", "python", "/code/healthcheck.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Cookieless analytics, own database
+  umami:
+    <<: *hardened
+    image: ghcr.io/umami-software/umami:3.4.0@sha256:85909afc45bdcda1917394594a087421fdbb05610fded0fa9f6fb861abb2f367
+    environment:
+      DATABASE_URL: postgresql://umami:${UMAMI_DB_PASSWORD:?}@postgres:5432/umami
+      APP_SECRET: ${UMAMI_APP_SECRET:?}
+      TWO_FACTOR_ENCRYPTION_KEY: ${UMAMI_TWO_FACTOR_KEY:?}
+      # Set by Caddy from CF-Connecting-IP
+      CLIENT_IP_HEADER: x-client-ip
+      DISABLE_TELEMETRY: "1"
+      DISABLE_UPDATES: "1"
+      PRIVATE_MODE: "1"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    mem_limit: 512m
+    cpus: 0.5
+    oom_score_adj: 600
+    # Caddy only, never web
+    networks:
+      analytics: {}
+      stats: {}
+      ops:
+        ipv4_address: 172.31.17.11
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:3000/api/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   clamav:
     <<: *hardened
     image: clamav/clamav:1.5.4-debian13-slim@sha256:9a96980b265cb2b51a20bdcca921dc80aa55ed0e56cdfb076198ee27a9171927
     environment:
-      # Starting Values: above PDF limit
-      CLAMD_CONF_StreamMaxLength: 12M
+      # Starting Values: above video limit
+      CLAMD_CONF_StreamMaxLength: 51M
       CLAMD_CONF_ConcurrentDatabaseReload: "no"
     volumes:
       - clamav-db:/var/lib/clamav
     mem_limit: 3g
     cpus: 1
     oom_score_adj: 800
-    networks: [scan]
+    # freshclam signature mirror
+    networks: [scan, egress-clamav]
     healthcheck:
       test: ["CMD", "clamdcheck.sh"]
       interval: 30s
@@ -379,6 +519,8 @@ services:
     # Counted in the host floor
     mem_limit: 512m
     cpus: 0.5
+    pids_limit: 256
+    ulimits: *nofile
     logging: *logging
     networks: [backup]
 
@@ -386,31 +528,86 @@ volumes:
   caddy-logs:
   clamav-db:
   restic-cache:
+  glitchtip-uploads:
 
 # Fixed subnets, Caddy trusts edge
+# V13.2.5: internal, no Internet
 networks:
   edge:
+    internal: true
     ipam:
       config:
         - subnet: 172.31.10.0/24
   app:
+    internal: true
     ipam:
       config:
         - subnet: 172.31.11.0/24
   db:
+    internal: true
     ipam:
       config:
         - subnet: 172.31.12.0/24
   media:
+    internal: true
     ipam:
       config:
         - subnet: 172.31.13.0/24
-  # clamd needs freshclam egress
   scan:
+    internal: true
     ipam:
       config:
         - subnet: 172.31.14.0/24
+  # restic only, needs R2
   backup:
     ipam:
       config:
         - subnet: 172.31.15.0/24
+  # Umami to Postgres only
+  stats:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.16.0/24
+  # UIs, SSH forward from host
+  ops:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.17.0/24
+  # Caddy to Umami only
+  analytics:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.18.0/24
+  # One per service: shared bridges
+  # resolve names to egress IPs
+  egress-tunnel:
+    ipam:
+      config:
+        - subnet: 172.31.20.0/28
+  egress-web:
+    ipam:
+      config:
+        - subnet: 172.31.20.16/28
+  egress-worker:
+    ipam:
+      config:
+        - subnet: 172.31.20.32/28
+  egress-whatsapp:
+    ipam:
+      config:
+        - subnet: 172.31.20.48/28
+  egress-media:
+    ipam:
+      config:
+        - subnet: 172.31.20.64/28
+  egress-postgres:
+    ipam:
+      config:
+        - subnet: 172.31.20.80/28
+  egress-clamav:
+    ipam:
+      config:
+        - subnet: 172.31.20.96/28

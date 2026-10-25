@@ -1,6 +1,12 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import { DrizzleQueryError } from "drizzle-orm/errors"
-import { errorRecord } from "./log.ts"
+import {
+  errorRecord,
+  type LogRecord,
+  setErrorReporter,
+  writeError,
+  writeLog,
+} from "./log.ts"
 
 const PHONE = "+6281299998888"
 
@@ -49,7 +55,67 @@ describe("errorRecord", () => {
     expect(String(record.stack)).toContain("boom")
   })
 
+  test("messages and stacks lose contact data", () => {
+    // OWASP A09: local logs too
+    const record = errorRecord(
+      new Error(`no user ani@contoh.id or ${PHONE} at /isu?cari=rahasia`),
+    )
+    const line = JSON.stringify(record)
+    for (const secret of ["ani@contoh.id", PHONE, "rahasia"]) {
+      expect(line).not.toContain(secret)
+    }
+    expect(record.message).toBe("no user [email] or [number] at /isu?[query]")
+    expect(String(record.stack)).toContain("log.test.ts")
+  })
+
   test("non-errors log only their type", () => {
     expect(errorRecord({ phone: PHONE })).toEqual({ error: "object" })
+  })
+})
+
+describe("writeError", () => {
+  afterEach(() => setErrorReporter(undefined))
+
+  test("lines carry level error", () => {
+    const spy = spyOn(console, "error").mockImplementation(() => {})
+    writeError({ msg: "server error", error: "TypeError" })
+    const line = JSON.parse(String(spy.mock.calls[0]?.[0]))
+    spy.mockRestore()
+    expect(line).toMatchObject({ level: "error", msg: "server error" })
+  })
+
+  test("errors reach the reporter, logs do not", () => {
+    const seen: LogRecord[] = []
+    setErrorReporter({ report: (record) => seen.push(record) })
+    const err = spyOn(console, "error").mockImplementation(() => {})
+    const out = spyOn(console, "log").mockImplementation(() => {})
+    writeError({ msg: "server error", error: "TypeError" })
+    writeLog({ msg: "request", status: 200 })
+    err.mockRestore()
+    out.mockRestore()
+    expect(seen).toEqual([{ msg: "server error", error: "TypeError" }])
+  })
+
+  test("a bundled copy reaches the reporter", async () => {
+    // SSR bundle inlines a copy
+    const specifier = "./log.ts?bundle"
+    const copy: typeof import("./log.ts") = await import(specifier)
+    const seen: LogRecord[] = []
+    setErrorReporter({ report: (record) => seen.push(record) })
+    const err = spyOn(console, "error").mockImplementation(() => {})
+    copy.writeError({ msg: "server error", error: "Error" })
+    err.mockRestore()
+    expect(seen).toEqual([{ msg: "server error", error: "Error" }])
+  })
+
+  test("a throwing reporter never breaks logging", () => {
+    setErrorReporter({
+      report: () => {
+        throw new Error("reporter down")
+      },
+    })
+    const err = spyOn(console, "error").mockImplementation(() => {})
+    expect(() => writeError({ msg: "x", error: "Error" })).not.toThrow()
+    err.mockRestore()
   })
 })

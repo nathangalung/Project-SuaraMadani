@@ -25,7 +25,7 @@ function flatten(node: PlanNode): PlanNode[] {
   return [node, ...(node.Plans ?? []).flatMap(flatten)]
 }
 
-/** Plan as sm_app under RLS. */
+/** Plan as sb_app under RLS. */
 async function plan(query: string): Promise<PlanNode[]> {
   const result = await withTenant(crypto.randomUUID(), async (tx) => {
     // Force any matching index
@@ -114,6 +114,11 @@ describe("foreign key lookups", () => {
     ["notifications", "complaint_id", "notifications_complaint_idx"],
     ["issue_events", "referral_id", "issue_events_referral_idx"],
     ["issue_events", "response_id", "issue_events_response_idx"],
+    // Workflow 9 tables, PERF-27
+    ["notifications", "claim_id", "notifications_claim_idx"],
+    ["notifications", "reply_id", "notifications_reply_idx"],
+    ["issue_events", "claim_id", "issue_events_claim_idx"],
+    ["ratings", "claim_id", "ratings_org_id_claim_id_user_id_pk"],
   ] as const)("%s.%s uses its index", async (table, column, index) => {
     const nodes = await plan(
       `SELECT 1 FROM ${table} WHERE org_id = current_org_id() AND ${column} = ${id()}`,
@@ -128,6 +133,16 @@ describe("foreign key lookups", () => {
     const client = await su.connect()
     try {
       await client.query("BEGIN")
+      // Empty table ties two indexes
+      await client.query("SET LOCAL session_replication_role = replica")
+      await client.query(
+        `INSERT INTO notifications (org_id, user_id, event_id, template)
+        SELECT $1::uuid, users.id, gen_random_uuid(), 'referral_deadline'
+        FROM generate_series(1, 200) AS u,
+          LATERAL (SELECT gen_random_uuid() AS id) AS users,
+          generate_series(1, 10)`,
+        [crypto.randomUUID()],
+      )
       await client.query("SET LOCAL enable_seqscan = off")
       await client.query("SET LOCAL enable_bitmapscan = off")
       const { rows } = await client.query<{
@@ -144,6 +159,121 @@ describe("foreign key lookups", () => {
       client.release()
     }
   })
+})
+
+describe("user SET NULL and CASCADE", () => {
+  // RI triggers skip RLS
+  test.each([
+    [
+      "ratings",
+      "ratings_user_idx",
+      ", score, is_reporter, account_days",
+      ", 4, false, 30",
+    ],
+    ["fix_surveys", "fix_surveys_user_idx", "", ""],
+  ] as const)(
+    "%s.user_id uses its index",
+    async (table, index, columns, values) => {
+      const client = await su.connect()
+      try {
+        await client.query("BEGIN")
+        // Empty table ties the key
+        await client.query("SET LOCAL session_replication_role = replica")
+        await client.query(
+          `INSERT INTO ${table} (org_id, claim_id, user_id${columns})
+        SELECT $1::uuid, gen_random_uuid(), users.id${values}
+        FROM generate_series(1, 200) AS u,
+          LATERAL (SELECT gen_random_uuid() AS id) AS users,
+          generate_series(1, 10)`,
+          [crypto.randomUUID()],
+        )
+        await client.query("SET LOCAL enable_seqscan = off")
+        await client.query("SET LOCAL enable_bitmapscan = off")
+        const { rows } = await client.query<{
+          "QUERY PLAN": [{ Plan: PlanNode }]
+        }>(
+          `EXPLAIN (FORMAT JSON) SELECT 1 FROM ${table} WHERE user_id = '${crypto.randomUUID()}'::uuid`,
+        )
+        await client.query("ROLLBACK")
+        const top = rows[0]?.["QUERY PLAN"][0].Plan
+        expect(indexNames(top ? flatten(top) : [])).toEqual([index])
+      } finally {
+        client.release()
+      }
+    },
+  )
+})
+
+describe("resolution claims", () => {
+  const issue = () => `'${crypto.randomUUID()}'::uuid`
+
+  /** Closed history, then rolled back. */
+  async function planWithHistory(query: string): Promise<PlanNode[]> {
+    // Empty table ties both indexes
+    const org = crypto.randomUUID()
+    const client = await su.connect()
+    try {
+      await client.query("BEGIN")
+      // Fake issues, FKs off
+      await client.query("SET LOCAL session_replication_role = replica")
+      await client.query(
+        `INSERT INTO resolution_claims (org_id, issue_id, closed_at, outcome, basis)
+        SELECT $1::uuid, gen_random_uuid(), now(), 'confirmed', 'admin'
+        FROM generate_series(1, 2000)`,
+        [org],
+      )
+      await client.query(
+        "SELECT set_config('app.org_id', $1, true), set_config('app.member_role', '', true)",
+        [org],
+      )
+      await client.query("SET LOCAL ROLE sb_app")
+      await client.query("SET LOCAL enable_seqscan = off")
+      await client.query("SET LOCAL enable_bitmapscan = off")
+      await client.query("SET LOCAL enable_sort = off")
+      const { rows } = await client.query<{
+        "QUERY PLAN": [{ Plan: PlanNode }]
+      }>(`EXPLAIN (FORMAT JSON) ${query}`)
+      const top = rows[0]?.["QUERY PLAN"][0].Plan
+      if (!top) throw new Error("no plan")
+      return flatten(top)
+    } finally {
+      await client.query("ROLLBACK")
+      client.release()
+    }
+  }
+
+  test("the open claim of an issue", async () => {
+    // Mirrors claims.server.ts open read
+    const nodes = await planWithHistory(
+      `SELECT id FROM resolution_claims WHERE issue_id = ${issue()} AND closed_at IS NULL`,
+    )
+    expect(indexNames(nodes)).toEqual(["resolution_claims_open_key"])
+  })
+
+  test("claim history is presorted by its index", async () => {
+    // id tiebreak: Incremental Sort only
+    const nodes = await planWithHistory(
+      `SELECT id FROM resolution_claims WHERE issue_id = ${issue()}
+      ORDER BY claimed_at DESC, id DESC`,
+    )
+    expect(indexNames(nodes)).toEqual(["resolution_claims_issue_idx"])
+    expect(nodeTypes(nodes)).not.toContain("Sort")
+  })
+})
+
+describe("decided replies", () => {
+  test.each(["accepted", "rejected"])(
+    "%s list reads in index order",
+    async (status) => {
+      // Mirrors replies.server.ts listReplies
+      const nodes = await plan(
+        `SELECT id FROM agency_replies WHERE status = '${status}'
+        ORDER BY decided_at DESC, id ASC LIMIT 100`,
+      )
+      expect(nodeTypes(nodes)).not.toContain("Sort")
+      expect(indexNames(nodes)).toEqual(["agency_replies_decided_idx"])
+    },
+  )
 })
 
 describe("upload byte cap", () => {
@@ -176,7 +306,7 @@ describe("upload byte cap", () => {
         [org],
       )
       await client.query("ANALYZE evidence")
-      await client.query("SET LOCAL ROLE sm_app")
+      await client.query("SET LOCAL ROLE sb_app")
       await client.query("SELECT set_config('app.org_id', $1, true)", [org])
       // Mirrors upload.server.ts usage query
       const { rows } = await client.query<{ "QUERY PLAN": string }>(

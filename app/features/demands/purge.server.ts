@@ -47,7 +47,14 @@ export function demandPurgeUrls(host: string, demand: PurgedDemand): string[] {
     ...(demand.issues ?? []).flatMap((issue) => [
       `${origin}/isu/${issue}`,
       `${origin}/isu/${issue}.data`,
+      `${origin}/api/v1/isu/${issue}`,
     ]),
+    // Public data API copies
+    `${origin}/api/v1/tuntutan/${code}`,
+    `${origin}/api/v1/tuntutan`,
+    `${origin}/api/v1/data`,
+    `${origin}/api/v1/data/tuntutan.csv`,
+    `${origin}/api/v1/data/tuntutan-wilayah.csv`,
   ]
 }
 

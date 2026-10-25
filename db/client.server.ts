@@ -1,9 +1,12 @@
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres"
 import { Pool, type PoolConfig } from "pg"
 import { PgBoss } from "pg-boss"
+import { errorRecord, writeError } from "../server/log.ts"
+import { processGlobal } from "./process-global.ts"
 import * as audit from "./schema/audit.ts"
 import * as auth from "./schema/auth.ts"
 import * as backups from "./schema/backups.ts"
+import * as claims from "./schema/claims.ts"
 import * as dashboard from "./schema/dashboard.ts"
 import * as demands from "./schema/demands.ts"
 import * as issues from "./schema/issues.ts"
@@ -11,8 +14,10 @@ import * as moderation from "./schema/moderation.ts"
 import * as notifications from "./schema/notifications.ts"
 import * as organizations from "./schema/organizations.ts"
 import * as regions from "./schema/regions.ts"
+import * as replies from "./schema/replies.ts"
 import * as reports from "./schema/reports.ts"
 import * as whatsapp from "./schema/whatsapp.ts"
+import { instrumentPool } from "./timing.server.ts"
 
 export const schema = {
   ...auth,
@@ -20,6 +25,8 @@ export const schema = {
   ...regions,
   ...reports,
   ...issues,
+  ...claims,
+  ...replies,
   ...demands,
   ...audit,
   ...moderation,
@@ -116,10 +123,16 @@ export function createDatabase(
   const pool = new Pool(poolConfig(connectionString, profile))
   // Idle errors must not crash
   pool.on("error", (error) => {
-    console.error(
-      JSON.stringify({ msg: "pg pool error", error: error.message }),
-    )
+    writeError({ msg: "pg pool error", ...errorRecord(error) })
   })
+  // Checked-out clients lose pool's listener
+  pool.on("connect", (client) => {
+    client.on("error", (error) => {
+      writeError({ msg: "pg client error", ...errorRecord(error) })
+    })
+  })
+  // Server-Timing reads web requests
+  if (profile === "web") instrumentPool(pool)
   const db = drizzle({ client: pool, schema })
   // Shares pool, migrate owns schema
   const boss = new PgBoss({
@@ -131,35 +144,38 @@ export function createDatabase(
   })
   // Unhandled emit prints stacks
   boss.on("error", (error) => {
-    console.error(
-      JSON.stringify({ msg: "pg-boss error", error: error.message }),
-    )
+    writeError({ msg: "pg-boss error", ...errorRecord(error) })
   })
   return { pool, db, boss }
 }
 
 function appDatabaseUrl(): string {
-  const name =
-    process.env.NODE_ENV === "test" ? "TEST_DATABASE_URL" : "DATABASE_URL"
+  const testing = process.env.NODE_ENV === "test"
+  const name = testing ? "TEST_DATABASE_URL" : "DATABASE_URL"
   const url = process.env[name]
   if (!url) throw new Error(`${name} is not set`)
+  // Tests never touch dev data
+  if (testing && !new URL(url).pathname.endsWith("_test")) {
+    throw new Error(`${name} must point at a *_test database`)
+  }
   return url
 }
 
-let instance: Database | undefined
+// Server and SSR share one
+const holder = processGlobal("database", (): { instance?: Database } => ({}))
 
 /** Call once at process start. */
 export function initDatabase(
   profile: PoolProfile,
   connectionString = appDatabaseUrl(),
 ): Database {
-  if (instance) throw new Error("Database already initialised")
-  instance = createDatabase(connectionString, profile)
-  return instance
+  if (holder.instance) throw new Error("Database already initialised")
+  holder.instance = createDatabase(connectionString, profile)
+  return holder.instance
 }
 
 /** Lazy web default. */
 export function database(): Database {
-  instance ??= createDatabase(appDatabaseUrl(), "web")
-  return instance
+  holder.instance ??= createDatabase(appDatabaseUrl(), "web")
+  return holder.instance
 }

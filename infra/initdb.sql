@@ -2,25 +2,28 @@
 \set ON_ERROR_STOP on
 
 -- Passwords from environment only
-\getenv migrator_pw SM_MIGRATOR_PASSWORD
-\getenv app_pw SM_APP_PASSWORD
-\getenv media_pw SM_MEDIA_PASSWORD
-\getenv backup_pw SM_BACKUP_PASSWORD
-\getenv app_db SM_DATABASE
-\getenv test_db SM_TEST_DATABASE
+\getenv migrator_pw SB_MIGRATOR_PASSWORD
+\getenv app_pw SB_APP_PASSWORD
+\getenv media_pw SB_MEDIA_PASSWORD
+\getenv backup_pw SB_BACKUP_PASSWORD
+\getenv app_db SB_DATABASE
+\getenv test_db SB_TEST_DATABASE
+-- Phase 2 observability, own databases
+\getenv glitchtip_pw GLITCHTIP_DB_PASSWORD
+\getenv umami_pw UMAMI_DB_PASSWORD
 
-CREATE ROLE sm_migrator LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB PASSWORD :'migrator_pw';
-CREATE ROLE sm_app LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB PASSWORD :'app_pw';
-CREATE ROLE sm_media LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB PASSWORD :'media_pw';
-CREATE ROLE sm_backup LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB PASSWORD :'backup_pw';
-CREATE ROLE sm_aggregates NOLOGIN NOSUPERUSER BYPASSRLS NOCREATEROLE NOCREATEDB;
+CREATE ROLE sb_migrator LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB PASSWORD :'migrator_pw';
+CREATE ROLE sb_app LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB PASSWORD :'app_pw';
+CREATE ROLE sb_media LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB PASSWORD :'media_pw';
+CREATE ROLE sb_backup LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB PASSWORD :'backup_pw';
+CREATE ROLE sb_aggregates NOLOGIN NOSUPERUSER BYPASSRLS NOCREATEROLE NOCREATEDB;
 
 -- Migrator transfers view ownership
-GRANT sm_aggregates TO sm_migrator;
+GRANT sb_aggregates TO sb_migrator;
 
-SELECT format('ALTER DATABASE %I OWNER TO sm_migrator', :'app_db') \gexec
+SELECT format('ALTER DATABASE %I OWNER TO sb_migrator', :'app_db') \gexec
 SELECT format('REVOKE ALL ON DATABASE %I FROM PUBLIC', :'app_db') \gexec
-SELECT format('GRANT CONNECT ON DATABASE %I TO sm_app, sm_media, sm_backup', :'app_db') \gexec
+SELECT format('GRANT CONNECT ON DATABASE %I TO sb_app, sb_media, sb_backup', :'app_db') \gexec
 
 \connect :app_db
 -- Drop image extras, keep three
@@ -35,14 +38,26 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 -- Only superuser and pg_read_all_stats
 REVOKE ALL ON pg_stat_statements, pg_stat_statements_info FROM PUBLIC;
-ALTER SCHEMA public OWNER TO sm_migrator;
+ALTER SCHEMA public OWNER TO sb_migrator;
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
-GRANT USAGE ON SCHEMA public TO sm_app, sm_media, sm_backup;
+GRANT USAGE ON SCHEMA public TO sb_app, sb_media, sb_backup;
 
 -- Optional test clone, dev only
 \connect postgres
 \if :{?test_db}
-SELECT format('CREATE DATABASE %I TEMPLATE %I OWNER sm_migrator', :'test_db', :'app_db') \gexec
+SELECT format('CREATE DATABASE %I TEMPLATE %I OWNER sb_migrator', :'test_db', :'app_db') \gexec
 SELECT format('REVOKE ALL ON DATABASE %I FROM PUBLIC', :'test_db') \gexec
-SELECT format('GRANT CONNECT ON DATABASE %I TO sm_app, sm_media, sm_backup', :'test_db') \gexec
+SELECT format('GRANT CONNECT ON DATABASE %I TO sb_app, sb_media, sb_backup', :'test_db') \gexec
+\endif
+
+-- Own role and database each
+\if :{?glitchtip_pw}
+CREATE ROLE glitchtip LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB PASSWORD :'glitchtip_pw';
+CREATE DATABASE glitchtip OWNER glitchtip;
+REVOKE ALL ON DATABASE glitchtip FROM PUBLIC;
+\endif
+\if :{?umami_pw}
+CREATE ROLE umami LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB PASSWORD :'umami_pw';
+CREATE DATABASE umami OWNER umami;
+REVOKE ALL ON DATABASE umami FROM PUBLIC;
 \endif

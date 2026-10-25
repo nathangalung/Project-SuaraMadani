@@ -113,6 +113,10 @@ describe("issuePurgeUrls", () => {
       "https://itb.suaramadani.id/isu/ISU-ITB-26-0001/og.png?v=1",
       "https://itb.suaramadani.id/isu/ISU-ITB-26-0001/og.png?v=2",
       "https://itb.suaramadani.id/isu/ISU-ITB-26-0001/og.png?v=3",
+      "https://itb.suaramadani.id/api/v1/isu/ISU-ITB-26-0001",
+      "https://itb.suaramadani.id/api/v1/isu",
+      "https://itb.suaramadani.id/api/v1/data",
+      "https://itb.suaramadani.id/api/v1/data/peringkat-isu.csv",
     ])
   })
 })
@@ -206,12 +210,13 @@ describe("purgeIssuePages", () => {
       },
     )
     expect(lines).toEqual([
-      {
+      expect.objectContaining({
         msg: "purge failed",
         host: "itb.localhost",
         issue: "ISU-ITB-26-0001",
-        error: "purge failed: 429",
-      },
+        error: "Error",
+        message: "purge failed: 429",
+      }),
     ])
   })
 })

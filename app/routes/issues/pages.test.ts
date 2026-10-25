@@ -1486,3 +1486,93 @@ describe("apex national view", () => {
     expect(html).toContain('href="/lapor"')
   })
 })
+
+// PLAN §14 item 22
+describe("query budget per page", () => {
+  let demandCode = ""
+  // Demands add fan-out queries
+  beforeAll(async () => {
+    const { rows } = await su.query<{ id: string }>(
+      "SELECT id FROM organizations WHERE slug = 'itbpub'",
+    )
+    const tenant: DemandTenant = {
+      id: rows[0]?.id ?? "",
+      host: "itbpub.localhost",
+      campusCode: "ITBPUB",
+    }
+    // Ready dashboard adds the ranking
+    await su.query(
+      `INSERT INTO dashboard_snapshots (org_id, data, computed_at)
+       VALUES ($1, $2, now()) ON CONFLICT (org_id) DO NOTHING`,
+      [tenant.id, JSON.stringify(fullSnapshot())],
+    )
+    const admin = await insertUser(su, "admin.anggaran@contoh.id")
+    const created = await createDemand(tenant, {
+      fields: {
+        scope: "national",
+        provinceCode: null,
+        regencyCode: null,
+        category: "infrastruktur_transportasi",
+        title: "Standar layanan air bersih nasional",
+        body: "Kami menuntut standar waktu pemulihan suplai air bersih.",
+        summary: "Waktu pemulihan suplai air bersih.",
+        target: "Kementerian Pekerjaan Umum",
+        raisedOn: "2026-07-30",
+      },
+      items: ["Standar waktu pemulihan", "Tangki air bantuan"],
+      actorId: admin,
+    })
+    if (!created.ok) throw new Error(created.reason)
+    demandCode = created.code
+    // Cited issue reads the tuntutan
+    const linked = await linkIssue(tenant, {
+      code: created.code,
+      issueCode: PUBLISHED,
+      actorId: admin,
+    })
+    if (!linked.ok) throw new Error(linked.reason)
+    const demand = await getManagedDemand(tenant.id, created.code)
+    await changeDemandState(tenant, {
+      code: created.code,
+      action: "publish",
+      version: demand?.version ?? 0,
+      note: null,
+      actorId: admin,
+    })
+  })
+
+  afterAll(async () => {
+    await su.query("DELETE FROM demands")
+  })
+
+  // Counts BEGIN, set_config and COMMIT
+  const BUDGET: [string, number][] = [
+    // First request loads the tenant
+    ["/", 16],
+    ["/isu", 5],
+    [`/isu/${PUBLISHED}`, 15],
+    ["/tentang", 0],
+    ["/data", 18],
+    ["/tuntutan", 15],
+    ["/tuntutan/:code", 12],
+    ["/api/v1", 1],
+    ["/api/v1/isu", 5],
+    [`/api/v1/isu/${PUBLISHED}`, 15],
+    ["/api/v1/tuntutan", 8],
+    ["/api/v1/tuntutan/:code", 12],
+    ["/api/v1/data", 14],
+    ["/api/v1/data/ringkasan.csv", 14],
+    ["/api/v1/data/wilayah.csv", 14],
+  ]
+
+  for (const [path, max] of BUDGET) {
+    test(`${path} runs at most ${max} statements`, async () => {
+      const res = await get(`${ITB}${path.replace(":code", demandCode)}`)
+      expect(res.status).toBe(200)
+      const header = res.headers.get("Server-Timing") ?? ""
+      const count = /desc="(\d+) queries"/.exec(header)?.[1]
+      expect(count).toBeDefined()
+      expect(Number(count)).toBeLessThanOrEqual(max)
+    })
+  }
+})

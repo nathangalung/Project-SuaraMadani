@@ -496,85 +496,88 @@ export function demandsForIssue(
 
 /** Live /data numbers and lists. */
 export function demandOverview(orgId: string): Promise<DemandOverview> {
-  return withTenant(orgId, async (tx) => {
-    const groups = await tx
-      .select({
-        scope: demands.scope,
-        provinceCode: demands.provinceCode,
-        state: demands.state,
-        status: demands.progress,
-        n: sql<number>`count(*)::int`,
-      })
-      .from(demands)
-      .where(PUBLIC)
-      .groupBy(
-        demands.scope,
-        demands.provinceCode,
-        demands.state,
-        demands.progress,
-      )
-    const [items] = await tx
-      .select({
-        total: sql<number>`count(*)::int`,
-        fulfilled: sql<number>`count(*) FILTER (WHERE ${demandItems.fulfilmentStatus} = 'fulfilled')::int`,
-      })
-      .from(demandItems)
-      .innerJoin(
-        demands,
-        and(
-          eq(demands.orgId, demandItems.orgId),
-          eq(demands.id, demandItems.demandId),
-        ),
-      )
-      .where(PUBLIC)
-    const counts: DemandCounts = {
-      total: 0,
-      national: 0,
-      regional: 0,
-      active: 0,
-      fulfilled: 0,
-      items: items?.total ?? 0,
-      itemsFulfilled: items?.fulfilled ?? 0,
+  return withTenant(orgId, readDemandOverview)
+}
+
+/** Same, inside a caller's transaction. */
+export async function readDemandOverview(tx: Tx): Promise<DemandOverview> {
+  const groups = await tx
+    .select({
+      scope: demands.scope,
+      provinceCode: demands.provinceCode,
+      state: demands.state,
+      status: demands.progress,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(demands)
+    .where(PUBLIC)
+    .groupBy(
+      demands.scope,
+      demands.provinceCode,
+      demands.state,
+      demands.progress,
+    )
+  const [items] = await tx
+    .select({
+      total: sql<number>`count(*)::int`,
+      fulfilled: sql<number>`count(*) FILTER (WHERE ${demandItems.fulfilmentStatus} = 'fulfilled')::int`,
+    })
+    .from(demandItems)
+    .innerJoin(
+      demands,
+      and(
+        eq(demands.orgId, demandItems.orgId),
+        eq(demands.id, demandItems.demandId),
+      ),
+    )
+    .where(PUBLIC)
+  const counts: DemandCounts = {
+    total: 0,
+    national: 0,
+    regional: 0,
+    active: 0,
+    fulfilled: 0,
+    items: items?.total ?? 0,
+    itemsFulfilled: items?.fulfilled ?? 0,
+  }
+  const provinces: DemandOverview["provinces"] = {}
+  for (const group of groups) {
+    counts.total += group.n
+    counts[group.scope] += group.n
+    if (group.status === "fulfilled") counts.fulfilled += group.n
+    if (
+      group.state === "published" &&
+      (group.status === "not_fulfilled" ||
+        group.status === "partially_fulfilled")
+    ) {
+      counts.active += group.n
     }
-    const provinces: DemandOverview["provinces"] = {}
-    for (const group of groups) {
-      counts.total += group.n
-      counts[group.scope] += group.n
-      if (group.status === "fulfilled") counts.fulfilled += group.n
-      if (
-        group.state === "published" &&
-        (group.status === "not_fulfilled" ||
-          group.status === "partially_fulfilled")
-      ) {
-        counts.active += group.n
-      }
-      if (group.scope === "regional" && group.provinceCode) {
-        const cell = provinces[group.provinceCode] ?? emptyStatuses()
-        cell[group.status] += group.n
-        provinces[group.provinceCode] = cell
-      }
+    if (group.scope === "regional" && group.provinceCode) {
+      const cell = provinces[group.provinceCode] ?? emptyStatuses()
+      cell[group.status] += group.n
+      provinces[group.provinceCode] = cell
     }
-    const national = await tx
-      .select({
-        code: demands.publicCode,
-        title: demands.title,
-        state: demands.state,
-        status: demands.progress,
-      })
-      .from(demands)
-      .where(and(PUBLIC, eq(demands.scope, "national")))
-      .orderBy(desc(demands.publishedAt), desc(demands.id))
-      .limit(OVERVIEW_NATIONAL)
-    return {
-      counts,
-      provinces,
-      national: national.map((row) => ({
-        ...row,
-        state: row.state === "closed" ? "closed" : "published",
-      })),
-      latest: await readLatest(tx, OVERVIEW_LATEST),
-    }
-  })
+  }
+  const national = await tx
+    .select({
+      code: demands.publicCode,
+      title: demands.title,
+      state: demands.state,
+      status: demands.progress,
+    })
+    .from(demands)
+    .where(and(PUBLIC, eq(demands.scope, "national")))
+    .orderBy(desc(demands.publishedAt), desc(demands.id))
+    .limit(OVERVIEW_NATIONAL)
+  return {
+    counts,
+    provinces,
+    national: national.map((row) => ({
+      ...row,
+      state: row.state === "closed" ? "closed" : "published",
+    })),
+    latest: await readLatest(tx, OVERVIEW_LATEST),
+  }
 }
 
 export type DemandEvent = {
@@ -738,15 +741,6 @@ export function demandUrls(host: string, code: string, version: number) {
     url: `${origin}/tuntutan/${code}`,
     image: `${origin}/tuntutan/${code}/og.png?v=${version}`,
   }
-}
-
-/** Download target, public only. */
-export function publicBrief(
-  orgId: string,
-  code: string,
-  briefId: string,
-): Promise<{ id: string; itemNumber: number } | null> {
-  return findPublicBrief(orgId, code, briefId)
 }
 
 /** Stored PDF, null when missing. */

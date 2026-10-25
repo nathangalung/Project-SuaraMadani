@@ -1,12 +1,31 @@
-import { and, count, desc, eq, inArray, not, sql } from "drizzle-orm"
+import {
+  and,
+  count,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  not,
+  sql,
+} from "drizzle-orm"
+import { auditLog } from "../../../db/schema/audit.ts"
 import { users } from "../../../db/schema/auth.ts"
 import { demandRatings, demands } from "../../../db/schema/demands.ts"
 import { type Tx, withTenant } from "../../../db/tenant.server.ts"
+import { clientKey } from "../../../server/api/upload.server.ts"
+import { addressHash, hashKey, valueHash } from "../../../server/email-log.ts"
+import type { PurgeDeps } from "../../../server/purge.server.ts"
 import {
   type TurnstileResult,
   turnstileSecret,
   verifyTurnstile,
 } from "../../../server/turnstile.server.ts"
+import { CLAIM_RULES, ratingAnomaly } from "../../../shared/claims.ts"
+import {
+  STANDARD_REASONS,
+  type StandardReason,
+} from "../../../shared/complaints.ts"
 import {
   emptyImportance,
   IMPORTANCE_ACCOUNT_DAYS,
@@ -19,6 +38,8 @@ import {
 } from "../../../shared/demands.ts"
 import type { SessionContext, TenantContext } from "../../context.ts"
 import { text, UUID } from "../moderation/form-values.ts"
+import type { DemandTenant } from "./manage.server.ts"
+import { purgeDemandPages } from "./purge.server.ts"
 import {
   checkRating,
   type RatingErrorKey,
@@ -62,6 +83,39 @@ export async function pendingRaters(tx: Tx, demandId: string): Promise<number> {
   return row?.n ?? 0
 }
 
+/** Admin flag: one prefix dominates. */
+export async function prefixAnomaly(
+  tx: Tx,
+  demandId: string,
+): Promise<boolean> {
+  const [stored] = await tx
+    .select({ n: demands.maxPrefixRatings })
+    .from(demands)
+    .where(eq(demands.id, demandId))
+  const [totals] = await tx
+    .select({ n: count() })
+    .from(demandRatings)
+    .where(eq(demandRatings.demandId, demandId))
+  const [top] = await tx
+    .select({ n: count() })
+    .from(demandRatings)
+    .where(
+      and(
+        eq(demandRatings.demandId, demandId),
+        isNotNull(demandRatings.clientHash),
+      ),
+    )
+    .groupBy(demandRatings.clientHash)
+    .orderBy(desc(count()))
+    .limit(1)
+  return ratingAnomaly({
+    total: totals?.n ?? 0,
+    // Hashes clear after 30 days
+    topPrefix: Math.max(top?.n ?? 0, stored?.n ?? 0),
+    young: 0,
+  }).prefix
+}
+
 type NamedRater = { name: string; score: ImportanceScore; on: Date }
 
 export type NamedRaters = { shown: NamedRater[]; total: number }
@@ -74,6 +128,7 @@ export async function readNamedRaters(
   const named = and(
     eq(demandRatings.demandId, demandId),
     eq(demandRatings.showName, true),
+    isNull(demandRatings.nameHiddenAt),
     sql`btrim(${users.name}) <> ''`,
     COUNTED,
   )
@@ -101,6 +156,113 @@ export async function readNamedRaters(
     ),
     total: total?.n ?? 0,
   }
+}
+
+export type AdminRater = {
+  userId: string
+  name: string
+  score: number
+  hidden: boolean
+}
+
+/** Opted-in names, admin moderation. */
+export function namedRatersForAdmin(
+  orgId: string,
+  code: string,
+): Promise<AdminRater[]> {
+  return withTenant(
+    orgId,
+    async (tx) => {
+      const rows = await tx
+        .select({
+          userId: demandRatings.userId,
+          name: users.name,
+          score: demandRatings.score,
+          hiddenAt: demandRatings.nameHiddenAt,
+        })
+        .from(demandRatings)
+        .innerJoin(demands, eq(demands.id, demandRatings.demandId))
+        .innerJoin(users, eq(users.id, demandRatings.userId))
+        .where(
+          and(
+            eq(demands.publicCode, code),
+            eq(demandRatings.showName, true),
+            sql`btrim(${users.name}) <> ''`,
+          ),
+        )
+        .orderBy(desc(demandRatings.updatedAt), desc(demandRatings.userId))
+      return rows.map((row) => ({
+        userId: row.userId,
+        name: row.name.trim(),
+        score: row.score,
+        hidden: row.hiddenAt !== null,
+      }))
+    },
+    { role: "admin" },
+  )
+}
+
+export type HideRaterResult =
+  | { ok: true }
+  | { ok: false; reason: "not_found" | "not_allowed" }
+
+/** PRIV-23: name off, rating stays. */
+export async function hideRaterName(
+  tenant: Pick<DemandTenant, "id" | "host">,
+  input: {
+    code: string
+    userId: string
+    reason: StandardReason
+    actorId: string
+  },
+  deps: PurgeDeps = {},
+): Promise<HideRaterResult> {
+  if (!(STANDARD_REASONS as readonly string[]).includes(input.reason)) {
+    return { ok: false, reason: "not_allowed" }
+  }
+  const done = await withTenant(
+    tenant.id,
+    async (tx) => {
+      const [demand] = await tx
+        .select({ id: demands.id, version: demands.version })
+        .from(demands)
+        .where(eq(demands.publicCode, input.code))
+      if (!demand) return null
+      const [hidden] = await tx
+        .update(demandRatings)
+        .set({ nameHiddenAt: sql`now()` })
+        .where(
+          and(
+            eq(demandRatings.demandId, demand.id),
+            eq(demandRatings.userId, input.userId),
+            isNull(demandRatings.nameHiddenAt),
+          ),
+        )
+        .returning({ userId: demandRatings.userId })
+      if (!hidden) return null
+      // Raw code, labels.ts is frontend
+      await tx.insert(auditLog).values({
+        orgId: tenant.id,
+        actorId: input.actorId,
+        action: "demand.rater_hide",
+        entityType: "demand",
+        entityId: demand.id,
+        changedColumns: ["name_hidden_at"],
+        // Which rater, keyed hash
+        valueHashes: { user_id: { old: valueHash(input.userId, hashKey()) } },
+        reasonCode: input.reason,
+      })
+      return demand
+    },
+    { role: "admin" },
+  )
+  if (!done) return { ok: false, reason: "not_found" }
+  await purgeDemandPages(
+    tenant.host,
+    { code: input.code, version: done.version },
+    deps,
+  )
+  return { ok: true }
 }
 
 export type OwnRating = {
@@ -183,11 +345,13 @@ type RateFailure =
   | "not_found"
   // Closed tuntutan keep their score
   | "closed"
+  // One address prefix is full
+  | "prefix_cap"
 
 export type RateResult =
   | { status: 200; body: { saved: "rated" | "withdrawn" } }
   | { status: 400; body: { errors: RatingErrorKey[] } }
-  | { status: 401 | 403 | 404 | 409; body: { error: RateFailure } }
+  | { status: 401 | 403 | 404 | 409 | 429; body: { error: RateFailure } }
 
 export type RateDeps = {
   verifyCaptcha: (
@@ -195,9 +359,10 @@ export type RateDeps = {
     remoteIp: string | null,
     idempotencyKey: string,
   ) => Promise<TurnstileResult>
+  hashKey: () => Buffer
 }
 
-type Written = "saved" | "not_found" | "closed"
+type Written = "saved" | "not_found" | "closed" | "prefix_cap"
 
 async function writeRating(
   tx: Tx,
@@ -205,6 +370,7 @@ async function writeRating(
   code: string,
   userId: string,
   input: RatingInput | null,
+  clientHash: string | null,
 ): Promise<Written> {
   const [demand] = await tx
     .select({ id: demands.id, state: demands.state })
@@ -222,27 +388,45 @@ async function writeRating(
     return "saved"
   }
   if (demand.state !== "published") return "closed"
+  if (clientHash) {
+    // Serialises one prefix per demand
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtextextended(${`${demand.id}|${clientHash}`}, 4))`,
+    )
+    const [same] = await tx
+      .select({ n: count() })
+      .from(demandRatings)
+      .where(
+        and(
+          eq(demandRatings.demandId, demand.id),
+          eq(demandRatings.clientHash, clientHash),
+          not(eq(demandRatings.userId, userId)),
+        ),
+      )
+    if ((same?.n ?? 0) >= CLAIM_RULES.prefixCap) return "prefix_cap"
+  }
   await tx
     .insert(demandRatings)
-    .values({ orgId, demandId: demand.id, userId, ...input })
+    .values({ orgId, demandId: demand.id, userId, clientHash, ...input })
     .onConflictDoUpdate({
       target: [
         demandRatings.orgId,
         demandRatings.demandId,
         demandRatings.userId,
       ],
-      set: { ...input, updatedAt: sql`now()` },
+      set: { ...input, clientHash, updatedAt: sql`now()` },
     })
   return "saved"
 }
 
-function fail(status: 401 | 403 | 404 | 409, error: RateFailure) {
+function fail(status: 401 | 403 | 404 | 409 | 429, error: RateFailure) {
   return { status, body: { error } } as const
 }
 
 const WRITTEN_FAILURE = {
   not_found: fail(404, "not_found"),
   closed: fail(409, "closed"),
+  prefix_cap: fail(429, "prefix_cap"),
 } as const
 
 /** One per account, Turnstile. */
@@ -260,7 +444,7 @@ export async function rateDemand(input: {
   const intent = text(form, "intent")
   if (intent === "withdraw") {
     const written = await withTenant(tenant.id, (tx) =>
-      writeRating(tx, tenant.id, input.code, userId, null),
+      writeRating(tx, tenant.id, input.code, userId, null, null),
     )
     if (written !== "saved") return WRITTEN_FAILURE[written]
     return { status: 200, body: { saved: "withdrawn" } }
@@ -292,8 +476,12 @@ export async function rateDemand(input: {
     }
     return fail(403, "captcha_failed")
   }
+  const clientHash = addressHash(
+    clientKey(input.remoteIp),
+    input.deps.hashKey(),
+  )
   const written = await withTenant(tenant.id, (tx) =>
-    writeRating(tx, tenant.id, input.code, userId, checked.input),
+    writeRating(tx, tenant.id, input.code, userId, checked.input, clientHash),
   )
   if (written !== "saved") return WRITTEN_FAILURE[written]
   return { status: 200, body: { saved: "rated" } }
@@ -326,6 +514,7 @@ export async function rateRequest(input: {
           remoteIp: ip,
           idempotencyKey,
         }),
+      hashKey,
     },
   })
 }

@@ -52,4 +52,25 @@ describe("report fields", () => {
     )
     expect(evidenceKind({ type: "", name: "noextension" })).toBe(undefined)
   })
+
+  test("the extension must match the type", () => {
+    // ASVS V5.2.2: extension and type
+    for (const name of ["Surat_Resmi.hta", "x.pdf", "a.exe", "foto.png.js"]) {
+      expect([name, evidenceKind({ type: "image/jpeg", name })]).toEqual([
+        name,
+        undefined,
+      ])
+    }
+    expect(evidenceKind({ type: "video/mp4", name: "x.pdf" })).toBe(undefined)
+    expect(evidenceKind({ type: "image/jpeg", name: "IMG_1.JPG" })).toBe(
+      "image",
+    )
+    expect(evidenceKind({ type: "image/jpeg", name: "kamera.jfif" })).toBe(
+      "image",
+    )
+    expect(evidenceKind({ type: "image/png", name: "a.jpeg" })).toBe("image")
+    expect(evidenceKind({ type: "image/jpeg", name: "tanpa-ekstensi" })).toBe(
+      "image",
+    )
+  })
 })

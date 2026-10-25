@@ -12,6 +12,18 @@ async function serious(page: Page): Promise<string[]> {
     .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)
 }
 
+// Navigation itself: flows.e2e.ts
+async function openFirst(page: Page, list: string, prefix: string) {
+  await page.goto(list)
+  const href = await page
+    .locator(`main a[href^="${prefix}"]`)
+    .first()
+    .getAttribute("href")
+  expect(href).not.toBeNull()
+  await page.goto(href ?? list)
+  await expect(page).toHaveURL(new RegExp(prefix))
+}
+
 const PUBLIC = [
   "/",
   "/isu",
@@ -36,18 +48,14 @@ for (const path of PUBLIC) {
 }
 
 test("an issue page has no serious axe violation", async ({ page }) => {
-  await page.goto("/isu")
-  await page.locator('main a[href^="/isu/ISU-"]').first().click()
-  await expect(page).toHaveURL(/\/isu\/ISU-/)
+  await openFirst(page, "/isu", "/isu/ISU-")
   expect(await serious(page)).toEqual([])
 })
 
 test("a tuntutan and its complaint form have no serious axe violation", async ({
   page,
 }) => {
-  await page.goto("/tuntutan")
-  await page.locator('main a[href^="/tuntutan/TUN-"]').first().click()
-  await expect(page).toHaveURL(/\/tuntutan\/TUN-/)
+  await openFirst(page, "/tuntutan", "/tuntutan/TUN-")
   expect(await serious(page)).toEqual([])
   const response = await page.goto(`${new URL(page.url()).pathname}/laporkan`)
   expect(response?.status()).toBe(200)
@@ -79,9 +87,7 @@ test.describe("staff", () => {
   }
 
   test("a tuntutan editor has no serious axe violation", async ({ page }) => {
-    await page.goto("/kelola/tuntutan")
-    await page.locator('main a[href^="/kelola/tuntutan/TUN-"]').first().click()
-    await expect(page).toHaveURL(/\/kelola\/tuntutan\/TUN-/)
+    await openFirst(page, "/kelola/tuntutan", "/kelola/tuntutan/TUN-")
     expect(await serious(page)).toEqual([])
   })
 })

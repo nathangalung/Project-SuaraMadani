@@ -12,8 +12,15 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core"
+import {
+  CLAIM_BASES,
+  CLAIM_OUTCOMES,
+  type ClaimBasis,
+  type ClaimOutcome,
+} from "../../shared/claims.ts"
 import {
   STANDARD_REASONS,
   type StandardReason,
@@ -246,6 +253,61 @@ export const responses = pgTable(
   ],
 )
 
+// One per claim, PLAN §5.7
+export const resolutionClaims = pgTable(
+  "resolution_claims",
+  {
+    id: primaryId(),
+    orgId: orgRef(),
+    issueId: uuid("issue_id").notNull(),
+    // No FK: rows outlive users
+    claimedBy: uuid("claimed_by"),
+    claimedAt: timestamp("claimed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    // Survey mail queued
+    surveySentAt: timestamp("survey_sent_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    outcome: text("outcome").$type<ClaimOutcome>(),
+    basis: text("basis").$type<ClaimBasis>(),
+    closedBy: uuid("closed_by"),
+    // Admin confirm, linked proof
+    evidenceUrl: text("evidence_url"),
+    // Top prefix before hash clear
+    maxPrefixRatings: integer("max_prefix_ratings"),
+  },
+  (t) => [
+    unique("resolution_claims_org_id_id_key").on(t.orgId, t.id),
+    // One open claim per issue
+    uniqueIndex("resolution_claims_open_key")
+      .on(t.orgId, t.issueId)
+      .where(sql`${t.closedAt} IS NULL`),
+    index("resolution_claims_issue_idx").on(
+      t.orgId,
+      t.issueId,
+      desc(t.claimedAt),
+    ),
+    issueRef("resolution_claims_issue_fk", t),
+    check(
+      "resolution_claims_outcome_check",
+      sql`${t.outcome} IS NULL OR ${oneOf(t.outcome, CLAIM_OUTCOMES)}`,
+    ),
+    check(
+      "resolution_claims_basis_check",
+      sql`${t.basis} IS NULL OR ${oneOf(t.basis, CLAIM_BASES)}`,
+    ),
+    check(
+      "resolution_claims_closed_check",
+      sql`(${t.closedAt} IS NULL) = (${t.outcome} IS NULL) AND (${t.closedAt} IS NULL) = (${t.basis} IS NULL)`,
+    ),
+    check(
+      "resolution_claims_evidence_check",
+      sql`${t.evidenceUrl} IS NULL OR (${t.evidenceUrl} ~ '^https?://' AND ${t.outcome} = 'confirmed' AND ${t.basis} = 'admin')`,
+    ),
+    tenantPolicy(),
+  ],
+)
+
 // Timeline rows, data not text
 export const issueEvents = pgTable(
   "issue_events",
@@ -259,6 +321,8 @@ export const issueEvents = pgTable(
     govStatus: text("gov_status").$type<GovernmentStatus>().notNull(),
     referralId: uuid("referral_id"),
     responseId: uuid("response_id"),
+    // Claim, confirm, reopen rows
+    claimId: uuid("claim_id"),
     // Public reason, redactable
     note: text("note"),
     occurredAt: timestamp("occurred_at", { withTimezone: true })
@@ -273,6 +337,9 @@ export const issueEvents = pgTable(
     index("issue_events_response_idx")
       .on(t.orgId, t.responseId)
       .where(sql`${t.responseId} IS NOT NULL`),
+    index("issue_events_claim_idx")
+      .on(t.orgId, t.claimId)
+      .where(sql`${t.claimId} IS NOT NULL`),
     issueRef("issue_events_issue_fk", t),
     foreignKey({
       name: "issue_events_referral_fk",
@@ -283,6 +350,11 @@ export const issueEvents = pgTable(
       name: "issue_events_response_fk",
       columns: [t.orgId, t.responseId],
       foreignColumns: [responses.orgId, responses.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "issue_events_claim_fk",
+      columns: [t.orgId, t.claimId],
+      foreignColumns: [resolutionClaims.orgId, resolutionClaims.id],
     }).onDelete("cascade"),
     check("issue_events_action_check", oneOf(t.action, ISSUE_EVENT_ACTIONS)),
     check(

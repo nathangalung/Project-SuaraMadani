@@ -102,7 +102,8 @@ describe("video", () => {
       const bytes = Buffer.from(await Bun.file(out.video).arrayBuffer())
       expect(bytes.includes("RAHASIA-PELAPOR")).toBe(false)
       expect(bytes.includes("107.6107")).toBe(false)
-      const poster = await sharp(out.poster).metadata()
+      // Buffer, file loaders blocked
+      const poster = await sharp(await Bun.file(out.poster).bytes()).metadata()
       expect([poster.width, poster.height]).toEqual([1280, 720])
     })
   })

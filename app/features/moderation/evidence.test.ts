@@ -22,7 +22,13 @@ import {
 import { derivedPath, originalPath } from "../../../server/files.server.ts"
 import { BOX_SCALE } from "../../../shared/evidence.ts"
 import { runPublish } from "../issues/publish.server.ts"
-import { decideEvidence, readOriginal, readPreview } from "./evidence.server.ts"
+import {
+  decideEvidence,
+  getEvidenceEditor,
+  originalResponse,
+  readOriginal,
+  readPreview,
+} from "./evidence.server.ts"
 import { runMerge } from "./merge.server.ts"
 
 const su = superuserPool()
@@ -71,7 +77,7 @@ beforeAll(async () => {
     .values(reportValues(orgA, user))
     .returning({ id: reports.id })
   reportId = report?.id ?? ""
-  filesDir = await mkdtemp(`${tmpdir()}/sm-preview-`)
+  filesDir = await mkdtemp(`${tmpdir()}/sb-preview-`)
   await database().boss.start()
 })
 
@@ -341,6 +347,77 @@ describe("decideEvidence", () => {
   })
 })
 
+describe("getEvidenceEditor", () => {
+  test("Given an undecided file of a report in no issue, when opened, then no lock token and no issue", async () => {
+    const report = await freshReport()
+    const id = await seedFile({ report })
+    const editor = await getEvidenceEditor(orgA, "admin", id)
+    expect(editor).toMatchObject({
+      id,
+      kind: "image",
+      status: "ready",
+      decision: null,
+      seen: null,
+      issue: null,
+    })
+    expect(editor).not.toHaveProperty("reportId")
+  })
+
+  test("Given a decided file of a public issue, when opened, then its decision, lock token and issue", async () => {
+    const report = await freshReport()
+    const id = await seedFile({ report })
+    await decideEvidence(orgA, {
+      evidenceId: id,
+      actorId: moderator,
+      seen: null,
+      input: { decision: "redact", boxes: [BOX] },
+    })
+    const merged = await runMerge(orgA, {
+      reportIds: [report],
+      target: {
+        kind: "new",
+        title: "Jalan berlubang di Coblong",
+        summary: "Beberapa warga melaporkan lubang besar di jalan.",
+      },
+      actorId: moderator,
+      campusCode: "ITB",
+      now: new Date(),
+      notify: false,
+    })
+    if (!merged.ok) throw new Error(merged.reason)
+    const before = await getEvidenceEditor(orgA, "admin", id)
+    expect(before?.issue).toEqual({ code: merged.code, published: false })
+    await su.query("UPDATE issues SET published_at = now() WHERE id = $1", [
+      merged.issueId,
+    ])
+    const editor = await getEvidenceEditor(orgA, "admin", id)
+    const { rows } = await su.query<{ decided_at: Date }>(
+      "SELECT decided_at FROM evidence WHERE id = $1",
+      [id],
+    )
+    expect(editor).toMatchObject({
+      decision: "redact",
+      boxes: [BOX],
+      seen: rows[0]?.decided_at.toISOString(),
+      issue: { code: merged.code, published: true },
+    })
+    // Token round-trips into a decision
+    expect(
+      await decideEvidence(orgA, {
+        evidenceId: id,
+        actorId: moderator,
+        seen: editor?.seen ?? null,
+        input: { decision: "no_redaction" },
+      }),
+    ).toMatchObject({ ok: true })
+  })
+
+  test("Given another campus, when it opens the file, then nothing", async () => {
+    const id = await seedFile({ report: await freshReport() })
+    expect(await getEvidenceEditor(orgB, "admin", id)).toBeNull()
+  })
+})
+
 describe("readOriginal", () => {
   test("an unscanned or unchecked original is never served", async () => {
     await su.query("DELETE FROM evidence")
@@ -365,11 +442,12 @@ describe("readOriginal", () => {
         "unsupported_type",
         false,
       ],
-      [{ kind: "image", status: "ready" }, null, true],
+      // ASVS V5.4.3: every kind scanned
+      [{ kind: "image", status: "ready" }, null, false],
       [
         { kind: "video", status: "needs_manual_review" },
         "video_too_long",
-        true,
+        false,
       ],
     ]
     for (const [index, [seed, failure, served]] of cases.entries()) {
@@ -398,6 +476,7 @@ describe("readOriginal", () => {
   test("logs every download and refuses malware", async () => {
     await su.query("DELETE FROM evidence")
     const id = await seedFile()
+    await su.query("UPDATE evidence SET scanned_at = now() WHERE id = $1", [id])
     const path = originalPath(filesDir, orgA, id)
     await mkdir(dirname(path), { recursive: true })
     await writeFile(path, BYTES)
@@ -440,5 +519,22 @@ describe("readOriginal", () => {
         filesDir,
       }),
     ).toBeNull()
+  })
+})
+
+describe("originalResponse", () => {
+  // Download only, never rendered
+  test("an attachment the browser never renders", async () => {
+    const res = originalResponse(new Blob(["x"]), "Surat Résmi.jpg")
+    expect(Object.fromEntries(res.headers)).toMatchObject({
+      "content-type": "application/octet-stream",
+      "content-disposition":
+        "attachment; filename=\"Surat R_smi.jpg\"; filename*=UTF-8''Surat%20R%C3%A9smi.jpg",
+      "cache-control": "private, no-store",
+      "x-content-type-options": "nosniff",
+      "content-security-policy":
+        "sandbox; default-src 'none'; frame-ancestors 'none'",
+    })
+    expect(await res.text()).toBe("x")
   })
 })

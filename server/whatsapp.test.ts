@@ -129,6 +129,43 @@ describe("WhatsApp gateway", () => {
     })
   })
 
+  test("other clients never lock a number's owner out", async () => {
+    await setSender("connected", 1000)
+    for (let i = 1; i <= 9; i++) {
+      const other = { purpose: "sign-in", client: `198.51.100.${i}` } as const
+      expect((await gateway.sendCode(phone, "1", other)).ok).toBe(true)
+    }
+    const owner = { purpose: "sign-in", client: "203.0.113.50" } as const
+    expect((await gateway.sendCode(phone, "2", owner)).ok).toBe(true)
+    expect(await gateway.sendCode(phone, "3", owner)).toEqual({
+      ok: false,
+      reason: "spacing",
+    })
+    const { rows } = await su.query(
+      "SELECT DISTINCT client_hash FROM whatsapp_log WHERE purpose = 'sign_in'",
+    )
+    expect(rows.length).toBe(10)
+  })
+
+  test("one number gets 20 sign-in codes a day", async () => {
+    await setSender("connected", 1000)
+    const hash = createHmac("sha256", hashKey).update(phone).digest("hex")
+    await su.query(
+      `INSERT INTO whatsapp_log (phone_hash, status, client_hash, created_at)
+       SELECT $1, 'sent', 'klien' || g, $2 FROM generate_series(1, $3::int) g`,
+      [
+        hash,
+        new Date(NOW.getTime() - 3_600_000),
+        WHATSAPP_LIMITS.perNumberDayAllClients,
+      ],
+    )
+    const owner = { purpose: "sign-in", client: "203.0.113.51" } as const
+    expect(await gateway.sendCode(phone, "1", owner)).toEqual({
+      ok: false,
+      reason: "daily",
+    })
+  })
+
   test("failed sends to one number still count", async () => {
     await setSender("connected", 1000)
     const hash = createHmac("sha256", hashKey).update(phone).digest("hex")

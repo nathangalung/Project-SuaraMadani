@@ -1,0 +1,10 @@
+[Unit]
+Description=Sadar Bersuara off-host log copy
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+ExecStart=/opt/sadar-bersuara/infra/logs-ship.sh auto
+TimeoutStartSec=50m

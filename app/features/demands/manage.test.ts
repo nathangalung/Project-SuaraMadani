@@ -6,7 +6,7 @@ import {
   expect,
   test,
 } from "bun:test"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { migrate } from "../../../db/migrate.ts"
@@ -135,7 +135,7 @@ beforeAll(async () => {
     campusCode: "UGM",
   }
   admin = await insertUser(su, "admin.tuntutan@contoh.id")
-  filesDir = await mkdtemp(join(tmpdir(), "sm-briefs-"))
+  filesDir = await mkdtemp(join(tmpdir(), "sb-briefs-"))
 })
 
 beforeEach(async () => {
@@ -194,6 +194,42 @@ describe("createDemand", () => {
     const code = await create()
     expect(await getManagedDemand(ugm.id, code)).toBeNull()
     expect(await listManagedDemands(ugm.id)).toEqual([])
+  })
+
+  test("more than twelve sub-tuntutan are refused before any write", async () => {
+    const items = Array.from(
+      { length: 13 },
+      (_, i) => `Sub-tuntutan nomor ${i + 1}`,
+    )
+    expect(
+      await createDemand(itb, { fields: FIELDS, items, actorId: admin }),
+    ).toEqual({ ok: false, reason: "too_many" })
+    expect(await listManagedDemands(itb.id)).toEqual([])
+  })
+
+  test("the list counts items and fulfilled ones, newest activity first", async () => {
+    const older = await create()
+    const newer = await create(itb, ["Satu sub-tuntutan saja di sini"])
+    await publish(older)
+    const [item] = (await managed(older)).items
+    if (!item) throw new Error("item")
+    await recordItemUpdate(itb, {
+      code: older,
+      itemId: item.id,
+      version: item.version,
+      to: { response: "responded", fulfilment: "fulfilled" },
+      ...SOURCE,
+      actorId: admin,
+    })
+    const rows = await listManagedDemands(itb.id)
+    expect(
+      rows.map((row) => [row.code, row.state, row.items, row.fulfilled]),
+    ).toEqual([
+      [older, "published", 2, 1],
+      [newer, "draft", 1, 0],
+    ])
+    expect(rows[0]?.provinceName).toBe("Jawa Barat")
+    expect(rows[0]?.lastActivityAt).toBeInstanceOf(Date)
   })
 })
 
@@ -693,6 +729,22 @@ describe("issue links", () => {
 
 describe("policy brief", () => {
   const PDF = new TextEncoder().encode("%PDF-1.4\n% sampel\n")
+
+  test("a failed database write leaves no stored file", async () => {
+    const code = await create()
+    const dir = await mkdtemp(join(tmpdir(), "sb-briefs-fail-"))
+    // Only the route checks ids
+    await expect(
+      uploadBrief(
+        itb,
+        { code, itemId: "bukan-uuid", bytes: PDF, actorId: admin },
+        { filesDir: dir },
+      ),
+    ).rejects.toThrow()
+    const stored = await readdir(dir, { recursive: true, withFileTypes: true })
+    await rm(dir, { recursive: true, force: true })
+    expect(stored.filter((entry) => entry.isFile())).toEqual([])
+  })
 
   test("refuses anything but a PDF", async () => {
     const code = await create()

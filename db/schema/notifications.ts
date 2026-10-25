@@ -11,16 +11,19 @@ import {
   uuid,
 } from "drizzle-orm/pg-core"
 import {
+  DEADLINE_TEMPLATE,
   NOTIFICATION_TEMPLATES,
   type NotificationTemplate,
+  SURVEY_TEMPLATE,
 } from "../../shared/notifications.ts"
 import { OTP_PURPOSES, type OtpPurpose } from "../../shared/whatsapp.ts"
 import { users } from "./auth.ts"
 import { createdAt, oneOf, primaryId, tenantPolicy } from "./columns.ts"
 import { demands } from "./demands.ts"
-import { issues } from "./issues.ts"
+import { issues, resolutionClaims } from "./issues.ts"
 import { contentComplaints } from "./moderation.ts"
 import { organizations } from "./organizations.ts"
+import { agencyReplies } from "./replies.ts"
 import { reports } from "./reports.ts"
 
 const at = (name: string) => timestamp(name, { withTimezone: true })
@@ -78,6 +81,9 @@ export const notifications = pgTable(
     issueId: uuid("issue_id"),
     complaintId: uuid("complaint_id"),
     demandId: uuid("demand_id"),
+    replyId: uuid("reply_id"),
+    // Survey round, never the subject
+    claimId: uuid("claim_id"),
     status: text("status")
       .$type<NotificationStatus>()
       .notNull()
@@ -108,6 +114,12 @@ export const notifications = pgTable(
     index("notifications_demand_idx")
       .on(t.orgId, t.demandId)
       .where(sql`${t.demandId} IS NOT NULL`),
+    index("notifications_reply_idx")
+      .on(t.orgId, t.replyId)
+      .where(sql`${t.replyId} IS NOT NULL`),
+    index("notifications_claim_idx")
+      .on(t.orgId, t.claimId)
+      .where(sql`${t.claimId} IS NOT NULL`),
     index("notifications_user_idx")
       .on(t.userId)
       .where(sql`${t.userId} IS NOT NULL`),
@@ -134,14 +146,30 @@ export const notifications = pgTable(
       columns: [t.orgId, t.demandId],
       foreignColumns: [demands.orgId, demands.id],
     }).onDelete("cascade"),
+    foreignKey({
+      name: "notifications_reply_fk",
+      columns: [t.orgId, t.replyId],
+      foreignColumns: [agencyReplies.orgId, agencyReplies.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "notifications_claim_fk",
+      columns: [t.orgId, t.claimId],
+      foreignColumns: [resolutionClaims.orgId, resolutionClaims.id],
+    }).onDelete("cascade"),
     check(
       "notifications_template_check",
       oneOf(t.template, NOTIFICATION_TEMPLATES),
     ),
     check("notifications_status_check", oneOf(t.status, NOTIFICATION_STATUSES)),
+    // Admin digest spans many issues
     check(
       "notifications_subject_check",
-      sql`num_nonnulls(${t.reportId}, ${t.issueId}, ${t.complaintId}, ${t.demandId}) = 1`,
+      sql`num_nonnulls(${t.reportId}, ${t.issueId}, ${t.complaintId}, ${t.demandId}, ${t.replyId}) = CASE WHEN ${oneOf(t.template, [DEADLINE_TEMPLATE])} THEN 0 ELSE 1 END`,
+    ),
+    // Survey mail names its round
+    check(
+      "notifications_claim_check",
+      sql`(${oneOf(t.template, [SURVEY_TEMPLATE])}) = (${t.claimId} IS NOT NULL)`,
     ),
     tenantPolicy(),
   ],

@@ -17,8 +17,8 @@ import {
   uuid,
 } from "drizzle-orm/pg-core"
 import {
-  STANDARD_REASONS,
-  type StandardReason,
+  TAKEDOWN_REASONS,
+  type TakedownReason,
 } from "../../shared/complaints.ts"
 import {
   BRIEF_STATUSES,
@@ -95,7 +95,9 @@ export const demands = pgTable(
     closedAt: at("closed_at"),
     // Complaint hid it, PLAN §5.10
     hiddenAt: at("hidden_at"),
-    hiddenReason: text("hidden_reason").$type<StandardReason>(),
+    hiddenReason: text("hidden_reason").$type<TakedownReason>(),
+    // Top prefix before hash clear
+    maxPrefixRatings: integer("max_prefix_ratings"),
     lastActivityAt: at("last_activity_at").notNull().defaultNow(),
     // No FK: rows outlive users
     createdBy: uuid("created_by"),
@@ -137,7 +139,7 @@ export const demands = pgTable(
     ),
     check(
       "demands_hidden_check",
-      sql`(${t.hiddenAt} IS NULL) = (${t.hiddenReason} IS NULL) AND (${t.hiddenReason} IS NULL OR ${oneOf(t.hiddenReason, STANDARD_REASONS)}) AND (${t.hiddenAt} IS NULL OR ${t.state} = 'draft')`,
+      sql`(${t.hiddenAt} IS NULL) = (${t.hiddenReason} IS NULL) AND (${t.hiddenReason} IS NULL OR ${oneOf(t.hiddenReason, TAKEDOWN_REASONS)}) AND (${t.hiddenAt} IS NULL OR ${t.state} = 'draft')`,
     ),
     check("demands_version_check", sql`${t.version} > 0`),
     tenantPolicy(),
@@ -316,12 +318,19 @@ export const demandRatings = pgTable(
     score: smallint("score").notNull(),
     // Opt-in, anonymous by default
     showName: boolean("show_name").notNull().default(false),
+    // Admin hid an abusive name
+    nameHiddenAt: at("name_hidden_at"),
+    // Hashed prefix, cleared later
+    clientHash: text("client_hash"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     primaryKey({ columns: [t.orgId, t.demandId, t.userId] }),
     index("demand_ratings_user_idx").on(t.userId),
+    index("demand_ratings_client_idx")
+      .on(t.orgId, t.demandId, t.clientHash)
+      .where(sql`${t.clientHash} IS NOT NULL`),
     demandRef("demand_ratings_demand_fk", t),
     check("demand_ratings_score_check", sql`${t.score} BETWEEN 1 AND 5`),
     tenantPolicy(),

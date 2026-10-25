@@ -33,6 +33,8 @@ describe("Meta Cloud API adapter", () => {
     expect(calls[0]?.init.headers).toMatchObject({
       authorization: "Bearer token-uji",
     })
+    // API10: token never follows redirects
+    expect(calls[0]?.init.redirect).toBe("error")
     expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
       messaging_product: "whatsapp",
       recipient_type: "individual",
@@ -75,6 +77,35 @@ describe("Meta Cloud API adapter", () => {
         ),
       ).rejects.toThrow(`meta send failed: ${status}`)
     }
+  })
+
+  test("Given an HTML error page from Meta, when a code is sent, then it throws for retry", async () => {
+    const fetch = async () =>
+      new Response("<html>Bad gateway</html>", { status: 502 })
+    await expect(
+      metaProvider({ ...config, fetch }).send(
+        { to: "+6281234567890", code: "123456" },
+        signal,
+      ),
+    ).rejects.toThrow("meta send failed: 502")
+  })
+
+  test("Given the connection resets mid-reply, when a code is sent, then it throws its status for retry", async () => {
+    const fetch = async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(new Error("socket reset"))
+          },
+        }),
+        { status: 400 },
+      )
+    await expect(
+      metaProvider({ ...config, fetch }).send(
+        { to: "+6281234567890", code: "123456" },
+        signal,
+      ),
+    ).rejects.toThrow("meta send failed: 400")
   })
 })
 

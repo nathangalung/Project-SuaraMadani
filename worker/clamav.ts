@@ -1,6 +1,6 @@
 import { connect } from "node:net"
 
-// clamd zINSTREAM, PDF only
+// clamd zINSTREAM, every original
 
 export type ClamdConfig = { host: string; port: number; timeoutMs: number }
 

@@ -1,7 +1,7 @@
-import { afterAll, beforeAll, expect, test } from "bun:test"
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test"
 import { Pool } from "pg"
 import { migrate } from "./migrate.ts"
-import { setSuperadmin } from "./superadmin.ts"
+import { main, setSuperadmin } from "./superadmin.ts"
 import { insertUser, resetData, superuserPool, testUrl } from "./testing.ts"
 
 const su = superuserPool()
@@ -78,4 +78,47 @@ test("the app role cannot create a superadmin", async () => {
   } finally {
     await app.end()
   }
+})
+
+describe("bun db/superadmin.ts", () => {
+  const env = { DATABASE_MIGRATOR_URL: testUrl("TEST_DATABASE_MIGRATOR_URL") }
+
+  test("Given an account, when grant runs, then the flag is set and exit is 0", async () => {
+    await insertUser(su, "cli@aliansi.id")
+    const logged = spyOn(console, "log").mockImplementation(() => {})
+    try {
+      expect(await main(["grant", "cli@aliansi.id"], env)).toBe(0)
+      expect(logged).toHaveBeenCalledWith(
+        JSON.stringify({ msg: "superadmin updated", command: "grant" }),
+      )
+    } finally {
+      logged.mockRestore()
+    }
+    expect(await flag("cli@aliansi.id")).toBe(true)
+  })
+
+  test("Given no account, when revoke runs, then exit is 1", async () => {
+    const failed = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      expect(await main(["revoke", "hantu@aliansi.id"], env)).toBe(1)
+      expect(failed).toHaveBeenCalledWith(
+        JSON.stringify({
+          msg: "no account, sign in once first",
+          command: "revoke",
+        }),
+      )
+    } finally {
+      failed.mockRestore()
+    }
+  })
+
+  test("an unknown command or a missing email is a usage error", async () => {
+    const failed = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      expect(await main(["promote", "a@aliansi.id"], env)).toBe(2)
+      expect(await main(["grant"], env)).toBe(2)
+    } finally {
+      failed.mockRestore()
+    }
+  })
 })

@@ -316,6 +316,17 @@ describe("step 5 evidence", () => {
       ),
     ).toEqual(["error_evidence_type"])
   })
+
+  test("an extension that disagrees with the type", () => {
+    for (const [name, type] of [
+      ["Surat_Resmi.hta", "image/jpeg"],
+      ["x.pdf", "video/mp4"],
+    ]) {
+      expect(
+        messages(evidenceStep.safeParse([{ name, size: 1, type }])),
+      ).toEqual(["error_evidence_type"])
+    }
+  })
 })
 
 describe("step 6 contact", () => {

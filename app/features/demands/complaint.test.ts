@@ -19,6 +19,7 @@ import {
   getComplaint,
   listComplaints,
 } from "../moderation/complaints.server.ts"
+import { legalTakedownDemand } from "../moderation/legal-takedown.server.ts"
 import { getDemandPage } from "./demands.server.ts"
 import {
   changeDemandState,
@@ -258,6 +259,19 @@ describe("tuntutan content complaints", () => {
       [managed?.id],
     )
     expect(rows).toHaveLength(1)
+    // CMP-18: durable purge, late alert
+    const takedown = await su.query(
+      "SELECT action, issue_id, complaint_id, purge_status FROM takedowns WHERE complaint_id = $1",
+      [detail.id],
+    )
+    expect(takedown.rows).toEqual([
+      {
+        action: "unpublish",
+        issue_id: null,
+        complaint_id: detail.id,
+        purge_status: "pending",
+      },
+    ])
     // Republish clears the hidden mark
     await changeDemandState(demandTenant, {
       code,
@@ -269,5 +283,61 @@ describe("tuntutan content complaints", () => {
     const again = await getManagedDemand(orgId, code)
     expect(again?.state).toBe("published")
     expect(again?.hiddenAt).toBeNull()
+  })
+})
+
+describe("tuntutan legal takedown", () => {
+  test("a Komdigi order hides it with the legal reason", async () => {
+    const code = await publishedDemand()
+    const managed = await getManagedDemand(orgId, code)
+    const input = {
+      code,
+      version: managed?.version ?? 0,
+      reason: "komdigi_order" as const,
+      actorId: admin,
+    }
+    const quiet = {
+      purge: {
+        purgeUrls: async () => ({ skipped: false }),
+        purgeHosts: async () => ({ skipped: false }),
+      },
+    }
+    const target = { id: orgId, host: "tca.localhost" }
+    expect(
+      await legalTakedownDemand(target, { ...input, version: 99 }, quiet),
+    ).toEqual({ ok: false, reason: "changed" })
+    expect(
+      await legalTakedownDemand(
+        target,
+        { ...input, reason: "standard_1" as unknown as "komdigi_order" },
+        quiet,
+      ),
+    ).toEqual({ ok: false, reason: "not_allowed" })
+    expect(await legalTakedownDemand(target, input, quiet)).toEqual({
+      ok: true,
+    })
+    expect(await getDemandPage(orgId, code)).toBeNull()
+    const hidden = await getManagedDemand(orgId, code)
+    expect(hidden?.hiddenReason).toBe("komdigi_order")
+    const audit = await su.query(
+      "SELECT reason_code FROM audit_log WHERE action = 'demand.hide' AND entity_id = $1",
+      [hidden?.id],
+    )
+    expect(audit.rows).toEqual([{ reason_code: "komdigi_order" }])
+    const takedown = await su.query(
+      "SELECT action, complaint_id, created_by FROM takedowns WHERE org_id = $1 AND complaint_id IS NULL",
+      [orgId],
+    )
+    expect(takedown.rows).toEqual([
+      { action: "unpublish", complaint_id: null, created_by: admin },
+    ])
+    // Already hidden: nothing to do
+    expect(
+      await legalTakedownDemand(
+        target,
+        { ...input, version: hidden?.version ?? 0 },
+        quiet,
+      ),
+    ).toEqual({ ok: false, reason: "not_allowed" })
   })
 })

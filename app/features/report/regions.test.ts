@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { migrate } from "../../../db/migrate.ts"
 import { insertRegions, superuserPool, testUrl } from "../../../db/testing.ts"
-import { childrenOf, parseRegionFile } from "./regions.server.ts"
+import { childrenOf, parseRegionFile, regencyGroups } from "./regions.server.ts"
 
 const su = superuserPool()
 
@@ -45,5 +45,28 @@ describe("childrenOf", () => {
 
   test("unknown parent is null", async () => {
     expect(await childrenOf("99")).toBeNull()
+  })
+})
+
+describe("regencyGroups", () => {
+  test("every kab/kota sits once under its province", async () => {
+    const groups = await regencyGroups()
+    const west = groups.find((group) => group.code === "32")
+    expect(west?.name).toBe("Jawa Barat")
+    expect(west?.regencies).toContainEqual({
+      code: "32.73",
+      name: "Kota Bandung",
+    })
+    for (const group of groups) {
+      expect(
+        group.regencies.every((r) => r.code.startsWith(`${group.code}.`)),
+      ).toBe(true)
+    }
+    const { rows } = await su.query<{ code: string }>(
+      "SELECT code FROM regions WHERE level = 2 ORDER BY code",
+    )
+    expect(
+      groups.flatMap((group) => group.regencies.map((r) => r.code)).sort(),
+    ).toEqual(rows.map((row) => row.code))
   })
 })

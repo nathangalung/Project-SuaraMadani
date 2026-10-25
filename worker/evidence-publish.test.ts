@@ -28,7 +28,7 @@ const su = superuserPool()
 const mediaPool = new Pool({
   connectionString: testUrl("TEST_DATABASE_SUPERUSER_URL"),
   max: 2,
-  options: "-c role=sm_media",
+  options: "-c role=sb_media",
 })
 const mediaDb = drizzle({ client: mediaPool, schema })
 
@@ -136,8 +136,8 @@ beforeAll(async () => {
   await insertRegions(su)
   orgA = await insertOrg(su, "wpa")
   orgB = await insertOrg(su, "wpb")
-  userA = await insertUser(su, "publish@suaramadani.test")
-  filesDir = await mkdtemp(join(tmpdir(), "sm-publish-"))
+  userA = await insertUser(su, "publish@sadarbersuara.test")
+  filesDir = await mkdtemp(join(tmpdir(), "sb-publish-"))
   published = await addIssue(orgA, true)
   draft = await addIssue(orgA, false)
 })
@@ -341,6 +341,37 @@ describe("evidence-publish", () => {
     )
     expect((await state(id))?.status).toBe("ready")
     expect((await readdir(mediaDir)).sort()).toEqual(before)
+  })
+
+  test("Given a photo decision withheld while copies are written, when publish commits, then no public copy stays", async () => {
+    const id = await addReady({ pages: 2, publishPages: [0, 1] })
+    const mediaDir = join(filesDir, "public", HOST, "media")
+    const before = (await readdir(mediaDir).catch(() => [])).sort()
+    // Holds the row until withheld
+    const admin = await su.connect()
+    try {
+      await admin.query("BEGIN")
+      await admin.query("SELECT 1 FROM evidence WHERE id = $1 FOR UPDATE", [id])
+      const run = handler()({ orgId: orgA, evidenceId: id })
+      for (let waited = 0; ; waited++) {
+        const { rows } = await su.query(
+          "SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE 'update \"evidence\"%'",
+        )
+        if (rows.length > 0) break
+        if (waited > 200) throw new Error("publish never blocked")
+        await Bun.sleep(25)
+      }
+      await admin.query(
+        "UPDATE evidence SET decision = 'withhold', decided_at = now() WHERE id = $1",
+        [id],
+      )
+      await admin.query("COMMIT")
+      expect(await run).toBe("skipped")
+    } finally {
+      admin.release()
+    }
+    expect((await state(id))?.status).toBe("ready")
+    expect((await readdir(mediaDir).catch(() => [])).sort()).toEqual(before)
   })
 
   test("an unchanged decision with microseconds still publishes", async () => {

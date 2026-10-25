@@ -3,6 +3,7 @@
 import { check, sleep } from "k6"
 import exec from "k6/execution"
 import http from "k6/http"
+import { Counter } from "k6/metrics"
 
 const BASE = __ENV.BASE ?? "http://127.0.0.1:5198"
 // Production hosts carry no port
@@ -12,10 +13,30 @@ const RATE = Number(__ENV.RATE ?? 30)
 const DURATION = __ENV.DURATION ?? "10m"
 const SOAK = __ENV.SOAK ?? ""
 // One cookie, evidence per client
+// Optional ip: CF-Connecting-IP
 const UPLOADS = __ENV.UPLOADS ? JSON.parse(open(__ENV.UPLOADS)) : []
 const FILE = __ENV.UPLOAD_FILE ? open(__ENV.UPLOAD_FILE, "b") : null
-const PAGES = ["/", "/isu", "/data", "/tentang", "/pedoman", "/lacak"]
+const PAGES = [
+  "/",
+  "/isu",
+  "/data",
+  "/tentang",
+  "/pedoman",
+  "/lacak",
+  "/tuntutan",
+]
+// Below the 120/min API limiter
+const API_RATE = Number(__ENV.API_RATE ?? 1)
+const API_PAGES = [
+  "/api/v1",
+  "/api/v1/isu",
+  "/api/v1/tuntutan",
+  "/api/v1/data",
+  "/api/v1/data/wilayah.csv",
+]
 const MAX_TRIES = 20
+// Summed across machines, runbook
+const busy = new Counter("upload_busy")
 
 const headers = { Host: HOST }
 
@@ -28,6 +49,15 @@ const scenarios = {
     duration: DURATION,
     preAllocatedVUs: 50,
     maxVUs: 300,
+  },
+  api: {
+    executor: "constant-arrival-rate",
+    exec: "api",
+    rate: API_RATE,
+    timeUnit: "1s",
+    duration: DURATION,
+    preAllocatedVUs: 5,
+    maxVUs: 20,
   },
 }
 if (UPLOADS.length > 0 && FILE) {
@@ -55,8 +85,11 @@ if (SOAK) {
 export const options = {
   scenarios,
   thresholds: {
-    "http_req_duration{scenario:ssr}": ["p(95)<500"],
+    // architecture.md Server Budget: p99
+    "http_req_duration{scenario:ssr}": ["p(95)<500", "p(99)<1000"],
+    "http_req_duration{scenario:api}": ["p(95)<500", "p(99)<1000"],
     "checks{scenario:ssr}": ["rate==1"],
+    "checks{scenario:api}": ["rate==1"],
     "checks{scenario:uploads}": ["rate==1"],
   },
 }
@@ -65,7 +98,16 @@ export const options = {
 export function setup() {
   const list = http.get(`${BASE}/isu`, { headers })
   const codes = [...new Set(String(list.body).match(/ISU-[A-Z]+-\d\d-\d{4}/g))]
-  return { pages: [...PAGES, ...codes.slice(0, 20).map((c) => `/isu/${c}`)] }
+  const demands = http.get(`${BASE}/tuntutan`, { headers })
+  const tun = [...new Set(String(demands.body).match(/TUN-[A-Z]+-\d\d-\d{4}/g))]
+  return {
+    pages: [
+      ...PAGES,
+      ...codes.slice(0, 20).map((c) => `/isu/${c}`),
+      ...tun.slice(0, 5).map((c) => `/tuntutan/${c}`),
+    ],
+    api: [...API_PAGES, ...tun.slice(0, 1).map((c) => `/api/v1/tuntutan/${c}`)],
+  }
 }
 
 export function ssr(data) {
@@ -73,6 +115,12 @@ export function ssr(data) {
   // Uncached: no CDN, no cookie
   const res = http.get(`${BASE}${path}`, { headers, tags: { page: path } })
   check(res, { "SSR 200": (r) => r.status === 200 })
+}
+
+export function api(data) {
+  const path = data.api[Math.floor(Math.random() * data.api.length)]
+  const res = http.get(`${BASE}${path}`, { headers, tags: { page: path } })
+  check(res, { "API 200": (r) => r.status === 200 })
 }
 
 export function upload() {
@@ -83,6 +131,8 @@ export function upload() {
     const res = http.post(`${BASE}/api/upload/${target.evidenceId}`, FILE, {
       headers: {
         ...headers,
+        // Local run: edge-trusted client IP
+        ...(target.ip ? { "CF-Connecting-IP": target.ip } : {}),
         Cookie: target.cookie,
         Origin: ORIGIN,
         "Content-Type": "application/octet-stream",
@@ -90,8 +140,14 @@ export function upload() {
       timeout: "15m",
     })
     status = res.status
-    // 503 with Retry-After: slots full
-    if (status === 503) sleep(Number(res.headers["Retry-After"] ?? 30))
+    if (status === 503) {
+      // Slots full, client told when
+      busy.add(1)
+      check(res, {
+        "503 has Retry-After": (r) => Number(r.headers["Retry-After"]) > 0,
+      })
+      sleep(Number(res.headers["Retry-After"]) || 30)
+    }
   }
   check(status, { "upload done": (s) => s === 200 || s === 201 })
 }

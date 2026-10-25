@@ -30,9 +30,10 @@ RUN snapshot="$(sed -n 's|^# http://snapshot.debian.org/archive/debian/\([0-9]*T
 
 # Dev and CI test runner
 FROM media AS media-test
-# Encoder only for HEIC fixtures
+# HEIC encoder, git for tooling.test
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
+    git \
     libheif-plugin-x265 \
   && rm -rf /var/lib/apt/lists/*
 USER bun
@@ -65,7 +66,7 @@ RUN test -n "$PGBOSS_VERSION" \
   && grep -q "\"pg-boss\": \"$PGBOSS_VERSION\"" /tmp/package.json \
   && rm /tmp/package.json
 LABEL org.opencontainers.image.revision="$GIT_SHA" \
-  org.suaramadani.pg-boss="$PGBOSS_VERSION"
+  org.sadarbersuara.pg-boss="$PGBOSS_VERSION"
 ENV NODE_ENV=production \
   GIT_SHA=$GIT_SHA \
   PORT=3000 \

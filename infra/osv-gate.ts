@@ -1,5 +1,7 @@
+import { appendFile } from "node:fs/promises"
+
 // Fail on fixable high findings
-// Usage: bun osv-gate.ts <osv-scanner.json>
+// Usage: bun osv-gate.ts <osv-scanner.json> [target]
 
 type Event = { introduced?: string; fixed?: string }
 type Affected = {
@@ -60,12 +62,92 @@ export function blocking(report: Report): string[] {
   return found
 }
 
-async function main(path: string | undefined): Promise<void> {
-  if (!path) throw new Error("usage: bun osv-gate.ts <report.json>")
-  const found = blocking((await Bun.file(path).json()) as Report)
-  for (const line of found) console.error(line)
-  console.log(JSON.stringify({ msg: "osv-gate", blocking: found.length }))
-  process.exit(found.length === 0 ? 0 : 1)
+type Bucket = "critical" | "high" | "medium" | "low" | "unknown"
+type Split = { fix: number; noFix: number }
+export type Tally = Record<Bucket, Split> & {
+  blocking: number
+  unimportant: number
 }
 
-if (import.meta.main) await main(process.argv[2])
+// CVSS qualitative bands
+function bucketOf(severity: number): Bucket {
+  if (Number.isNaN(severity)) return "unknown"
+  if (severity >= 9) return "critical"
+  if (severity >= HIGH) return "high"
+  if (severity >= 4) return "medium"
+  return "low"
+}
+
+/** Every finding, blocking or not. */
+export function tally(report: Report): Tally {
+  const counts: Tally = {
+    blocking: blocking(report).length,
+    critical: { fix: 0, noFix: 0 },
+    high: { fix: 0, noFix: 0 },
+    medium: { fix: 0, noFix: 0 },
+    low: { fix: 0, noFix: 0 },
+    unknown: { fix: 0, noFix: 0 },
+    unimportant: 0,
+  }
+  for (const result of report.results ?? []) {
+    for (const pkg of result.packages) {
+      for (const group of pkg.groups) {
+        const bucket = bucketOf(Number.parseFloat(group.max_severity ?? ""))
+        for (const id of group.ids) {
+          if (group.experimental_analysis?.[id]?.unimportant) {
+            counts.unimportant++
+            continue
+          }
+          const vuln = pkg.vulnerabilities.find((v) => v.id === id)
+          if (fixedIn(pkg.package, vuln)) counts[bucket].fix++
+          else counts[bucket].noFix++
+        }
+      }
+    }
+  }
+  return counts
+}
+
+const ROWS: [Bucket, string][] = [
+  ["critical", "Critical"],
+  ["high", "High"],
+  ["medium", "Medium"],
+  ["low", "Low"],
+  ["unknown", "Unknown"],
+]
+
+/** Markdown for GITHUB_STEP_SUMMARY. */
+export function summaryTable(target: string, counts: Tally): string {
+  return [
+    `### osv-scanner: ${target}`,
+    "",
+    "| Severity | With Fix | No Fix |",
+    "|---|---|---|",
+    ...ROWS.map(
+      ([bucket, label]) =>
+        `| ${label} | ${counts[bucket].fix} | ${counts[bucket].noFix} |`,
+    ),
+    "",
+    `Blocking: ${counts.blocking}. Distro unimportant: ${counts.unimportant}.`,
+    "",
+  ].join("\n")
+}
+
+/** Exit code, findings on stderr. */
+export async function main(
+  argv: string[],
+  env: Record<string, string | undefined> = process.env,
+): Promise<number> {
+  const [path, target = ""] = argv
+  if (!path) throw new Error("usage: bun osv-gate.ts <report.json> [target]")
+  const report = (await Bun.file(path).json()) as Report
+  const found = blocking(report)
+  for (const line of found) console.error(line)
+  const counts = tally(report)
+  console.log(JSON.stringify({ msg: "osv-gate", target, ...counts }))
+  const summary = env.GITHUB_STEP_SUMMARY
+  if (summary) await appendFile(summary, summaryTable(target, counts))
+  return found.length === 0 ? 0 : 1
+}
+
+if (import.meta.main) process.exit(await main(process.argv.slice(2)))

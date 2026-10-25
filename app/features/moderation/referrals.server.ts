@@ -1,13 +1,16 @@
-import { and, eq, isNotNull, sql } from "drizzle-orm"
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm"
+import { sendJob } from "../../../db/jobs.server.ts"
 import { notifyFollowers } from "../../../db/notifications.server.ts"
 import { auditLog } from "../../../db/schema/audit.ts"
 import {
   issueEvents,
   issues,
   referrals,
+  resolutionClaims,
   responses,
 } from "../../../db/schema/issues.ts"
 import { type Tx, withTenant } from "../../../db/tenant.server.ts"
+import { CLAIM_RULES, type ClaimBasis } from "../../../shared/claims.ts"
 import type {
   EscalationChannel,
   ReferralChannel,
@@ -32,9 +35,14 @@ export type IssueActionInput = {
   issueId: string
   // State the admin saw
   seen: IssueState & { version: number }
-  actorId: string
+  // Null: reporter survey decided
+  actorId: string | null
   // Sample seed opts out
   notify?: boolean
+  // Confirm or reopen, default admin
+  basis?: ClaimBasis
+  // Admin confirm, linked proof
+  evidenceUrl?: string | null
 } & (
   | {
       action: "refer"
@@ -71,6 +79,57 @@ type Linked = {
   responseId: string | null
   note: string | null
   reasonCode: string | null
+}
+
+const DAY_MS = 86_400_000
+
+/** Opens or closes the claim. */
+async function writeClaim(
+  tx: Tx,
+  orgId: string,
+  input: IssueActionInput,
+): Promise<string | null> {
+  if (input.action === "claim_resolved") {
+    const [claim] = await tx
+      .insert(resolutionClaims)
+      .values({ orgId, issueId: input.issueId, claimedBy: input.actorId })
+      .returning({ id: resolutionClaims.id })
+    if (!claim) throw new Error("claim not inserted")
+    if (input.notify !== false) {
+      const due = Date.now() + CLAIM_RULES.surveyDelayDays * DAY_MS
+      await sendJob(
+        tx,
+        "survey-send",
+        { orgId, claimId: claim.id },
+        { startAfter: new Date(due) },
+      )
+    }
+    return claim.id
+  }
+  if (input.action !== "confirm_resolved" && input.action !== "reopen") {
+    return null
+  }
+  const confirmed = input.action === "confirm_resolved"
+  const basis = input.basis ?? "admin"
+  const [closed] = await tx
+    .update(resolutionClaims)
+    .set({
+      closedAt: sql`now()`,
+      outcome: confirmed ? "confirmed" : "reopened",
+      basis,
+      closedBy: input.actorId,
+      evidenceUrl: confirmed && basis === "admin" ? input.evidenceUrl : null,
+    })
+    .where(
+      and(
+        eq(resolutionClaims.issueId, input.issueId),
+        isNull(resolutionClaims.closedAt),
+      ),
+    )
+    .returning({ id: resolutionClaims.id })
+  // Invariant: claimed means open claim
+  if (!closed) throw new Error("open claim missing")
+  return closed.id
 }
 
 async function insertDetail(
@@ -141,6 +200,7 @@ export async function applyIssueAction(
     )
     .returning({ code: issues.publicCode, version: issues.version })
   if (!row) return { ok: false, reason: "changed" }
+  const claimId = await writeClaim(tx, orgId, input)
   const linked = await insertDetail(tx, orgId, input)
   await tx.insert(issueEvents).values({
     orgId,
@@ -150,6 +210,7 @@ export async function applyIssueAction(
     govStatus: next.government,
     referralId: linked.referralId,
     responseId: linked.responseId,
+    claimId,
     note: linked.note,
   })
   const [event] = await tx
@@ -161,7 +222,8 @@ export async function applyIssueAction(
       entityType: "issue",
       entityId: input.issueId,
       changedColumns: ["advocacy_status", "gov_status", "version"],
-      reasonCode: linked.reasonCode,
+      reasonCode:
+        claimId && input.basis === "survey" ? "survey" : linked.reasonCode,
     })
     .returning({ id: auditLog.id })
   if (event && input.notify !== false) {

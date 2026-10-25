@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { DrizzleQueryError } from "drizzle-orm/errors"
 import { Hono } from "hono"
+import { HTTPException } from "hono/http-exception"
 import { m } from "../app/paraglide/messages.js"
+import { requestScope } from "../db/request-scope.ts"
 import messages from "../messages/id.json"
 import { EVIDENCE_LIMITS } from "../shared/report-fields.ts"
 import {
@@ -10,6 +16,7 @@ import {
   MAX_FORM_BODY,
   SERVE_LIMITS,
 } from "./app"
+import { securityRecord } from "./log.ts"
 import { loadShed } from "./middleware/load-shed.ts"
 
 type Seen = { url: string }
@@ -67,20 +74,112 @@ describe("health", () => {
     expect(await res.json()).toEqual({ status: "ok", sha: "dev" })
   })
 
-  test("healthz/jobs reports the job checks", async () => {
+  test("healthz/jobs shows checks to the token only", async () => {
+    // API8: operational state stays private
+    const token = "t".repeat(32)
     const { app } = appWith({
       health: {
         db: async () => {},
         jobs: async () => ({ ok: false, checks: { "evidence-dlq": 2 } }),
       },
+      healthToken: token,
     })
-    const res = await app.request(`${host}/healthz/jobs`)
+    const read = (authorization?: string) =>
+      app.request(`${host}/healthz/jobs`, {
+        headers: authorization ? { authorization } : {},
+      })
+    for (const header of [undefined, "Bearer wrong", `Basic ${token}`]) {
+      const res = await read(header)
+      expect(res.status).toBe(503)
+      expect(await res.json()).toEqual({ ok: false })
+      expect(res.headers.get("Cache-Control")).toBe("no-store")
+    }
+    const res = await read(`Bearer ${token}`)
     expect(res.status).toBe(503)
     expect(await res.json()).toEqual({
       ok: false,
       checks: { "evidence-dlq": 2 },
     })
+  })
+
+  test("Given the jobs check itself fails, then healthz/jobs is 503 and leaks nothing", async () => {
+    const token = "t".repeat(32)
+    const { app } = appWith({
+      health: {
+        db: async () => {},
+        jobs: async () => {
+          throw new Error("pool exhausted")
+        },
+      },
+      healthToken: token,
+    })
+    const res = await app.request(`${host}/healthz/jobs`, {
+      headers: { authorization: `Bearer ${token}` },
+    })
+    expect(res.status).toBe(503)
+    expect(await res.json()).toEqual({ ok: false })
     expect(res.headers.get("Cache-Control")).toBe("no-store")
+  })
+
+  test("healthz/jobs without a token never shows checks", async () => {
+    const { app } = appWith({
+      health: {
+        db: async () => {},
+        jobs: async () => ({ ok: true, checks: { "evidence-dlq": 0 } }),
+      },
+    })
+    const res = await app.request(`${host}/healthz/jobs`, {
+      headers: { authorization: "Bearer " },
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+  })
+})
+
+describe("static files", () => {
+  // architecture.md: hashed assets 1 year
+  test("Given a client build, when an asset and a public file are fetched, then each carries its cache policy without React Router", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sb-client-"))
+    mkdirSync(join(dir, "assets"))
+    writeFileSync(join(dir, "assets", "entry-a1b2c3.js"), "export {}")
+    writeFileSync(join(dir, "robots.txt"), "User-agent: *")
+    try {
+      const { app, seen } = appWith({ clientDir: dir })
+      const asset = await app.request(`${host}/assets/entry-a1b2c3.js`)
+      expect(asset.status).toBe(200)
+      expect(await asset.text()).toBe("export {}")
+      expect(asset.headers.get("Cache-Control")).toBe(
+        "public, max-age=31536000, immutable",
+      )
+      const robots = await app.request(`${host}/robots.txt`)
+      expect(robots.status).toBe(200)
+      expect(await robots.text()).toBe("User-agent: *")
+      expect(robots.headers.get("Cache-Control")).toBe("public, max-age=3600")
+      expect(seen).toEqual([])
+      await app.request(`${host}/isu`)
+      expect(seen.map((one) => new URL(one.url).pathname)).toEqual(["/isu"])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("auth limiter", () => {
+  test("a Better Auth 429 also sends Retry-After", async () => {
+    // API4: RFC 9110 header
+    const { app } = appWith({
+      handleDocument: async () =>
+        new Response(null, {
+          status: 429,
+          headers: { "X-Retry-After": "60" },
+        }),
+    })
+    const res = await app.request(`${host}/api/auth/account/lookup`, {
+      method: "POST",
+      headers: { origin: host },
+    })
+    expect(res.status).toBe(429)
+    expect(res.headers.get("Retry-After")).toBe("60")
   })
 })
 
@@ -152,7 +251,7 @@ describe("cache headers", () => {
   test("a session cookie makes it private", async () => {
     const { app } = appWith()
     const res = await app.request(`${host}/isu`, {
-      headers: { cookie: "sm.session_token=abc" },
+      headers: { cookie: "sb.session_token=abc" },
     })
     expect(res.headers.get("Cache-Control")).toBe("private, no-store")
     expect(res.headers.has("Cloudflare-CDN-Cache-Control")).toBe(false)
@@ -328,6 +427,64 @@ describe("security headers", () => {
     expect(tls.headers.get("Strict-Transport-Security")).toBe("max-age=300")
   })
 
+  test("HSTS takes the configured launch policy", async () => {
+    // ASVS V3.4.1: one year, subdomains
+    const policy = "max-age=31536000; includeSubDomains"
+    const { app } = appWith({ hsts: policy })
+    const tls = await app.request(`${host}/isu`, {
+      headers: { "x-forwarded-proto": "https" },
+    })
+    expect(tls.headers.get("Strict-Transport-Security")).toBe(policy)
+  })
+
+  test("text bodies always name a charset", async () => {
+    // ASVS V4.1.1: single-fetch data
+    for (const [type, expected] of [
+      ["text/x-script", "text/x-script; charset=utf-8"],
+      ["text/html; charset=utf-8", "text/html; charset=utf-8"],
+      [
+        "text/csv; charset=utf-8; header=present",
+        "text/csv; charset=utf-8; header=present",
+      ],
+      ["application/json", "application/json"],
+      ["image/svg+xml", "image/svg+xml; charset=utf-8"],
+    ]) {
+      const { app } = appWith({
+        handleDocument: async () =>
+          new Response("x", { headers: { "Content-Type": type ?? "" } }),
+      })
+      const res = await app.request(`${host}/isu.data`)
+      expect([type, res.headers.get("Content-Type")]).toEqual([type, expected])
+    }
+  })
+
+  test("every own CSP forbids framing", async () => {
+    // ASVS V3.4.6: file responses too
+    for (const [given, expected] of [
+      [
+        "sandbox; default-src 'none'",
+        "sandbox; default-src 'none'; frame-ancestors 'none'",
+      ],
+      [
+        "default-src 'self'; frame-ancestors 'none'",
+        "default-src 'self'; frame-ancestors 'none'",
+      ],
+      [
+        "default-src 'self'; frame-ancestors 'self'",
+        "default-src 'self'; frame-ancestors 'self'",
+      ],
+    ]) {
+      const { app } = appWith({
+        handleDocument: async () =>
+          new Response("x", {
+            headers: { "Content-Security-Policy": given ?? "" },
+          }),
+      })
+      const res = await app.request(`${host}/logo/abc.webp`)
+      expect(res.headers.get("Content-Security-Policy")).toBe(expected ?? "")
+    }
+  })
+
   test("a page CSP is kept, other responses get a strict default", async () => {
     const { app } = appWith({
       handleDocument: async () =>
@@ -337,12 +494,126 @@ describe("security headers", () => {
     })
     const page = await app.request(`${host}/isu`)
     expect(page.headers.get("Content-Security-Policy")).toBe(
-      "default-src 'self'",
+      "default-src 'self'; frame-ancestors 'none'",
     )
     const health = await app.request(`${host}/healthz`)
     expect(health.headers.get("Content-Security-Policy")).toBe(
       "default-src 'none'; frame-ancestors 'none'",
     )
+  })
+})
+
+describe("malformed input", () => {
+  // OWASP A05: NUL stops early
+  test("NUL or broken escapes in a path or query are 400", async () => {
+    const { app, seen } = appWith({ clientDir: import.meta.dir })
+    for (const path of [
+      "/isu/%00",
+      "/x%00.js",
+      "/isu?q=%00abc",
+      "/api/v1/isu?q=%00abc",
+      "/isu/%E0%A4%A",
+      "/isu?q=%E0%A4%A",
+    ]) {
+      const res = await app.request(`${host}${path}`)
+      expect([path, res.status]).toEqual([path, 400])
+      expect(res.headers.get("Cache-Control")).toBe("no-store")
+    }
+    expect(seen).toEqual([])
+    for (const path of ["/isu?urut=aktivitas", "/isu/jalan%20rusak"]) {
+      const fine = await app.request(`${host}${path}`)
+      expect([path, fine.status]).toEqual([path, 200])
+    }
+  })
+})
+
+describe("malformed bodies", () => {
+  // OWASP A05: NUL never stored
+  test("a NUL in a form or JSON value is 400", async () => {
+    const { app, seen } = appWith()
+    const post = (body: string, type: string) =>
+      app.request(`${host}/lapor/kirim`, {
+        method: "POST",
+        headers: { "content-type": type },
+        body,
+      })
+    const form = "application/x-www-form-urlencoded"
+    for (const [body, type] of [
+      ["title=a%00b", form],
+      [JSON.stringify({ report: { title: "a\u0000b" } }), "application/json"],
+      [
+        JSON.stringify(["x", { y: ["\u0000"] }]),
+        "application/json; charset=utf-8",
+      ],
+    ]) {
+      const res = await post(body ?? "", type ?? "")
+      expect([body, res.status]).toEqual([body, 400])
+    }
+    expect(seen).toEqual([])
+    expect((await post("title=jalan+rusak", form)).status).toBe(200)
+    expect(
+      (await post('{"title":"a\\\\u0000"}', "application/json")).status,
+    ).toBe(200)
+    const file = new FormData()
+    file.set("logo", new Blob([new Uint8Array([0, 1, 0])]), "a.png")
+    const multipart = await app.request(`${host}/kelola/pengaturan`, {
+      method: "POST",
+      body: file,
+    })
+    expect(multipart.status).toBe(200)
+  })
+
+  test("media type case and multipart never skip the check", async () => {
+    const { app, seen } = appWith()
+    const post = (body: BodyInit, type?: string) =>
+      app.request(`${host}/lapor/kirim`, {
+        method: "POST",
+        ...(type ? { headers: { "content-type": type } } : {}),
+        body,
+      })
+    const json = JSON.stringify({ title: "a\u0000b" })
+    const parts = new FormData()
+    parts.set("title", "a\u0000b")
+    for (const [body, type] of [
+      ["title=a%00b", "Application/X-WWW-Form-Urlencoded"],
+      ["title=a%00b", " APPLICATION/X-WWW-FORM-URLENCODED ; charset=utf-8"],
+      [json, "APPLICATION/JSON"],
+      [json, "application/vnd.api+json"],
+      [json, "text/plain;charset=UTF-8"],
+      [parts, undefined],
+    ] as const) {
+      const res = await post(body, type)
+      expect([type, res.status]).toEqual([type, 400])
+      expect(res.headers.get("Cache-Control")).toBe("no-store")
+    }
+    expect(seen).toEqual([])
+    const fine = new FormData()
+    fine.set("title", "jalan rusak")
+    expect((await post(fine)).status).toBe(200)
+    expect((await post("halo", "text/plain")).status).toBe(200)
+  })
+})
+
+describe("malformed bodies, streamed", () => {
+  test("an oversize chunked form is still 413, not an error", async () => {
+    const errors: Record<string, unknown>[] = []
+    const { app } = appWith({ errorLog: (line) => errors.push(line) })
+    const chunk = new TextEncoder().encode("a".repeat(64 * 1024))
+    let sent = 0
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent++ < 4) controller.enqueue(chunk)
+        else controller.close()
+      },
+    })
+    const res = await app.request(`${host}/lapor/kirim`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body,
+      duplex: "half",
+    } as RequestInit)
+    expect(res.status).toBe(413)
+    expect(errors).toEqual([])
   })
 })
 
@@ -483,13 +754,14 @@ describe("body limit", () => {
         return new Response("ok")
       },
     })
-    const pulled = { total: 0 }
-    await app.request(`${host}/api/upload/${UPLOAD_ID}`, {
-      method: "POST",
-      body: chunked(1024 * 1024, pulled),
-      duplex: "half",
-    } as RequestInit)
-    expect(sizes).toEqual([1024 * 1024])
+    for (const method of ["POST", "PATCH"]) {
+      await app.request(`${host}/api/upload/${UPLOAD_ID}`, {
+        method,
+        body: chunked(1024 * 1024, { total: 0 }),
+        duplex: "half",
+      } as RequestInit)
+    }
+    expect(sizes).toEqual([1024 * 1024, 1024 * 1024])
   })
 
   test("the server refuses bodies past the largest upload", async () => {
@@ -572,14 +844,17 @@ describe("load shed", () => {
         return new Response("ok")
       },
     })
-    const upload = (id: string) =>
+    const upload = (id: string, method = "POST") =>
       app.request(`${host}/api/upload/${id}`, {
-        method: "POST",
+        method,
         headers: { origin: host },
       })
     const first = upload(UPLOAD_ID)
     const second = await upload(UPLOAD_ID.replace(/1$/, "2"))
     expect(second.status).toBe(503)
+    // tus append shares the slots
+    const patch = await upload(UPLOAD_ID.replace(/1$/, "3"), "PATCH")
+    expect(patch.status).toBe(503)
     release()
     expect((await first).status).toBe(200)
   })
@@ -624,10 +899,182 @@ describe("request log", () => {
     expect(lines).toHaveLength(1)
     const line = lines[0] ?? {}
     expect(line.path).toBe("/isu")
+    expect(line.host).toBe("itb.localhost")
     expect(line.status).toBe(200)
     expect(line.req_id).toBe("8f1e2d3c4b5a6978-CGK")
     expect(typeof line.dur_ms).toBe("number")
     expect(JSON.stringify(line)).not.toContain("203.0.113.7")
     expect(JSON.stringify(line)).not.toContain("rahasia")
+  })
+
+  test("a signed-in request names its account", async () => {
+    const { app, lines } = appWith({
+      handleDocument: async () => {
+        const scope = requestScope()
+        if (scope) scope.userId = "user-1"
+        return new Response("ok")
+      },
+    })
+    await app.request(`${host}/isu`)
+    expect(lines[0]?.user_id).toBe("user-1")
+    const anon = appWith()
+    await anon.app.request(`${host}/isu`)
+    expect(anon.lines[0]?.user_id).toBeNull()
+  })
+
+  test("private codes and ids never reach the log", async () => {
+    const id = "0199c2b0-1d2e-7000-8000-00000000abcd"
+    const cases: [string, string][] = [
+      ["/lapor/sukses/ITB-26-ABCDE", "/lapor/sukses/:code"],
+      ["/aduan/A-26-QWERT", "/aduan/:code"],
+      [`/undangan/${id}`, "/undangan/:id"],
+      [
+        "/kelola/laporan/ITB-26-ABCDE/tutup-akun",
+        "/kelola/laporan/:code/tutup-akun",
+      ],
+      ["/kelola/aduan/A-26-QWERT", "/kelola/aduan/:code"],
+      [`/kelola/bukti/${id}/asli`, "/kelola/bukti/:id/asli"],
+      ["/KELOLA/Laporan/ITB-26-ABCDE", "/KELOLA/Laporan/:code"],
+      ["/isu/ITB-26-0001", "/isu/ITB-26-0001"],
+    ]
+    for (const [path, logged] of cases) {
+      const { app, lines } = appWith()
+      await app.request(`${host}${path}`)
+      expect(lines[0]?.path).toBe(logged)
+    }
+  })
+})
+
+describe("unhandled errors", () => {
+  const PHONE = "+6281299998888"
+
+  test("logged without values, plain 500", async () => {
+    const errors: Record<string, unknown>[] = []
+    const { app } = appWith({
+      handleDocument: async () => {
+        throw new DrizzleQueryError("select $1", [PHONE], new Error("x"))
+      },
+      errorLog: (line) => errors.push(line),
+    })
+    const res = await app.request(`${host}/isu`)
+    expect(res.status).toBe(500)
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
+    expect(await res.text()).toBe("Internal Server Error")
+    expect(JSON.stringify(errors)).not.toContain(PHONE)
+    expect(errors).toEqual([
+      expect.objectContaining({
+        msg: "server error",
+        path: "/isu",
+        error: "Error",
+        req_id: expect.any(String),
+      }),
+    ])
+  })
+
+  test("HTTP exceptions keep their response", async () => {
+    const errors: Record<string, unknown>[] = []
+    const { app } = appWith({
+      handleDocument: async () => {
+        throw new HTTPException(418, { message: "teapot" })
+      },
+      errorLog: (line) => errors.push(line),
+    })
+    const res = await app.request(`${host}/isu`)
+    expect(res.status).toBe(418)
+    expect(errors).toEqual([])
+  })
+})
+
+describe("security events", () => {
+  const events = (lines: Record<string, unknown>[]) =>
+    lines.filter((line) => line.msg === "security")
+
+  test("a 429 is logged with its subject", async () => {
+    const { app, lines } = appWith({
+      handleDocument: async () => {
+        const scope = requestScope()
+        if (scope) scope.userId = "user-1"
+        return new Response("slow down", { status: 429 })
+      },
+    })
+    await app.request(`${host}/api/auth/account/send-code`, { method: "POST" })
+    expect(events(lines)).toEqual([
+      expect.objectContaining({
+        event: "rate_limited",
+        host: "itb.localhost",
+        path: "/api/auth/account/send-code",
+        status: 429,
+        user_id: "user-1",
+      }),
+    ])
+  })
+
+  test("any other refusal gets one named line", async () => {
+    for (const [status, event] of [
+      [401, "unauthenticated"],
+      [403, "forbidden"],
+    ] as const) {
+      const { app, lines } = appWith({
+        handleDocument: async () => new Response(null, { status }),
+      })
+      await app.request(`${host}/kelola/laporan/ITB-26-ABCDE`)
+      expect(events(lines)).toEqual([
+        expect.objectContaining({
+          event,
+          status,
+          path: "/kelola/laporan/:code",
+        }),
+      ])
+    }
+  })
+
+  test("a refusal already named is not repeated", async () => {
+    const { app, lines } = appWith({
+      handleDocument: async () => {
+        lines.push(securityRecord("csrf_refused", { host: "itb.localhost" }))
+        return new Response(null, { status: 403 })
+      },
+    })
+    await app.request(`${host}/isu`)
+    expect(events(lines).map((line) => line.event)).toEqual(["csrf_refused"])
+  })
+
+  test("an oversize body is logged", async () => {
+    const { app, lines } = appWith()
+    await app.request(`${host}/lapor/periksa`, {
+      method: "POST",
+      body: "x".repeat(MAX_FORM_BODY + 1),
+      headers: { origin: host },
+    })
+    expect(events(lines)).toEqual([
+      expect.objectContaining({ event: "body_limit", status: 413 }),
+    ])
+  })
+
+  test("a non-canonical host is logged", async () => {
+    const { app, lines } = appWith()
+    await app.request(`${host}/isu`, { headers: { host: "ITB.localhost" } })
+    expect(events(lines)).toEqual([
+      expect.objectContaining({ event: "bad_host", path: "/isu" }),
+    ])
+  })
+
+  test("an unroutable path is logged, with headers", async () => {
+    for (const path of ["/isu%0Ax", "/isu%0Dx", "/isu%E2%80%A8x"]) {
+      const { app, lines, seen } = appWith()
+      const res = await app.request(`${host}${path}`)
+      expect([path, res.status]).toEqual([path, 404])
+      expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff")
+      expect(res.headers.get("Content-Security-Policy")).toContain(
+        "frame-ancestors 'none'",
+      )
+      expect(res.headers.get("Cache-Control")).toBe("no-store")
+      expect(seen).toEqual([])
+      expect(lines.map((line) => [line.msg, line.event ?? null])).toEqual([
+        ["security", "unrouted_path"],
+        ["request", null],
+      ])
+      expect(typeof lines[1]?.req_id).toBe("string")
+    }
   })
 })

@@ -104,8 +104,9 @@ describe("messages/id.json", () => {
     const messages: Record<string, string> = await Bun.file(
       `${root}messages/id.json`,
     ).json()
-    // Only admins confirm resolution
+    // Survey mail is backend-built
     const promised = Object.entries(messages)
+      .filter(([key]) => !key.startsWith("mail_survey_"))
       .filter(([, text]) =>
         /survei|sudah beres\?|dikonfirmasi pelapor/i.test(text),
       )

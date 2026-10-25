@@ -1,5 +1,6 @@
 import {
   afterAll,
+  afterEach,
   beforeAll,
   beforeEach,
   describe,
@@ -260,5 +261,67 @@ describe("takedown job", () => {
     const handle = createTakedownHandler(deps())
     expect(await handle({ orgId: orgA, takedownId: id })).toBe("done")
     expect(await exists(local)).toBe(false)
+  })
+})
+
+describe("worker defaults", () => {
+  const KEYS = [
+    "FILES_DIR",
+    "MEDIA_PUBLIC_ORIGIN",
+    "CLOUDFLARE_ZONE_ID",
+    "CLOUDFLARE_API_TOKEN",
+    "MEDIA_R2_ENDPOINT",
+  ] as const
+  const saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]))
+
+  afterEach(() => {
+    for (const key of KEYS) {
+      if (saved[key] === undefined) delete process.env[key]
+      else process.env[key] = saved[key]
+    }
+  })
+
+  // Body Cloudflare receives
+  async function purgedHosts(origin: string): Promise<unknown[]> {
+    process.env.FILES_DIR = filesDir
+    process.env.MEDIA_PUBLIC_ORIGIN = origin
+    process.env.CLOUDFLARE_ZONE_ID = "zone"
+    process.env.CLOUDFLARE_API_TOKEN = "token"
+    delete process.env.MEDIA_R2_ENDPOINT
+    const bodies: unknown[] = []
+    const original = globalThis.fetch
+    globalThis.fetch = Object.assign(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        bodies.push(JSON.parse(String(init?.body)))
+        return new Response("{}")
+      },
+      { preconnect: original.preconnect },
+    )
+    try {
+      const id = await takedown(orgA)
+      const handle = createTakedownHandler()
+      expect(await handle({ orgId: orgA, takedownId: id })).toBe("done")
+    } finally {
+      globalThis.fetch = original
+    }
+    return bodies
+  }
+
+  test("Given the worker env, when a takedown runs, then dev copies go and both hosts are purged", async () => {
+    const local = publicMediaPath(filesDir, HOST, LOCAL)
+    const video = publicMediaPath(filesDir, HOST, VIDEO)
+    await touch(local)
+    await touch(video)
+    expect(await purgedHosts("https://media.contoh.id/v")).toEqual([
+      { hosts: [HOST, "media.contoh.id"] },
+    ])
+    expect(await exists(local)).toBe(false)
+    expect(await exists(video)).toBe(false)
+  })
+
+  test("Given a media origin that is not https, when a takedown runs, then only the campus is purged", async () => {
+    for (const origin of ["http://media.contoh.id", "bukan url"]) {
+      expect(await purgedHosts(origin)).toEqual([{ hosts: [HOST] }])
+    }
   })
 })

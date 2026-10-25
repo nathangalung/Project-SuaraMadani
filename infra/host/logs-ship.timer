@@ -1,0 +1,11 @@
+# Hourly, alert after 3 h
+[Unit]
+Description=restic log copy
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=5m
+
+[Install]
+WantedBy=timers.target

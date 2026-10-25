@@ -6,9 +6,9 @@ import {
   expect,
   test,
 } from "bun:test"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { migrate } from "../../../db/migrate.ts"
 import {
   insertOrg,
@@ -18,6 +18,7 @@ import {
   superuserPool,
   testUrl,
 } from "../../../db/testing.ts"
+import { cleanBriefPath } from "../../../server/files.server.ts"
 import { jakartaIsoDate } from "../../../shared/format.ts"
 import {
   demandOverview,
@@ -26,7 +27,7 @@ import {
   getDemandCard,
   getDemandPage,
   listPublishedDemands,
-  publicBrief,
+  publicBriefFile,
 } from "./demands.server.ts"
 import {
   changeDemandState,
@@ -132,7 +133,7 @@ beforeAll(async () => {
     campusCode: "UGM",
   }
   admin = await insertUser(su, "admin.publik@contoh.id")
-  filesDir = await mkdtemp(join(tmpdir(), "sm-public-"))
+  filesDir = await mkdtemp(join(tmpdir(), "sb-public-"))
 })
 
 beforeEach(async () => {
@@ -350,7 +351,11 @@ describe("getDemandPage", () => {
     expect(pending?.items[1]?.brief).toBeNull()
     const briefId =
       (await getManagedDemand(itb.id, code))?.items[1]?.briefs[0]?.id ?? ""
-    expect(await publicBrief(itb.id, code, briefId)).toBeNull()
+    // Stripped copy from the scan
+    const clean = cleanBriefPath(filesDir, itb.id, briefId)
+    await mkdir(dirname(clean), { recursive: true })
+    await writeFile(clean, "%PDF-1.4\n")
+    expect(await publicBriefFile(itb.id, code, briefId, filesDir)).toBeNull()
     await su.query(
       "UPDATE policy_briefs SET status = 'clean', scanned_at = now()",
     )
@@ -371,11 +376,10 @@ describe("getDemandPage", () => {
     expect(page?.issues).toEqual([
       { code: "ISU-ITB-26-0001", title: "Air bersih mati dua minggu" },
     ])
-    expect(await publicBrief(itb.id, code, briefId)).toEqual({
-      id: briefId,
-      itemNumber: 2,
-    })
-    expect(await publicBrief(ugm.id, code, briefId)).toBeNull()
+    expect(
+      (await publicBriefFile(itb.id, code, briefId, filesDir))?.itemNumber,
+    ).toBe(2)
+    expect(await publicBriefFile(ugm.id, code, briefId, filesDir)).toBeNull()
     // Unpublished issue drops out
     await su.query("UPDATE issues SET published_at = NULL")
     expect((await getDemandPage(itb.id, code))?.issues).toEqual([])
@@ -398,5 +402,51 @@ describe("getDemandPage", () => {
       scope: "national",
       provinceName: null,
     })
+  })
+})
+
+describe("listPublishedDemands paging", () => {
+  const cursor = (value: unknown) =>
+    Buffer.from(JSON.stringify(value)).toString("base64url")
+
+  test("Given more than a page, when the next cursor is followed, then the rest follows without overlap", async () => {
+    const codes: string[] = []
+    for (let i = 0; i < 21; i++) codes.push(await make(NATIONAL))
+    const first = await listPublishedDemands(itb.id, {})
+    if (first.kind !== "results") throw new Error(first.kind)
+    expect(first.page).toBe(1)
+    expect(first.demands).toHaveLength(20)
+    expect(first.nextCursor).not.toBeNull()
+    const second = await listPublishedDemands(itb.id, {
+      kursor: first.nextCursor ?? "",
+    })
+    if (second.kind !== "results") throw new Error(second.kind)
+    expect(second.page).toBe(2)
+    expect(second.nextCursor).toBeNull()
+    const seen = [...first.demands, ...second.demands].map((row) => row.code)
+    // Newest publish first
+    expect(seen).toEqual([...codes].reverse())
+  })
+
+  test("a tampered cursor is refused", async () => {
+    const key = "2026-10-01T03:00:00.000000Z"
+    const id = "0190a000-0000-7000-8000-000000000001"
+    for (const value of [
+      [1, key, id],
+      [51, key, id],
+      [2, "kemarin", id],
+      [2, "2026-13-45T99:99:99.000000Z", id],
+      [2, key, "bukan-uuid"],
+      [2, key],
+      { page: 2 },
+    ]) {
+      expect(
+        await listPublishedDemands(itb.id, { kursor: cursor(value) }),
+      ).toEqual({ kind: "bad_cursor" })
+    }
+    const fine = await listPublishedDemands(itb.id, {
+      kursor: cursor([2, key, id]),
+    })
+    expect(fine).toMatchObject({ kind: "results", page: 2, demands: [] })
   })
 })

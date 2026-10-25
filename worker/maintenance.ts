@@ -3,8 +3,10 @@ import { dirname, join, resolve } from "node:path"
 import { and, inArray, like, lt, sql } from "drizzle-orm"
 import { type Db, database } from "../db/client.server.ts"
 import { sendJobs } from "../db/jobs.server.ts"
-import { sessions, verifications } from "../db/schema/auth.ts"
-import { policyBriefs } from "../db/schema/demands.ts"
+import { invitations, sessions, verifications } from "../db/schema/auth.ts"
+import { ratings } from "../db/schema/claims.ts"
+import { demandRatings, demands, policyBriefs } from "../db/schema/demands.ts"
+import { resolutionClaims } from "../db/schema/issues.ts"
 import { emailLog, notifications } from "../db/schema/notifications.ts"
 import { organizations } from "../db/schema/organizations.ts"
 import { evidence, reports } from "../db/schema/reports.ts"
@@ -25,6 +27,8 @@ const DAY_MS = 86_400_000
 const REJECTED_KEEP_MS = 90 * DAY_MS
 const EMAIL_LOG_KEEP_MS = 30 * DAY_MS
 const IP_KEEP_MS = 30 * DAY_MS
+// Expired links, then 30 days
+const INVITATION_KEEP_MS = 30 * DAY_MS
 // In-flight uploads stay safe
 const ORPHAN_AGE_MS = DAY_MS
 // Job long gone, row stuck
@@ -43,6 +47,9 @@ export type MaintenanceResult = {
   whatsappSessions: number
   sessions: number
   ips: number
+  invitations: number
+  // Hashed IP prefixes on ratings
+  ratingPrefixes: number
   orphans: number
   requeued: number
   infectedBriefs: number
@@ -81,7 +88,8 @@ async function sweepOrphans(
       }
     }
     for (const name of names) {
-      const temp = name.startsWith(".tmp-")
+      // Resumable parts age out too
+      const temp = name.startsWith(".tmp-") || name.startsWith(".part-")
       const id = idOf(name)
       if (!temp && (!id || live.has(id))) continue
       const info = await stat(join(dir, name)).catch(() => null)
@@ -110,9 +118,11 @@ export function createMaintenanceHandler(
       whatsappSessions: 0,
       sessions: 0,
       ips: 0,
+      invitations: 0,
       orphans: 0,
       requeued: 0,
       infectedBriefs: 0,
+      ratingPrefixes: 0,
     }
     // Auth tables carry no RLS
     result.emailLog = (
@@ -152,17 +162,25 @@ export function createMaintenanceHandler(
         .where(lt(sessions.expiresAt, new Date(at)))
         .returning({ id: sessions.id })
     ).length
+    // PRIV-08: user agent too
     result.ips = (
       await db
         .update(sessions)
-        .set({ ipAddress: null })
+        .set({ ipAddress: null, userAgent: null })
         .where(
           and(
             lt(sessions.createdAt, new Date(at - IP_KEEP_MS)),
-            sql`${sessions.ipAddress} IS NOT NULL`,
+            sql`(${sessions.ipAddress} IS NOT NULL OR ${sessions.userAgent} IS NOT NULL)`,
           ),
         )
         .returning({ id: sessions.id })
+    ).length
+    // Addresses of people never joined
+    result.invitations = (
+      await db
+        .delete(invitations)
+        .where(lt(invitations.expiresAt, new Date(at - INVITATION_KEEP_MS)))
+        .returning({ id: invitations.id })
     ).length
     const orgs = await db.select({ id: organizations.id }).from(organizations)
     for (const org of orgs) {
@@ -225,8 +243,61 @@ export function createMaintenanceHandler(
             .delete(policyBriefs)
             .where(sql`${policyBriefs.status} = 'infected'`)
             .returning({ id: policyBriefs.id })
+          // Anomaly flag keeps the count
+          const cutoff = new Date(at - IP_KEEP_MS)
+          await tx.execute(sql`
+            UPDATE ${resolutionClaims} c
+            SET max_prefix_ratings = GREATEST(coalesce(c.max_prefix_ratings, 0), top.n)
+            FROM (
+              SELECT claim_id, max(n)::int AS n FROM (
+                SELECT claim_id, count(*) AS n FROM ${ratings}
+                WHERE client_hash IS NOT NULL AND claim_id IN (
+                  SELECT claim_id FROM ${ratings}
+                  WHERE client_hash IS NOT NULL AND created_at < ${cutoff}
+                )
+                GROUP BY claim_id, client_hash
+              ) per_prefix GROUP BY claim_id
+            ) top
+            WHERE c.id = top.claim_id`)
+          // Prefix cap needs 30 days
+          const prefixes = await tx
+            .update(ratings)
+            .set({ clientHash: null })
+            .where(
+              and(
+                sql`${ratings.clientHash} IS NOT NULL`,
+                lt(ratings.createdAt, cutoff),
+              ),
+            )
+            .returning({ claimId: ratings.claimId })
+          // Same rule for tuntutan
+          await tx.execute(sql`
+            UPDATE ${demands} d
+            SET max_prefix_ratings = GREATEST(coalesce(d.max_prefix_ratings, 0), top.n)
+            FROM (
+              SELECT demand_id, max(n)::int AS n FROM (
+                SELECT demand_id, count(*) AS n FROM ${demandRatings}
+                WHERE client_hash IS NOT NULL AND demand_id IN (
+                  SELECT demand_id FROM ${demandRatings}
+                  WHERE client_hash IS NOT NULL AND updated_at < ${cutoff}
+                )
+                GROUP BY demand_id, client_hash
+              ) per_prefix GROUP BY demand_id
+            ) top
+            WHERE d.id = top.demand_id`)
+          const demandPrefixes = await tx
+            .update(demandRatings)
+            .set({ clientHash: null })
+            .where(
+              and(
+                sql`${demandRatings.clientHash} IS NOT NULL`,
+                lt(demandRatings.updatedAt, cutoff),
+              ),
+            )
+            .returning({ demandId: demandRatings.demandId })
           return {
             missing: missing.length,
+            prefixes: prefixes.length + demandPrefixes.length,
             rejected: rejected.map((r) => r.id),
             requeued: stuck.length,
             infected: infected.map((r) => r.id),
@@ -235,6 +306,7 @@ export function createMaintenanceHandler(
         { db },
       )
       result.missing += done.missing
+      result.ratingPrefixes += done.prefixes
       result.requeued += done.requeued
       // Rows first, sweep catches crashes
       for (const id of done.rejected)

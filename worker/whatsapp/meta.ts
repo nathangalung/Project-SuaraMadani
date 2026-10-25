@@ -1,9 +1,11 @@
-import { type FetchLike, withDeadline } from "../../server/http.ts"
+import { boundedJson, type FetchLike, withDeadline } from "../../server/http.ts"
 import type { WhatsAppProvider } from "./provider.ts"
 
 // Graph version from Meta docs
 const GRAPH = "https://graph.facebook.com/v25.0"
 const TIMEOUT_MS = 10_000
+// Error replies are small
+const REPLY_MAX_BYTES = 64 * 1024
 // Not a WhatsApp account
 const UNDELIVERABLE = 131026
 
@@ -54,15 +56,17 @@ export function metaProvider(config: MetaConfig): WhatsAppProvider {
               ],
             },
           }),
+          // API10: token never follows redirects
+          redirect: "error",
           signal: AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)]),
         }),
         TIMEOUT_MS,
       )
       if (response.ok) return "sent"
-      const body = (await response.json().catch(() => ({}))) as {
-        error?: { code?: unknown }
-      }
-      if (body.error?.code === UNDELIVERABLE) return "not_on_whatsapp"
+      const body = (await boundedJson(response, REPLY_MAX_BYTES).catch(
+        () => null,
+      )) as { error?: { code?: unknown } } | null
+      if (body?.error?.code === UNDELIVERABLE) return "not_on_whatsapp"
       throw new MetaSendError(response.status)
     },
   }

@@ -1,3 +1,4 @@
+import { APIError } from "better-auth/api"
 import { data, type RouterContextProvider, redirect } from "react-router"
 import type { MemberRole } from "../../../db/schema/auth.ts"
 import { pgError } from "../../../db/tenant.server.ts"
@@ -10,7 +11,12 @@ import {
   staffAccess,
   superadminAccess,
 } from "../../../server/auth.server.ts"
-import { errorRecord, writeError } from "../../../server/log.ts"
+import {
+  errorRecord,
+  securityRecord,
+  writeError,
+  writeLog,
+} from "../../../server/log.ts"
 import {
   type SessionContext,
   sessionContext,
@@ -62,7 +68,7 @@ export function twoFactorView(input: {
 // Loader then picks the home
 const TWO_FACTOR = "/masuk/dua-langkah"
 
-const CHALLENGE_COOKIE = /(?:^|;\s*)(?:__Secure-)?sm\.two_factor=/
+const CHALLENGE_COOKIE = /(?:^|;\s*)(?:__Host-|__Secure-)?sb\.two_factor=/
 
 export function hasChallengeCookie(cookie: string | null): boolean {
   return cookie ? CHALLENGE_COOKIE.test(cookie) : false
@@ -73,13 +79,16 @@ export function readTotpCode(value: unknown): string | null {
   return /^\d{6}$/.test(code) ? code : null
 }
 
-// Better Auth: xxxxx-xxxxx, case-sensitive
+// 20 chars, older 10, case-sensitive
+const BACKUP_CODE =
+  /^[A-Za-z0-9]{5}-[A-Za-z0-9]{5}(-[A-Za-z0-9]{5}-[A-Za-z0-9]{5})?$/
+
 export function readBackupCode(value: unknown): string | null {
   const code = String(value ?? "").replace(/\s+/g, "")
-  const bare = /^[A-Za-z0-9]{10}$/.test(code)
-    ? `${code.slice(0, 5)}-${code.slice(5)}`
+  const bare = /^([A-Za-z0-9]{10}){1,2}$/.test(code)
+    ? (code.match(/.{5}/g)?.join("-") ?? code)
     : code
-  return /^[A-Za-z0-9]{5}-[A-Za-z0-9]{5}$/.test(bare) ? bare : null
+  return BACKUP_CODE.test(bare) ? bare : null
 }
 
 /** Base32 key for manual entry. */
@@ -146,12 +155,16 @@ async function pendingCodes(
 ): Promise<string[]> {
   try {
     const result = await api.viewBackupCodes({ headers, body: { userId } })
+    writeLog(securityRecord("backup_codes_viewed", { user_id: userId }))
     return result.backupCodes
   } catch (error) {
     writeError({ msg: "backup codes unavailable", ...errorRecord(error) })
     return []
   }
 }
+
+const isStale = (error: unknown) =>
+  error instanceof APIError && error.body?.code === "SESSION_NOT_FRESH"
 
 /** Forwards Better Auth cookies. */
 function redirectWith(to: string, from: Response): Response {
@@ -160,6 +173,27 @@ function redirectWith(to: string, from: Response): Response {
     headers.append("Set-Cookie", cookie)
   }
   return redirect(to, { status: 303, headers })
+}
+
+/** In-process: auth hook skips. */
+async function signOutAgain(
+  api: Auth["api"],
+  { request, context }: Args,
+): Promise<Response> {
+  const response = await api.signOut({
+    headers: request.headers,
+    asResponse: true,
+  })
+  const url = new URL(request.url)
+  writeLog(
+    securityRecord("auth_ok", {
+      host: url.host,
+      path: url.pathname,
+      factor: "sign_out",
+      user_id: context.get(sessionContext)?.user.id ?? null,
+    }),
+  )
+  return redirectWith("/masuk", response)
 }
 
 export async function twoFactorAction(
@@ -178,8 +212,11 @@ export async function twoFactorAction(
       .enableTwoFactor({ headers, body: { method: "totp" } })
       .catch((error: unknown) => {
         if (pgError(error)?.code === "23505") return null
+        if (isStale(error)) return "stale" as const
         throw error
       })
+    // ASVS V7.5.1: code sign-in again
+    if (result === "stale") return signOutAgain(api, args)
     if (!result) return { kind: "error", error: "failed" }
     const secret =
       result.method === "totp" ? secretFromUri(result.totpURI) : null
@@ -242,8 +279,7 @@ export async function twoFactorAction(
   }
 
   if (intent === "sign_out" && view.mode === "stale") {
-    const response = await api.signOut({ headers, asResponse: true })
-    return redirectWith("/masuk", response)
+    return signOutAgain(api, args)
   }
   throw data(null, { status: 400 })
 }

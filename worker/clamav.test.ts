@@ -42,6 +42,25 @@ describe("clamd INSTREAM", () => {
     }
   })
 
+  test("Given a silent clamd, when the job is aborted mid-scan, then the scan stops at once", async () => {
+    const server = createServer(() => {})
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    const address = server.address()
+    const port = typeof address === "object" && address ? address.port : 0
+    const job = new AbortController()
+    try {
+      const scan = scanBytes(
+        simplePdf(1),
+        { host: "127.0.0.1", port, timeoutMs: 60_000 },
+        job.signal,
+      )
+      setTimeout(() => job.abort(), 50)
+      await expect(scan).rejects.toThrow("clamd scan aborted")
+    } finally {
+      server.close()
+    }
+  })
+
   test("an error reply throws", async () => {
     const server = createServer((socket) => {
       socket.on("data", () => {

@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from "hono"
-import type { LogRecord } from "../log.ts"
+import { inRequestScope, type RequestScope } from "../../db/request-scope.ts"
+import { type LogRecord, logPath } from "../log.ts"
 
 /** Path only, queries hold searches. */
 export function requestLog(
@@ -7,16 +8,24 @@ export function requestLog(
 ): MiddlewareHandler {
   return async (c, next) => {
     const started = performance.now()
+    // Root middleware adds the account
+    const scope: RequestScope = { reqId: c.get("requestId") }
+    // Before the URL rewrite
+    const { signal } = c.req.raw
     try {
-      await next()
+      await inRequestScope(scope, next)
     } finally {
       write({
         msg: "request",
-        req_id: c.get("requestId"),
+        req_id: scope.reqId,
         method: c.req.method,
-        path: c.req.path,
-        status: c.res.status,
+        // Tenant, never the query
+        host: new URL(c.req.url).host,
+        path: logPath(c.req.path),
+        // Client gone: nginx 499
+        status: signal.aborted ? 499 : c.res.status,
         dur_ms: Math.round(performance.now() - started),
+        user_id: scope.userId ?? null,
       })
     }
   }

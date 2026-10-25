@@ -1,5 +1,5 @@
 # Dev only, throwaway credentials
-name: suara-madani-dev
+name: sadar-bersuara-dev
 
 services:
   postgres:
@@ -9,16 +9,23 @@ services:
       - postgres
       - -c
       - shared_preload_libraries=pg_stat_statements
+      # Same log rules as production
+      - -c
+      - log_parameter_max_length=0
+      - -c
+      - log_parameter_max_length_on_error=0
+      - -c
+      - log_error_verbosity=terse
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres-dev
-      POSTGRES_DB: suara_madani
-      SM_DATABASE: suara_madani
-      SM_TEST_DATABASE: suara_madani_test
-      SM_MIGRATOR_PASSWORD: sm-migrator-dev
-      SM_APP_PASSWORD: sm-app-dev
-      SM_MEDIA_PASSWORD: sm-media-dev
-      SM_BACKUP_PASSWORD: sm-backup-dev
+      POSTGRES_DB: sadar_bersuara
+      SB_DATABASE: sadar_bersuara
+      SB_TEST_DATABASE: sadar_bersuara_test
+      SB_MIGRATOR_PASSWORD: sb-migrator-dev
+      SB_APP_PASSWORD: sb-app-dev
+      SB_MEDIA_PASSWORD: sb-media-dev
+      SB_BACKUP_PASSWORD: sb-backup-dev
     ports:
       - "127.0.0.1:55432:5432"
     volumes:
@@ -26,7 +33,7 @@ services:
       - pgdata:/var/lib/postgresql
     healthcheck:
       # Red until init finishes
-      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "suara_madani"]
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "sadar_bersuara"]
       interval: 2s
       timeout: 3s
       retries: 30
@@ -42,12 +49,12 @@ services:
       timeout: 3s
       retries: 10
 
-  # PDF scan, signatures included
+  # Evidence scan, signatures included
   clamav:
     image: clamav/clamav:1.5.4-debian13-slim@sha256:9a96980b265cb2b51a20bdcca921dc80aa55ed0e56cdfb076198ee27a9171927
     environment:
-      # Starting Values: above PDF limit
-      CLAMD_CONF_StreamMaxLength: 12M
+      # Starting Values: above video limit
+      CLAMD_CONF_StreamMaxLength: 51M
       CLAMD_CONF_ConcurrentDatabaseReload: "no"
     ports:
       - "127.0.0.1:53310:3310"

@@ -1,0 +1,11 @@
+# 1st of month, 03:30 WIB
+[Unit]
+Description=Monthly Umami retention prune
+
+[Timer]
+OnCalendar=*-*-01 03:30:00 Asia/Jakarta
+Persistent=true
+RandomizedDelaySec=5m
+
+[Install]
+WantedBy=timers.target

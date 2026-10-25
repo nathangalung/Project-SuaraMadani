@@ -33,11 +33,11 @@ const qpdfTest = test.skipIf(!Bun.which("qpdf") && !required)
 const STRIPPED = new TextEncoder().encode("%PDF-1.4 stripped")
 
 const su = superuserPool()
-// Runs as sm_media, real grants
+// Runs as sb_media, real grants
 const mediaPool = new Pool({
   connectionString: testUrl("TEST_DATABASE_SUPERUSER_URL"),
   max: 2,
-  options: "-c role=sm_media",
+  options: "-c role=sb_media",
 })
 const mediaDb = drizzle({ client: mediaPool, schema })
 const clamd = clamdFromEnv()
@@ -87,7 +87,7 @@ beforeAll(async () => {
     [orgId, rows[0]?.id],
   )
   itemId = items.rows[0]?.id ?? ""
-  filesDir = await mkdtemp(join(tmpdir(), "sm-brief-scan-"))
+  filesDir = await mkdtemp(join(tmpdir(), "sb-brief-scan-"))
 })
 
 beforeEach(async () => {
@@ -157,6 +157,21 @@ describe("evidence-brief", () => {
       }),
     ).toBeNull()
   })
+
+  qpdfTest(
+    "Given the worker's own qpdf, when a brief is scanned, then the public copy names no author",
+    async () => {
+      const author = "Nama Admin Asli"
+      const id = await brief(pdfWithMetadata(author))
+      const real = createBriefScanHandler({ filesDir, db: mediaDb, clamd })
+      expect(await real({ orgId, briefId: id })).toBe("clean")
+      const copy = await read(cleanBriefPath(filesDir, orgId, id))
+      expect(Buffer.from(copy ?? []).toString("latin1")).toStartWith("%PDF-")
+      expect(Buffer.from(copy ?? []).includes(author)).toBe(false)
+      const kept = await read(briefPath(filesDir, orgId, id))
+      expect(Buffer.from(kept ?? []).includes(author)).toBe(true)
+    },
+  )
 
   test("EICAR inside a PDF is marked infected", async () => {
     const id = await brief(pdfWithAttachment(eicar()))

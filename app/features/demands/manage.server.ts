@@ -50,7 +50,11 @@ import {
   transitionDemandItem,
 } from "../../../shared/status.ts"
 import { citedIssues, purgeDemandPages } from "./purge.server.ts"
-import { pendingRaters, readImportance } from "./rating.server.ts"
+import {
+  pendingRaters,
+  prefixAnomaly,
+  readImportance,
+} from "./rating.server.ts"
 
 export { demandProgress }
 
@@ -1289,6 +1293,8 @@ export type ManagedDemand = DemandFields & {
   importance: Importance
   // Accounts too new yet
   pendingRaters: number
+  // PLAN 5.7 admin flag
+  prefixAnomaly?: boolean
 }
 
 /** Editor view, every brief. */
@@ -1382,6 +1388,7 @@ export function getManagedDemand(
         frozen: await closedNow(tx, row),
         importance: ratings.get(row.id) ?? emptyImportance(),
         pendingRaters: await pendingRaters(tx, row.id),
+        prefixAnomaly: await prefixAnomaly(tx, row.id),
         items: items.map((item) => ({
           ...item,
           briefs: briefs

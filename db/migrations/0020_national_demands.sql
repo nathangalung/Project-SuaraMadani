@@ -1,5 +1,5 @@
 -- Apex tuntutan counts, exact
-GRANT SELECT ON public.demands, public.demand_items TO sm_aggregates;--> statement-breakpoint
+GRANT SELECT ON public.demands, public.demand_items TO sb_aggregates;--> statement-breakpoint
 -- New column needs a rebuild
 DROP MATERIALIZED VIEW public.national_aggregates;--> statement-breakpoint
 -- NO DATA: migrator is RLS-subject
@@ -89,8 +89,8 @@ SELECT c.dimension, c.key,
 FROM cells c
 WITH NO DATA;--> statement-breakpoint
 -- New owner needs CREATE briefly
-GRANT CREATE ON SCHEMA public TO sm_aggregates;--> statement-breakpoint
-ALTER MATERIALIZED VIEW public.national_aggregates OWNER TO sm_aggregates;--> statement-breakpoint
-REVOKE CREATE ON SCHEMA public FROM sm_aggregates;--> statement-breakpoint
+GRANT CREATE ON SCHEMA public TO sb_aggregates;--> statement-breakpoint
+ALTER MATERIALIZED VIEW public.national_aggregates OWNER TO sb_aggregates;--> statement-breakpoint
+REVOKE CREATE ON SCHEMA public FROM sb_aggregates;--> statement-breakpoint
 -- Runs as owner, all campuses
 REFRESH MATERIALIZED VIEW public.national_aggregates;

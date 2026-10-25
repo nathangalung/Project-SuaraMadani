@@ -1,4 +1,6 @@
 // ADR-01: one place decides caching
+import { isPrivatePath } from "../../shared/private-paths.ts"
+
 export type CachePolicy = "public" | "private" | "none" | "keep"
 
 export type CacheInput = {
@@ -10,24 +12,7 @@ export type CacheInput = {
   routeSet: boolean
 }
 
-const PRIVATE_PATHS = [
-  /^\/lapor(\/|$)/,
-  /^\/lacak(\/|$)/,
-  /^\/masuk(\/|$)/,
-  /^\/isu\/[^/]+\/laporkan(\/|$)/,
-  /^\/isu\/[^/]+\/berhenti(\/|$)/,
-  /^\/tuntutan\/[^/]+\/laporkan(\/|$)/,
-  /^\/tuntutan\/[^/]+\/nilai(\/|$)/,
-  /^\/tuntutan\/[^/]+\/berhenti(\/|$)/,
-  /^\/aduan(\/|$)/,
-  /^\/undangan(\/|$)/,
-  /^\/kelola(\/|$)/,
-  /^\/admin(\/|$)/,
-  /^\/api\//,
-  /^\/healthz(\/|$)/,
-]
-
-const SESSION_COOKIE = /(?:^|;\s*)(?:__Secure-)?sm\.session_token=/
+const SESSION_COOKIE = /(?:^|;\s*)(?:__Host-|__Secure-)?sb\.session_token=/
 
 export function hasSessionCookie(cookie: string | null): boolean {
   return cookie ? SESSION_COOKIE.test(cookie) : false
@@ -40,7 +25,7 @@ export function cachePolicy(input: CacheInput): CachePolicy {
     !isRead ||
     input.hasSession ||
     input.setsCookie ||
-    PRIVATE_PATHS.some((re) => re.test(input.path))
+    isPrivatePath(input.path)
   ) {
     return "private"
   }
