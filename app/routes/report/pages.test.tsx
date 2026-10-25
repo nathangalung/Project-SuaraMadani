@@ -11,14 +11,14 @@ type LayoutProps = Parameters<typeof ReportLayout>[0]
 type SuccessProps = Parameters<typeof Success>[0]
 
 describe("report layout", () => {
-  function render(handle: unknown, child = () => <p>Isi</p>, signedIn = false) {
+  function render(handle: unknown, child = () => <p>Isi</p>) {
     const Stub = createRoutesStub([
       {
         path: "/lapor",
         Component: () => (
           <ReportLayout
             {...({
-              loaderData: { paused: false, signedIn },
+              loaderData: { paused: false },
             } as unknown as LayoutProps)}
           />
         ),
@@ -51,19 +51,12 @@ describe("report layout", () => {
     expect(success).not.toContain(m.report_draft_note())
   })
 
-  test("lead says up front who can send and how", () => {
+  test("lead shows on steps only", () => {
     const step = render({ reportStep: "relation" })
     expect(step).toContain(m.report_lead())
-    expect(m.report_lead()).toContain("18 tahun atau lebih")
-    expect(m.report_lead()).toContain("kode dari email atau WhatsApp")
+    // Age asked at sign-in
+    expect(m.report_lead()).not.toContain("18 tahun")
     expect(render({ reportStep: null })).not.toContain(m.report_lead())
-  })
-
-  test("signed-in lead drops the sign-in step", () => {
-    const step = render({ reportStep: "relation" }, undefined, true)
-    expect(step).toContain(m.report_lead_signed_in())
-    expect(step).not.toContain("kode dari email")
-    expect(m.report_lead_signed_in()).toContain("18 tahun atau lebih")
   })
 
   test("review owns the sign-in, header drops it", () => {
@@ -90,7 +83,7 @@ describe("success page", () => {
           <Success
             {...({
               loaderData: {
-                code: "ITB-26-7K3QX",
+                code: "LPR-2026-10-0001",
                 tenant: "KM ITB",
                 campus: "Institut Teknologi Bandung",
                 signedIn,
@@ -103,7 +96,7 @@ describe("success page", () => {
     ])
     return renderToStaticMarkup(
       <Stub
-        initialEntries={[{ pathname: "/lapor/sukses/ITB-26-7K3QX", state }]}
+        initialEntries={[{ pathname: "/lapor/sukses/LPR-2026-10-0001", state }]}
       />,
     )
   }
@@ -132,7 +125,7 @@ describe("success page", () => {
     expect(fresh).toContain(m.report_label_sent())
     expect(fresh).toContain("14 Oktober 2026")
     const bookmark = render(null)
-    expect(bookmark).toContain("ITB-26-7K3QX")
+    expect(bookmark).toContain("LPR-2026-10-0001")
     expect(bookmark).not.toContain(m.report_label_sent())
     // Status goes stale, never shown
     expect(bookmark).not.toContain(`>${m.report_status_submitted()}<`)

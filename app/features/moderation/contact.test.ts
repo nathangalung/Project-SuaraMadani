@@ -11,7 +11,7 @@ import {
   superuserPool,
   testUrl,
 } from "../../../db/testing.ts"
-import { revealContact } from "./contact.server.ts"
+import { revealAccount, revealContact } from "./contact.server.ts"
 
 const su = superuserPool()
 const suDb = drizzle({ client: su })
@@ -90,5 +90,36 @@ describe("reporter contact, PLAN §5.5", () => {
       }),
     ).toBeNull()
     expect(await audits()).toHaveLength(before)
+  })
+})
+
+describe("reporter account, admins only", () => {
+  const accountAudits = async () =>
+    (
+      await su.query(
+        "SELECT actor_id, entity_id FROM audit_log WHERE action = 'report.view_account'",
+      )
+    ).rows
+
+  test("a admin reads it, every view audited", async () => {
+    const input = { reportId, actorId: moderator }
+    expect(await revealAccount(org, "admin", input)).toMatchObject({
+      name: "Rina Pelapor",
+      email: "pelapor.kontak@contoh.id",
+      // Both seeded reports count
+      reports: 2,
+    })
+    const rows = await accountAudits()
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ actor_id: moderator, entity_id: reportId })
+    expect(JSON.stringify(rows)).not.toContain("pelapor.kontak")
+  })
+
+  test("reporters and other campuses read nothing", async () => {
+    const before = (await accountAudits()).length
+    const input = { reportId, actorId: moderator }
+    expect(await revealAccount(org, "reporter", input)).toBeNull()
+    expect(await revealAccount(other, "admin", input)).toBeNull()
+    expect(await accountAudits()).toHaveLength(before)
   })
 })

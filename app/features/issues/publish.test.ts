@@ -33,7 +33,7 @@ let orgA = ""
 let orgB = ""
 let moderator = ""
 
-async function seedIssue(org = orgA, campusCode = "ITB") {
+async function seedIssue(org = orgA) {
   const reporter = await insertUser(su, `p${crypto.randomUUID()}@contoh.id`)
   const [report] = await suDb
     .insert(reports)
@@ -50,7 +50,6 @@ async function seedIssue(org = orgA, campusCode = "ITB") {
       summary: "Beberapa laporan menyebut atap ruang kelas runtuh.",
     },
     actorId: moderator,
-    campusCode,
     now: NOW,
   })
   if (!merged.ok) throw new Error(merged.reason)
@@ -98,22 +97,22 @@ describe("issuePurgeUrls", () => {
   test("lists the issue, every OG version, lists and their data URLs", () => {
     expect(
       issuePurgeUrls("itb.suaramadani.id", {
-        code: "ISU-ITB-26-0001",
+        code: "ISU-2026-10-0001",
         version: 3,
       }),
     ).toEqual([
-      "https://itb.suaramadani.id/isu/ISU-ITB-26-0001",
-      "https://itb.suaramadani.id/isu/ISU-ITB-26-0001.data",
+      "https://itb.suaramadani.id/isu/ISU-2026-10-0001",
+      "https://itb.suaramadani.id/isu/ISU-2026-10-0001.data",
       "https://itb.suaramadani.id/isu",
       "https://itb.suaramadani.id/isu.data",
       "https://itb.suaramadani.id/",
       "https://itb.suaramadani.id/_root.data",
       "https://itb.suaramadani.id/data",
       "https://itb.suaramadani.id/data.data",
-      "https://itb.suaramadani.id/isu/ISU-ITB-26-0001/og.png?v=1",
-      "https://itb.suaramadani.id/isu/ISU-ITB-26-0001/og.png?v=2",
-      "https://itb.suaramadani.id/isu/ISU-ITB-26-0001/og.png?v=3",
-      "https://itb.suaramadani.id/api/v1/isu/ISU-ITB-26-0001",
+      "https://itb.suaramadani.id/isu/ISU-2026-10-0001/og.png?v=1",
+      "https://itb.suaramadani.id/isu/ISU-2026-10-0001/og.png?v=2",
+      "https://itb.suaramadani.id/isu/ISU-2026-10-0001/og.png?v=3",
+      "https://itb.suaramadani.id/api/v1/isu/ISU-2026-10-0001",
       "https://itb.suaramadani.id/api/v1/isu",
       "https://itb.suaramadani.id/api/v1/data",
       "https://itb.suaramadani.id/api/v1/data/peringkat-isu.csv",
@@ -198,7 +197,7 @@ describe("purgeIssuePages", () => {
     const lines: Record<string, unknown>[] = []
     await purgeIssuePages(
       "itb.localhost",
-      { code: "ISU-ITB-26-0001", version: 1 },
+      { code: "ISU-2026-10-0001", version: 1 },
       {
         purge: {
           purgeUrls: async () => {
@@ -213,7 +212,7 @@ describe("purgeIssuePages", () => {
       expect.objectContaining({
         msg: "purge failed",
         host: "itb.localhost",
-        issue: "ISU-ITB-26-0001",
+        issue: "ISU-2026-10-0001",
         error: "Error",
         message: "purge failed: 429",
       }),

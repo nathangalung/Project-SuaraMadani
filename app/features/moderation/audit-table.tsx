@@ -36,9 +36,7 @@ function Entity({ row }: { row: AuditRow }) {
     ) : (
       <>
         {label}{" "}
-        <span className="font-ui text-ink-muted text-sm">
-          {row.entityShort}
-        </span>
+        <span className="text-ink-muted text-sm">{row.entityShort}</span>
       </>
     )
   }
@@ -69,7 +67,7 @@ function Actor({ row }: { row: AuditRow }) {
   ) : (
     <>
       {role}{" "}
-      <span className="font-ui text-ink-muted text-sm tabular-nums">
+      <span className="text-ink-muted text-sm tabular-nums">
         {row.actorShort}
       </span>
     </>
@@ -126,10 +124,10 @@ export function AuditTable({
             <Td wide>
               <Actor row={row} />
             </Td>
-            <Td wide className="font-ui text-sm">
+            <Td wide className="text-sm">
               {columnsText(row)}
             </Td>
-            <Td wide className="font-ui text-sm">
+            <Td wide className="text-sm">
               {row.reasonCode ? auditReasonText(row.reasonCode) : ""}
             </Td>
           </tr>

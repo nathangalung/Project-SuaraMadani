@@ -69,7 +69,7 @@ async function issue(
   values: { gov?: string; published?: boolean } = {},
 ): Promise<string> {
   number++
-  const code = `ISU-DL-26-${String(number).padStart(4, "0")}`
+  const code = `ISU-2026-10-${String(number).padStart(4, "0")}`
   codes[name] = code
   const { rows } = await su.query<{ id: string }>(
     `INSERT INTO issues (org_id, year, number, public_code, title, summary,

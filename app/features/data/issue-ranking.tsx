@@ -64,7 +64,7 @@ export function RankedIssues({
                 to={dataHref({ ...params, peringkat: id })}
                 aria-current={id === active ? "true" : undefined}
                 className={cn(
-                  "block whitespace-nowrap px-4 py-3.5 font-ui text-sm transition-colors",
+                  "block whitespace-nowrap px-4 py-3.5 text-sm transition-colors",
                   id === active
                     ? "bg-brand font-semibold text-on-accent"
                     : "text-ink hover:bg-ink/5",
@@ -96,7 +96,7 @@ export function RankedIssues({
                   >
                     <span
                       aria-hidden="true"
-                      className="grid size-10 place-items-center bg-brand font-bold text-lg text-on-accent tabular-nums"
+                      className="grid size-10 place-items-center rounded-full bg-brand font-bold text-lg text-on-accent tabular-nums"
                     >
                       {index + 1}
                     </span>
@@ -104,7 +104,7 @@ export function RankedIssues({
                       <span className="block font-semibold leading-snug decoration-2 decoration-brand underline-offset-4 group-hover:underline">
                         {issue.title}
                       </span>
-                      <span className="mt-1.5 flex flex-wrap items-center gap-1.5 font-ui text-ink-soft text-xs">
+                      <span className="mt-1.5 flex flex-wrap items-center gap-1.5 text-ink-soft text-xs">
                         <CategoryBadge categoryId={issue.categoryId} />
                         <GovernmentBadge status={issue.govStatus} />
                         <span>{placeOf(issue)}</span>
@@ -115,7 +115,7 @@ export function RankedIssues({
                         <span className="block font-bold text-lg tabular-nums leading-tight">
                           {formatNumber(value)}
                         </span>
-                        <span className="block max-w-20 font-ui text-ink-soft text-xs leading-tight sm:max-w-none">
+                        <span className="block max-w-20 text-ink-soft text-xs leading-tight sm:max-w-none">
                           {unit}
                         </span>
                       </span>
@@ -141,7 +141,7 @@ export function RankedIssues({
           </p>
         )}
       </div>
-      <p className="border-line-subtle border-t px-4 py-3 font-ui text-ink-muted text-xs sm:px-6">
+      <p className="border-line-subtle border-t px-4 py-3 text-ink-muted text-xs sm:px-6">
         {m.data_ranking_meta({ n: formatNumber(issues.length) })}
         <span className="mt-1 block">
           {m.data_ranking_source({ minutes: REFRESH_MINUTES })}

@@ -2,7 +2,7 @@ import { data, Link } from "react-router"
 import { errorTitle } from "~/components/ui/error-summary"
 import { Note } from "~/components/ui/note"
 import { ReferralLines, ResponseList } from "~/features/issues/issue-record"
-import { IssueStatus } from "~/features/issues/issue-status"
+import { IssueStatus, StageMark } from "~/features/issues/issue-status"
 import { latestReferral } from "~/features/issues/record.server"
 import { issueHistory, Timeline } from "~/features/issues/timeline"
 import { requireAdmin } from "~/features/moderation/access.server"
@@ -109,6 +109,13 @@ export default function ManageIssue({
         {m.issue_reports({ count: issue.reportCount })}
       </p>
       <h2 className="mt-8 font-bold text-2xl">{issue.title}</h2>
+      <p className="mt-4 flex flex-wrap items-center gap-3">
+        <span className="text-ink-muted">{m.manage_issue_stage()}</span>
+        <StageMark
+          advocacy={issue.advocacyStatus}
+          government={issue.govStatus}
+        />
+      </p>
       <div className="mt-3">
         <IssueStatus
           verificationLabel={issue.verificationLabel}
@@ -132,7 +139,7 @@ export default function ManageIssue({
             <h2 id="issue-actions" className={H2}>
               {m.manage_actions_title()}
             </h2>
-            <p className="mt-1 mb-5 font-ui text-[0.95rem] text-ink-soft">
+            <p className="mt-1 mb-5 text-[0.95rem] text-ink-soft">
               {m.manage_actions_lead()}
             </p>
             {declined > 0 ? (

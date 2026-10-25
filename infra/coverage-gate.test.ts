@@ -285,6 +285,26 @@ describe("command line on the real repo", () => {
     expect(() => repoFiles(dir)).toThrow("git ls-files failed")
   })
 
+  test("an unmerged path is listed once", async () => {
+    const repo = join(dir, "unmerged")
+    const git = (args: string[], stdin?: string) => {
+      const run = Bun.spawnSync(["git", "-C", repo, ...args], {
+        stdin: stdin === undefined ? undefined : Buffer.from(stdin),
+      })
+      expect(run.exitCode).toBe(0)
+      return run.stdout.toString().trim()
+    }
+    await Bun.write(join(repo, "server/conflict.ts"), "export {}\n")
+    git(["init", "-q"])
+    const blob = git(["hash-object", "-w", "server/conflict.ts"])
+    const stages = [1, 2, 3].map(
+      (n) => `100644 ${blob} ${n}\tserver/conflict.ts`,
+    )
+    git(["update-index", "--index-info"], `${stages.join("\n")}\n`)
+    expect(git(["ls-files", "-u"]).split("\n")).toHaveLength(3)
+    expect(repoFiles(repo)).toEqual(["server/conflict.ts"])
+  })
+
   test("every real source at 100% exits 0", async () => {
     expect(await main([await lcovFile(sources)], root)).toBe(0)
   })

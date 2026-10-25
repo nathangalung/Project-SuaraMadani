@@ -24,8 +24,8 @@ import { submitReport } from "../e2e/staff-flows.ts"
 const HOST = "accpub.localhost"
 const ORIGIN = `http://${HOST}`
 const APEX = "http://localhost"
-const PUBLISHED = "ISU-ACCPUB-26-0001"
-const HIDDEN = "ISU-ACCPUB-26-0002"
+const PUBLISHED = "ISU-2026-10-0001"
+const HIDDEN = "ISU-2026-10-0002"
 const TOKEN = "t".repeat(40)
 const su = superuserPool()
 let app: FullApp
@@ -146,7 +146,7 @@ describe("public pages", () => {
     expect(own.status).toBe(200)
     expect(own.headers.get("Cache-Control")).toBe("private, no-store")
     expect(own.headers.get("Cloudflare-CDN-Cache-Control")).toBeNull()
-    const missing = await app.request(`${ORIGIN}/isu/ISU-ACCPUB-26-0099`)
+    const missing = await app.request(`${ORIGIN}/isu/ISU-2026-10-0099`)
     expect(missing.status).toBe(404)
     expect(missing.headers.get("Cache-Control")).toBe("no-store")
   })

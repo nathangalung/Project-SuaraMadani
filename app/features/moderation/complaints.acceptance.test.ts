@@ -207,7 +207,7 @@ describe("content complaints", () => {
     // Receipts out before deciding
     await mailbox().deliver(su, orgId)
 
-    const editRow = await issueRow(su, edited)
+    const editRow = await issueRow(su, HOST, edited)
     const edit = await decide(first, editCode, {
       intent: "edit",
       reason: "standard_3",
@@ -226,7 +226,7 @@ describe("content complaints", () => {
       intent: "hide",
       reason: "standard_3",
       confirm: "yes",
-      subjectVersion: String((await issueRow(su, hidden)).version),
+      subjectVersion: String((await issueRow(su, HOST, hidden)).version),
     })
     expect(hide.status).toBe(303)
     expect((await app.request(`${ORIGIN}/isu/${hidden}`)).status).toBe(404)
@@ -234,14 +234,14 @@ describe("content complaints", () => {
     const unconfirmed = await decide(first, removeCode, {
       intent: "remove",
       reason: "standard_3",
-      subjectVersion: String((await issueRow(su, removed)).version),
+      subjectVersion: String((await issueRow(su, HOST, removed)).version),
     })
     expect(unconfirmed.status).toBe(400)
     const remove = await decide(first, removeCode, {
       intent: "remove",
       reason: "standard_3",
       confirm: "yes",
-      subjectVersion: String((await issueRow(su, removed)).version),
+      subjectVersion: String((await issueRow(su, HOST, removed)).version),
     })
     expect(remove.status).toBe(303)
     const gone = await app.request(`${ORIGIN}/isu/${removed}`)
@@ -262,7 +262,7 @@ describe("content complaints", () => {
     const issue = await publishedIssue()
     const filer = await signedIn(HOST, person("banding"))
     const code = receiptCode(await complain(filer.cookie, `/isu/${issue}`))
-    const version = String((await issueRow(su, issue)).version)
+    const version = String((await issueRow(su, HOST, issue)).version)
     await decide(first, code, {
       intent: "keep",
       reason: "no_violation",

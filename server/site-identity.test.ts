@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { creditLine, siteIdentity } from "./site-identity.server.ts"
+import { siteIdentity } from "./site-identity.server.ts"
 
 const base = { name: "KM ITB", campusName: "Institut Teknologi Bandung" }
 
@@ -62,19 +62,5 @@ describe("siteIdentity", () => {
       settings: { alliance: 5 } as unknown as { alliance: string },
     })
     expect(odd.alliance).toBeUndefined()
-  })
-})
-
-describe("creditLine", () => {
-  test("trims a filled credit, drops the rest", () => {
-    expect(creditLine({ settings: { credit: " CSTS, KM ITB " } })).toBe(
-      "CSTS, KM ITB",
-    )
-    expect(creditLine({ settings: {} })).toBeUndefined()
-    expect(
-      creditLine({ settings: { credit: "x".repeat(121) } }),
-    ).toBeUndefined()
-    const odd = { credit: 1 } as unknown as { credit: string }
-    expect(creditLine({ settings: odd })).toBeUndefined()
   })
 })

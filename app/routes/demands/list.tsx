@@ -1,6 +1,7 @@
 import { Scale } from "lucide-react"
 import { Link, redirect } from "react-router"
 import { PageHeader } from "~/components/layout/page-header"
+import { SECTION_TITLE } from "~/components/layout/section-heading"
 import { ButtonLink } from "~/components/ui/button"
 import { Container } from "~/components/ui/container"
 import { Note } from "~/components/ui/note"
@@ -68,6 +69,14 @@ export default function DemandList({ loaderData }: Route.ComponentProps) {
           {scorecard.total > 0 || filtered ? (
             <>
               <DemandScorecard scorecard={scorecard} query={query} />
+              <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="text-ink-soft">
+                  {m.demands_rank_cta_lead()}
+                </span>
+                <Link to="/tuntutan/peringkat" className={LINK}>
+                  {m.demands_rank_cta()}
+                </Link>
+              </p>
               <DemandFilters query={query} provinces={provinces} />
             </>
           ) : null}
@@ -75,7 +84,7 @@ export default function DemandList({ loaderData }: Route.ComponentProps) {
             {result.kind === "results" ? (
               <>
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <h2 id="demands-results" className="font-bold text-lg">
+                  <h2 id="demands-results" className={SECTION_TITLE}>
                     {result.page > 1
                       ? m.demands_results_page({ page: result.page })
                       : m.demands_results_title()}

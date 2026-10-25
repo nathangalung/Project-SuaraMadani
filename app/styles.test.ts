@@ -190,6 +190,14 @@ describe("motion tokens", () => {
     )
   })
 
+  test("logo morph ends within five seconds", () => {
+    const rule =
+      "animation: logo-intro var(--dur-logo) ease-in-out 3 alternate both;"
+    expect(css).toContain(rule)
+    // WCAG 2.2.2 needs no pause
+    expect(3 * ms(defaults.get("dur-logo"))).toBeLessThan(5000)
+  })
+
   test("stagger delay is capped at five steps", () => {
     expect(css).toContain(
       "transition-delay: calc(min(var(--i, 0), 5) * var(--step-stagger));",

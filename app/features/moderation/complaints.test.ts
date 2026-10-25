@@ -86,7 +86,6 @@ async function seed(org: "a" | "b" = "a"): Promise<Seeded> {
       summary: `Warga di ${SECRET} melaporkan atap kelas runtuh.`,
     },
     actorId: first,
-    campusCode: org === "a" ? "CMA" : "CMB",
     now: NOW,
     notify: false,
   })

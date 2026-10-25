@@ -20,7 +20,7 @@ import { loader } from "./detail"
 const su = superuserPool()
 const suDb = drizzle({ client: su })
 const HOST = "dtl.localhost"
-const CODE = "ISU-DTL-26-0001"
+const CODE = "ISU-2026-10-0001"
 const IMAGE = `${"a".repeat(64)}.webp`
 const POSTER = `${"b".repeat(64)}.webp`
 const VIDEO = `${"c".repeat(64)}.mp4`

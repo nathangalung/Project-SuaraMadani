@@ -2,7 +2,11 @@ import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm"
 import { auditLog } from "../../../db/schema/audit.ts"
 import { members, sessions, users } from "../../../db/schema/auth.ts"
 import { fixSurveys, ratings } from "../../../db/schema/claims.ts"
-import { demandFollows, demandRatings } from "../../../db/schema/demands.ts"
+import {
+  demandFollows,
+  demandRankings,
+  demandRatings,
+} from "../../../db/schema/demands.ts"
 import {
   issueReports,
   issues,
@@ -109,6 +113,7 @@ async function removeAtCampus(
   await tx.delete(follows).where(eq(follows.userId, userId))
   await tx.delete(demandFollows).where(eq(demandFollows.userId, userId))
   await tx.delete(demandRatings).where(eq(demandRatings.userId, userId))
+  await tx.delete(demandRankings).where(eq(demandRankings.userId, userId))
   await tx.delete(ratings).where(eq(ratings.userId, userId))
   // Reply text stays, sender forgotten
   await tx

@@ -46,6 +46,36 @@ export type IssueState = {
   government: GovernmentStatus
 }
 
+// Public path, team 22 Oct
+export const PUBLIC_STAGES = [
+  "verified",
+  "referred",
+  "responded",
+  "in_progress",
+  "done",
+] as const
+export type PublicStage = (typeof PUBLIC_STAGES)[number]
+
+// Government statuses per stage
+export const STAGE_GOVERNMENT: Readonly<
+  Record<PublicStage, readonly GovernmentStatus[]>
+> = {
+  verified: ["awaiting_response", "not_competent", "not_followed_up"],
+  referred: ["awaiting_response", "not_competent", "not_followed_up"],
+  responded: ["responded"],
+  in_progress: ["in_progress", "claimed_resolved", "reopened"],
+  done: ["confirmed_resolved", "closed"],
+}
+
+/** One public stage, both axes. */
+export function publicStage(state: IssueState): PublicStage {
+  for (const stage of ["done", "in_progress", "responded"] as const) {
+    if (STAGE_GOVERNMENT[stage].includes(state.government)) return stage
+  }
+  // Not sent yet: verified only
+  return state.advocacy === "monitoring" ? "verified" : "referred"
+}
+
 export const ISSUE_ACTIONS = [
   "refer",
   "escalate",
@@ -137,7 +167,8 @@ export const REPORT_TRANSITIONS: Readonly<
   verify: { from: ["in_review", "unverifiable"], to: "verified" },
   mark_unverifiable: { from: ["in_review"], to: "unverifiable" },
   reject: { from: ["submitted", "in_review", "unverifiable"], to: "rejected" },
-  merge: { from: ["verified", "unverifiable"], to: "merged" },
+  // Only verified goes public
+  merge: { from: ["verified"], to: "merged" },
   forward: { from: ["submitted", "in_review"], to: "forwarded" },
 }
 

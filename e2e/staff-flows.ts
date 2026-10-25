@@ -90,10 +90,16 @@ export async function submitReport(
 }
 
 /** Status the form sends. */
-export async function reportStatus(su: Pool, code: string): Promise<string> {
+export async function reportStatus(
+  su: Pool,
+  host: string,
+  code: string,
+): Promise<string> {
+  // Codes repeat across campuses
   const { rows } = await su.query<{ status: string }>(
-    "SELECT status FROM reports WHERE public_code = $1",
-    [code],
+    `SELECT r.status FROM reports r JOIN organizations o ON o.id = r.org_id
+     WHERE o.host = $1 AND r.public_code = $2`,
+    [host, code],
   )
   const status = rows[0]?.status
   if (!status) throw new Error(`no report ${code}`)
@@ -110,7 +116,7 @@ export async function review(
   fields: Fields,
 ): Promise<Response> {
   return postForm(app, `http://${host}/kelola/laporan/${code}`, staff, {
-    from: await reportStatus(su, code),
+    from: await reportStatus(su, host, code),
     ...fields,
   })
 }
@@ -158,7 +164,7 @@ export const CHECKLIST = [
 ]
 
 /** Issue row the forms need. */
-export async function issueRow(su: Pool, code: string) {
+export async function issueRow(su: Pool, host: string, code: string) {
   const { rows } = await su.query<{
     id: string
     org_id: string
@@ -166,9 +172,10 @@ export async function issueRow(su: Pool, code: string) {
     advocacy_status: string
     gov_status: string
   }>(
-    `SELECT id, org_id, version, advocacy_status, gov_status
-     FROM issues WHERE public_code = $1`,
-    [code],
+    `SELECT i.id, i.org_id, i.version, i.advocacy_status, i.gov_status
+     FROM issues i JOIN organizations o ON o.id = i.org_id
+     WHERE o.host = $1 AND i.public_code = $2`,
+    [host, code],
   )
   const row = rows[0]
   if (!row) throw new Error(`no issue ${code}`)
@@ -183,7 +190,7 @@ export async function publishIssue(
   staff: string,
   code: string,
 ): Promise<Response> {
-  const { id } = await issueRow(su, code)
+  const { id } = await issueRow(su, host, code)
   return postForm(app, `http://${host}/kelola/isu/${code}`, staff, {
     intent: "publish",
     issueId: id,
@@ -200,7 +207,7 @@ export async function issueAction(
   code: string,
   fields: Fields,
 ): Promise<Response> {
-  const row = await issueRow(su, code)
+  const row = await issueRow(su, host, code)
   return postForm(app, `http://${host}/kelola/isu/${code}`, staff, {
     advocacy: row.advocacy_status,
     government: row.gov_status,

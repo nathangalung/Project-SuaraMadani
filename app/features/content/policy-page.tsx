@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
 import { useRouteLoaderData } from "react-router"
 import { PageHeader } from "~/components/layout/page-header"
+import { SECTION_TITLE } from "~/components/layout/section-heading"
 import { ButtonLink } from "~/components/ui/button"
 import { Container } from "~/components/ui/container"
 import { m } from "~/paraglide/messages.js"
@@ -82,12 +83,12 @@ export function PolicyPage({
         </p>
       </PageHeader>
       <Container className="grid gap-10 pt-10 pb-24 lg:grid-cols-[15rem_1fr] lg:gap-16">
-        <nav aria-labelledby="policy-on-page" className="lg:pt-6">
+        <nav aria-labelledby="policy-on-page" className="lg:pt-1.5">
           <div className="lg:sticky lg:top-28">
             <h2 id="policy-on-page" className="font-bold text-lg">
               {m.issue_on_this_page()}
             </h2>
-            <ol className="mt-3 flex flex-col gap-2 border-ink border-l-2 pl-4 font-ui">
+            <ol className="mt-3 flex flex-col gap-2 font-ui">
               {sections.map((section) => (
                 <li key={section.id}>
                   <a
@@ -101,22 +102,21 @@ export function PolicyPage({
             </ol>
           </div>
         </nav>
-        <div className="min-w-0 max-w-3xl space-y-12">
+        <div className="min-w-0 max-w-3xl space-y-16">
           {sections.map((section) => (
             <section
               key={section.id}
               id={section.id}
               aria-labelledby={`${section.id}-title`}
-              className="border-ink border-t-2 pt-6"
             >
-              <h2 id={`${section.id}-title`} className="font-bold text-2xl">
+              <h2 id={`${section.id}-title`} className={SECTION_TITLE}>
                 {section.title}
               </h2>
               {section.body}
             </section>
           ))}
           {/* One next step */}
-          <p className="border-line-subtle border-t pt-8">
+          <p>
             <ReportButton national={national} />
           </p>
         </div>

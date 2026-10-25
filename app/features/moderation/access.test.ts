@@ -180,7 +180,7 @@ describe("staff routes through the router", () => {
     for (const path of [
       "/kelola",
       "/KELOLA",
-      "/Kelola/laporan/ITB-26-X",
+      "/Kelola/laporan/LPR-2026-10-0001",
       "/%6Belola",
       "/%6belola/laporan/Y",
     ]) {

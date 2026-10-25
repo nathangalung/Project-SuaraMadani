@@ -8,7 +8,7 @@ import {
 } from "./og-image.server.ts"
 
 const card: OgCard = {
-  code: "ISU-ITB-26-0001",
+  code: "ISU-2026-10-0001",
   title: "Atap ruang kelas SDN 3 Coblong runtuh dan siswa belajar di halaman",
   place: "Kota Bandung",
   label: "Terverifikasi",

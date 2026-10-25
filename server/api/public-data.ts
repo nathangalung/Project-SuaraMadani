@@ -368,7 +368,7 @@ export function publicDataApi(options: ApiOptions): Hono<Env> {
         state: demand.state,
         publishedAt: demand.publishedAt,
         progress: demand.progress,
-        importance: demand.importance,
+        rank: demand.rank,
         briefs: demand.briefs,
         issueCount: demand.issueCount,
         url: `${originOf(c)}/tuntutan/${demand.code}`,
@@ -405,7 +405,8 @@ export function publicDataApi(options: ApiOptions): Hono<Env> {
         closedAt: page.closedAt,
         version: page.version,
         progress: page.progress,
-        importance: page.importance,
+        rank: page.rank,
+        ranking: page.ranking,
         items: page.items.map((item) => ({
           number: item.number,
           body: item.body,

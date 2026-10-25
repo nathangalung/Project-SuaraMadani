@@ -39,9 +39,9 @@ import { DATASET_IDS } from "./datasets.ts"
 // Tenant cache is per-process
 const ITB = "http://itbapi.localhost"
 const UGM = "http://ugmapi.localhost"
-const PUBLISHED = "ISU-ITBAPI-26-0001"
-const DRAFT = "ISU-ITBAPI-26-0002"
-const TAKEN = "ISU-ITBAPI-26-0003"
+const PUBLISHED = "ISU-2026-10-0001"
+const DRAFT = "ISU-2026-10-0002"
+const TAKEN = "ISU-2026-10-0003"
 const ADMIN_EMAIL = "admin.api@contoh.id"
 const LICENSE = "https://creativecommons.org/licenses/by/4.0/"
 
@@ -352,7 +352,7 @@ describe("issue JSON", () => {
       license: "CC-BY-4.0",
       licenseUrl: LICENSE,
       attribution:
-        "KM itbapi. Sadar Bersuara di itbapi. http://itbapi.localhost/isu/ISU-ITBAPI-26-0001. Data berlisensi CC BY 4.0.",
+        "KM itbapi. Sadar Bersuara di itbapi. http://itbapi.localhost/isu/ISU-2026-10-0001. Data berlisensi CC BY 4.0.",
       source: `http://itbapi.localhost/isu/${PUBLISHED}`,
     })
     expect(body.issue).toMatchObject({
@@ -443,7 +443,7 @@ describe("issue JSON", () => {
         orgId,
         year: 2026,
         number: 1,
-        publicCode: "ISU-MEDIAAPI-26-0001",
+        publicCode: "ISU-2026-10-0001",
         title: "Banjir di Coblong",
         summary: "Genangan setinggi lutut setelah hujan deras.",
         categoryId: "program",
@@ -491,7 +491,7 @@ describe("issue JSON", () => {
       )
     }
     const res = await get(
-      "http://mediaapi.localhost/api/v1/isu/ISU-MEDIAAPI-26-0001",
+      "http://mediaapi.localhost/api/v1/isu/ISU-2026-10-0001",
     )
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -535,7 +535,7 @@ describe("issue JSON", () => {
         orgId,
         year: 2026,
         number: i + 1,
-        publicCode: `ISU-HALAPI-26-${String(i + 1).padStart(4, "0")}`,
+        publicCode: `ISU-2026-10-${String(i + 1).padStart(4, "0")}`,
         title: `Isu halaman ${i + 1}`,
         summary: "Ringkasan isu untuk uji halaman berikutnya.",
         categoryId: "program",
@@ -560,7 +560,7 @@ describe("issue JSON", () => {
     const rest = await second.json()
     const codes = (body: { issues: { code: string }[] }) =>
       body.issues.map((issue) => issue.code)
-    expect(codes(rest)).toEqual(["ISU-HALAPI-26-0001"])
+    expect(codes(rest)).toEqual(["ISU-2026-10-0001"])
     expect(new Set([...codes(page), ...codes(rest)]).size).toBe(21)
     expect(rest.next).toBeNull()
   })
@@ -599,11 +599,9 @@ describe("tuntutan JSON", () => {
     expect(
       body.demand.items.map((item: { body: string }) => item.body),
     ).toEqual(["Standar waktu pemulihan", "Tangki air bantuan"])
-    expect(body.demand.importance).toEqual({
-      raters: 0,
-      counts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
-      mean: null,
-    })
+    expect(body.demand.rank).toEqual({ place: null, rankers: 0 })
+    expect(body.demand.ranking).toEqual({ rankers: 0, ranked: 0, shown: false })
+    expect(body.demand).not.toHaveProperty("importance")
     expect(body.demand.issues).toEqual([
       {
         code: PUBLISHED,

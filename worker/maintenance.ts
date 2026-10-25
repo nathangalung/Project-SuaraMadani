@@ -5,7 +5,12 @@ import { type Db, database } from "../db/client.server.ts"
 import { sendJobs } from "../db/jobs.server.ts"
 import { invitations, sessions, verifications } from "../db/schema/auth.ts"
 import { ratings } from "../db/schema/claims.ts"
-import { demandRatings, demands, policyBriefs } from "../db/schema/demands.ts"
+import {
+  demandRankings,
+  demandRatings,
+  demands,
+  policyBriefs,
+} from "../db/schema/demands.ts"
 import { resolutionClaims } from "../db/schema/issues.ts"
 import { emailLog, notifications } from "../db/schema/notifications.ts"
 import { organizations } from "../db/schema/organizations.ts"
@@ -270,22 +275,33 @@ export function createMaintenanceHandler(
               ),
             )
             .returning({ claimId: ratings.claimId })
-          // Same rule for tuntutan
+          // Same rule for rankings
           await tx.execute(sql`
             UPDATE ${demands} d
-            SET max_prefix_ratings = GREATEST(coalesce(d.max_prefix_ratings, 0), top.n)
+            SET max_prefix_rankings = GREATEST(coalesce(d.max_prefix_rankings, 0), top.n)
             FROM (
               SELECT demand_id, max(n)::int AS n FROM (
-                SELECT demand_id, count(*) AS n FROM ${demandRatings}
+                SELECT demand_id, count(*) AS n FROM ${demandRankings}
                 WHERE client_hash IS NOT NULL AND demand_id IN (
-                  SELECT demand_id FROM ${demandRatings}
+                  SELECT demand_id FROM ${demandRankings}
                   WHERE client_hash IS NOT NULL AND updated_at < ${cutoff}
                 )
                 GROUP BY demand_id, client_hash
               ) per_prefix GROUP BY demand_id
             ) top
             WHERE d.id = top.demand_id`)
-          const demandPrefixes = await tx
+          const rankingPrefixes = await tx
+            .update(demandRankings)
+            .set({ clientHash: null })
+            .where(
+              and(
+                sql`${demandRankings.clientHash} IS NOT NULL`,
+                lt(demandRankings.updatedAt, cutoff),
+              ),
+            )
+            .returning({ demandId: demandRankings.demandId })
+          // Legacy rows, hash only
+          const legacyPrefixes = await tx
             .update(demandRatings)
             .set({ clientHash: null })
             .where(
@@ -297,7 +313,8 @@ export function createMaintenanceHandler(
             .returning({ demandId: demandRatings.demandId })
           return {
             missing: missing.length,
-            prefixes: prefixes.length + demandPrefixes.length,
+            prefixes:
+              prefixes.length + rankingPrefixes.length + legacyPrefixes.length,
             rejected: rejected.map((r) => r.id),
             requeued: stuck.length,
             infected: infected.map((r) => r.id),

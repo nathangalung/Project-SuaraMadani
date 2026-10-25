@@ -33,7 +33,7 @@ const sizes: Record<Size, string> = {
   lg: "h-13 px-7 text-lg",
 }
 
-function buttonClass(
+export function buttonClass(
   variant: Variant = "primary",
   size: Size = "md",
   className?: string,

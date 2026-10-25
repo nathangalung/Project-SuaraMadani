@@ -39,7 +39,7 @@ let reporter = ""
 let moderator = ""
 let filesDir = ""
 
-const campusA = () => ({ id: orgA, campusCode: "ITB" })
+const campusA = () => ({ id: orgA })
 
 async function seedReport(
   status: ReportStatus = "in_review",
@@ -175,7 +175,7 @@ describe("forwardReport", () => {
       user_id: reporter,
       forwarded_from_org_id: orgA,
     })
-    expect(copy.public_code).toMatch(/^UGM-26-/)
+    expect(copy.public_code).toMatch(/^LPR-\d{4}-\d{2}-\d{4}$/)
     const { rows: original } = await su.query(
       "SELECT status, forwarded_to_org_id FROM reports WHERE id = $1",
       [seeded.id],
@@ -274,7 +274,7 @@ describe("forwardReport", () => {
     const seeded = await seedReport()
     const result = await forwardReport({
       ...input(seeded.id, orgA),
-      source: { id: orgB, campusCode: "UGM" },
+      source: { id: orgB },
     })
     expect(result).toEqual({ ok: false, reason: "not_found" })
     expect(await copiesOf(seeded.id)).toEqual([])

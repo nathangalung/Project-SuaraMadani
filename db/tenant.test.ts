@@ -84,6 +84,7 @@ const TENANT_TABLES = [
   "demand_issues",
   "demand_follows",
   "demand_ratings",
+  "demand_rankings",
   "policy_briefs",
 ]
 
@@ -461,8 +462,8 @@ describe("concurrency", () => {
         return rows
       })
     const [first, second] = await Promise.all([
-      submit("T-26-AAAA1"),
-      submit("T-26-AAAA2"),
+      submit("LPR-2026-10-0001"),
+      submit("LPR-2026-10-0002"),
     ])
     expect((first?.length ?? 0) + (second?.length ?? 0)).toBe(1)
     const [stored] = await withTenant(orgA, (tx) =>
@@ -477,7 +478,12 @@ describe("concurrency", () => {
   test("concurrent merges get distinct issue numbers", async () => {
     const allocate = () =>
       withTenant(orgA, async (tx) => {
-        const n = await nextCounter(tx, orgA, 2026, "issue")
+        const n = await nextCounter(
+          tx,
+          orgA,
+          { year: 2026, month: 10 },
+          "issue",
+        )
         await Bun.sleep(100)
         return n
       })
@@ -487,24 +493,35 @@ describe("concurrency", () => {
 
   test("a rolled-back allocation returns its number", async () => {
     const failed = withTenant(orgB, async (tx) => {
-      await nextCounter(tx, orgB, 2026, "issue")
+      await nextCounter(tx, orgB, { year: 2026, month: 10 }, "issue")
       throw new Error("merge failed")
     })
     await expect(failed).rejects.toThrow("merge failed")
     const n = await withTenant(orgB, (tx) =>
-      nextCounter(tx, orgB, 2026, "issue"),
+      nextCounter(tx, orgB, { year: 2026, month: 10 }, "issue"),
     )
     expect(n).toBe(1)
+  })
+
+  test("each month and kind counts from 1", async () => {
+    const next = (month: number, kind: "issue" | "report") =>
+      withTenant(orgA, (tx) =>
+        nextCounter(tx, orgA, { year: 2027, month }, kind),
+      )
+    expect(await next(1, "report")).toBe(1)
+    expect(await next(1, "report")).toBe(2)
+    expect(await next(2, "report")).toBe(1)
+    expect(await next(1, "issue")).toBe(1)
   })
 })
 
 describe("withTenant retries", () => {
   test("reruns the transaction on a report code collision", async () => {
     let attempts = 0
-    const codes = ["T-26-DUP01", "T-26-NEW01"]
-    await insertReportWithCode("T-26-DUP01")
+    const codes = ["LPR-2026-10-0011", "LPR-2026-10-0012"]
+    await insertReportWithCode("LPR-2026-10-0011")
     await withTenant(orgA, async (tx) => {
-      const publicCode = codes[attempts++] ?? "T-26-NEW02"
+      const publicCode = codes[attempts++] ?? "LPR-2026-10-0013"
       await tx.insert(reports).values(reportValues(orgA, userA, { publicCode }))
     })
     expect(attempts).toBe(2)
@@ -512,12 +529,12 @@ describe("withTenant retries", () => {
 
   test("gives up after three collisions", async () => {
     let attempts = 0
-    await insertReportWithCode("T-26-DUP02")
+    await insertReportWithCode("LPR-2026-10-0021")
     const run = withTenant(orgA, async (tx) => {
       attempts++
       await tx
         .insert(reports)
-        .values(reportValues(orgA, userA, { publicCode: "T-26-DUP02" }))
+        .values(reportValues(orgA, userA, { publicCode: "LPR-2026-10-0021" }))
     })
     expect(sqlState(await run.catch((e) => e))).toBe("23505")
     expect(attempts).toBe(3)
@@ -529,7 +546,9 @@ describe("withTenant retries", () => {
     await withTenant(orgA, (tx) => tx.insert(reports).values(values))
     const run = withTenant(orgA, async (tx) => {
       attempts++
-      await tx.insert(reports).values({ ...values, publicCode: "T-26-OTHER" })
+      await tx
+        .insert(reports)
+        .values({ ...values, publicCode: "LPR-2026-10-0031" })
     })
     expect(sqlState(await run.catch((e) => e))).toBe("23505")
     expect(attempts).toBe(1)

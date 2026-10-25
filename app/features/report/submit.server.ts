@@ -22,12 +22,12 @@ import {
   REPORT_ERROR_KEYS,
   type ReportErrorKey,
 } from "../../../shared/report-fields.ts"
-import { generateReportCode } from "../../../shared/report-id.ts"
 import {
   createReportSchema,
   type Report,
 } from "../../../shared/report-schema.ts"
 import type { SessionContext, TenantContext } from "../../context.ts"
+import { nextReportCode } from "./report-code.server.ts"
 
 export type SubmitDeps = {
   now: () => Date
@@ -189,8 +189,7 @@ async function insertReport(
     .values({
       orgId: tenant.id,
       userId,
-      // New code on every retry
-      publicCode: generateReportCode(tenant.campusCode, now),
+      publicCode: await nextReportCode(tx, tenant.id, now),
       submissionId: report.submissionId,
       relation: relation.relation,
       otherConsent:
@@ -199,6 +198,7 @@ async function insertReport(
       regencyCode: location.regencyCode,
       districtCode: location.districtCode,
       villageCode: location.villageCode ?? null,
+      point: location.point ?? null,
       title: details.title,
       story: details.story,
       categoryId: details.categoryId,

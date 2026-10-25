@@ -293,7 +293,7 @@ describe("upload byte cap", () => {
       await client.query("BEGIN")
       await client.query(
         `INSERT INTO reports SELECT (jsonb_populate_record(r, jsonb_build_object(
-           'id', uuidv7(), 'public_code', 'T-26-' || g, 'submission_id', gen_random_uuid()))).*
+           'id', uuidv7(), 'public_code', 'LPR-2026-10-' || lpad(g::text, 6, '0'), 'submission_id', gen_random_uuid()))).*
          FROM reports r, generate_series(1, 400) g WHERE r.id = $1`,
         [report?.id],
       )

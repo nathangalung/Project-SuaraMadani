@@ -3,6 +3,7 @@ import { Button } from "~/components/ui/button"
 import { errorTitle } from "~/components/ui/error-summary"
 import { Note } from "~/components/ui/note"
 import { requireAdmin } from "~/features/moderation/access.server"
+import { AccountSection } from "~/features/moderation/account-section"
 import { ActionPanel } from "~/features/moderation/action-panel"
 import type { ReporterContact } from "~/features/moderation/contact.server"
 import {
@@ -78,7 +79,7 @@ function ContactSection({
       <h2 id="report-contact" className={H2}>
         {m.manage_contact_title()}
       </h2>
-      <p className="mt-1 mb-4 font-ui text-[0.95rem] text-ink-soft">
+      <p className="mt-1 mb-4 text-[0.95rem] text-ink-soft">
         {m.manage_contact_lead()}
       </p>
       {contact === undefined ? (
@@ -142,6 +143,13 @@ export default function ManageReport({
         </h2>
         <ReportDetails report={report} />
       </section>
+
+      <AccountSection
+        code={report.code}
+        account={
+          actionData && "account" in actionData ? actionData.account : undefined
+        }
+      />
 
       {report.contactable ? (
         <ContactSection
@@ -259,22 +267,6 @@ export default function ManageReport({
           ) : null}
         </div>
         {!decided ? <p>{m.manage_no_action()}</p> : null}
-      </section>
-
-      <section
-        aria-labelledby="report-account"
-        className="mt-12 border-line-subtle border-t pt-6"
-      >
-        <h2 id="report-account" className="font-bold text-xl">
-          {m.manage_account_title()}
-        </h2>
-        <p className="mt-1 text-ink-muted">{m.manage_account_body()}</p>
-        <Link
-          to={`/kelola/laporan/${report.code}/tutup-akun`}
-          className="mt-3 inline-block font-semibold text-danger underline underline-offset-4"
-        >
-          {m.manage_account_close_link()}
-        </Link>
       </section>
     </div>
   )

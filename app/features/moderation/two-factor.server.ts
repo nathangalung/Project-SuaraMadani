@@ -9,6 +9,7 @@ import {
   memberRole,
   STAFF_ROLES,
   staffAccess,
+  staffTotpRequired,
   superadminAccess,
 } from "../../../server/auth.server.ts"
 import {
@@ -46,18 +47,21 @@ export function twoFactorView(input: {
   superadmin?: boolean
   hasChallenge: boolean
   now: Date
+  // Dev switch, see staffTotpRequired
+  totp?: boolean
 }): TwoFactorView {
-  const { session, role, now } = input
+  const { session, role, now, totp = true } = input
   const superadmin = input.superadmin === true
   if (!session) return { mode: input.hasChallenge ? "challenge" : "sign_in" }
   if (!isStaff(role) && !superadmin) return { mode: "not_staff" }
-  if (!session.user.twoFactorEnabled) {
+  if (totp && !session.user.twoFactorEnabled) {
     return { mode: "enroll", email: session.user.email }
   }
   const access = {
     user: session.user,
     session: session.session,
     now,
+    totp,
   }
   return staffAccess({ role, ...access }) ||
     superadminAccess({ superadmin, ...access })
@@ -111,6 +115,7 @@ async function viewFor({ request, context }: Args): Promise<ViewFor> {
     superadmin: session ? await isSuperadmin(session.user.id) : false,
     hasChallenge: hasChallengeCookie(request.headers.get("cookie")),
     now: new Date(),
+    totp: staffTotpRequired(),
   })
   return { view, home: staffHome(role) }
 }

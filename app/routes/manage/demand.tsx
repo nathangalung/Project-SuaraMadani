@@ -18,7 +18,6 @@ import {
   panelOf,
   StateForms,
 } from "~/features/demands/editor-forms"
-import { formatImportance } from "~/features/demands/importance-line"
 import { demandPlace, STATE_TEXT } from "~/features/demands/labels"
 import {
   demandProgress,
@@ -33,9 +32,9 @@ import { useSiteTitle } from "~/features/report/page-title"
 import { regencyGroups } from "~/features/report/regions.server"
 import { m } from "~/paraglide/messages.js"
 import {
-  IMPORTANCE_ACCOUNT_DAYS,
-  IMPORTANCE_MIN_RATERS,
   normalizeDemandCode,
+  RANKING_ACCOUNT_DAYS,
+  RANKING_MIN_RANKERS,
 } from "../../../shared/demands.ts"
 import { formatDate, jakartaIsoDate } from "../../../shared/format.ts"
 import { neutralFindings } from "../../../shared/neutral-language.ts"
@@ -218,7 +217,7 @@ export default function ManageDemand({
           <Badge tone="subtle">{CATEGORY_TEXT[demand.category]()}</Badge>
         ) : null}
         {demand.publishedAt ? (
-          <span className="font-ui text-ink-muted text-sm">
+          <span className="text-ink-muted text-sm">
             {m.demand_published_on({ date: formatDate(demand.publishedAt) })}
           </span>
         ) : null}
@@ -226,7 +225,7 @@ export default function ManageDemand({
       <h2 className="mt-6 font-bold text-2xl">{demand.title}</h2>
       <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1">
         <FulfilmentMark status={progress.status} />
-        <span className="font-ui text-sm">
+        <span className="text-sm">
           {m.demand_progress_line({
             done: progress.fulfilled,
             total: progress.total,
@@ -234,20 +233,21 @@ export default function ManageDemand({
         </span>
       </p>
       {demand.state !== "draft" ? (
-        <p className="mt-2 font-ui text-ink-soft text-sm">
-          {demand.importance.mean === null
-            ? m.demand_importance_admin_few({
-                raters: demand.importance.raters,
-                min: IMPORTANCE_MIN_RATERS,
+        <p className="mt-2 text-ink-soft text-sm">
+          {!demand.ranking.shown
+            ? m.demand_rank_admin_few({
+                total: demand.ranking.rankers,
+                min: RANKING_MIN_RANKERS,
               })
-            : m.demand_importance_admin({
-                mean: formatImportance(demand.importance.mean),
-                raters: demand.importance.raters,
+            : m.demand_rank_admin({
+                place: demand.rank.place ?? "–",
+                rankers: demand.rank.rankers,
+                total: demand.ranking.rankers,
               })}{" "}
-          {demand.pendingRaters > 0
-            ? m.demand_importance_admin_pending({
-                count: demand.pendingRaters,
-                days: IMPORTANCE_ACCOUNT_DAYS,
+          {demand.pendingRankers > 0
+            ? m.demand_rank_admin_pending({
+                count: demand.pendingRankers,
+                days: RANKING_ACCOUNT_DAYS,
               })
             : null}
         </p>
@@ -291,7 +291,7 @@ export default function ManageDemand({
         <h2 id="demand-items" className={H2}>
           {m.demand_items_title()}
         </h2>
-        <p className="mt-1 mb-5 font-ui text-[0.95rem] text-ink-soft">
+        <p className="mt-1 mb-5 text-[0.95rem] text-ink-soft">
           {m.demand_items_admin_lead()}
         </p>
         {demand.items.length > 0 ? (
@@ -360,7 +360,7 @@ export default function ManageDemand({
         <h2 id="demand-issues" className={H2}>
           {m.demand_issues_title()}
         </h2>
-        <p className="mt-1 mb-5 font-ui text-[0.95rem] text-ink-soft">
+        <p className="mt-1 mb-5 text-[0.95rem] text-ink-soft">
           {m.demand_issues_admin_lead()}
         </p>
         <IssueLinks

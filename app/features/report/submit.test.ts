@@ -196,7 +196,7 @@ describe("submit", () => {
     const result = await submit(body())
     expect(result.status).toBe(201)
     if (!("code" in result.body)) throw new Error("no code")
-    expect(result.body.code).toMatch(/^ITB-26-[0-9A-HJKMNP-TV-Z]{5}$/)
+    expect(result.body.code).toBe("LPR-2026-10-0001")
     expect(result.body.evidence.map((e) => e.position)).toEqual([0, 1])
     expect(await count("reports")).toBe(1)
     expect(await count("report_contacts")).toBe(1)
@@ -414,6 +414,24 @@ describe("refusals", () => {
     })
     expect(result.status).toBe(403)
     expect(await count("reports")).toBe(0)
+  })
+
+  test("the device point is stored, and only when sent", async () => {
+    const location = {
+      provinceCode: "32",
+      regencyCode: "32.73",
+      districtCode: "32.73.02",
+    }
+    const withPoint = await submit(
+      body({ location: { ...location, point: { lat: -6.89, lng: 107.61 } } }),
+    )
+    const without = await submit(body({ location }))
+    expect([withPoint.status, without.status]).toEqual([201, 201])
+    const { rows } = await su.query<{ point: string | null }>(
+      "SELECT ST_AsText(point) AS point FROM reports WHERE org_id = $1 ORDER BY created_at",
+      [orgA],
+    )
+    expect(rows.map((r) => r.point)).toEqual(["POINT(107.61 -6.89)", null])
   })
 
   test("a region code that does not exist is a field error", async () => {

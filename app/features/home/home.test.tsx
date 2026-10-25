@@ -14,7 +14,7 @@ function render(node: ReactNode): string {
 }
 
 const issue = {
-  code: "ISU-ITB-26-0001",
+  code: "ISU-2026-10-0001",
   title: "Jalan berlubang di Dago",
   regencyName: "Kota Bandung",
   districtName: "Coblong",
@@ -61,11 +61,12 @@ describe("Hero", () => {
     expect(html).toMatch(/<h1[^>]*class="[^"]*focus-visible:outline-focus/)
   })
 
-  test("heading reads as two sentences, CTAs in PLAN order", () => {
+  test("heading is two lines, CTAs in PLAN order", () => {
     const html = render(<Hero graphic={false} />)
     const h1 = html.match(/<h1[^>]*>(.*?)<\/h1>/)?.[1] ?? ""
+    // Periods dropped 21 Oct
     expect(h1.replace(/<[^>]+>/g, "")).toBe(
-      "Laporkan Masalah Publik. Pantau Tanggapannya Bersama.",
+      "Laporkan Masalah Publik Pantau Tanggapannya Bersama",
     )
     const order = ['name="q"', 'href="/lapor"', 'href="/masuk?daftar=1"']
     const positions = order.map((needle) => html.indexOf(needle))
@@ -113,7 +114,7 @@ describe("IssueShowcase", () => {
   test("card link is named by the title, chip shows status", () => {
     const html = render(<IssueShowcase {...showcase} issues={[issue]} />)
     expect(html).toMatch(
-      /<a class="[^"]*after:inset-0[^"]*" href="\/isu\/ISU-ITB-26-0001"[^>]*>Jalan berlubang di Dago<\/a>/,
+      /<a class="[^"]*after:inset-0[^"]*" href="\/isu\/ISU-2026-10-0001"[^>]*>Jalan berlubang di Dago<\/a>/,
     )
     expect(html).toContain(">Ditanggapi<")
     expect(html).toContain("bg-surface text-ink")
@@ -163,11 +164,7 @@ const demand: DigestDemand = toDigest({
     rejected: 0,
     open: 2,
   },
-  importance: {
-    raters: 12,
-    counts: { 1: 0, 2: 0, 3: 2, 4: 4, 5: 6 },
-    mean: 4.3,
-  },
+  rank: { place: 1, rankers: 12 },
   marks: ["not_fulfilled", "not_fulfilled"],
   subs: ["Kuota per kampus diumumkan", "Kriteria penerima dibuka"],
   briefs: 0,
@@ -188,8 +185,8 @@ describe("DemandStrip", () => {
     expect(html).toContain("text-on-accent")
     expect(html).toContain("Tuntutan Nasional · Pendidikan")
     expect(html).toContain("0 dari 2 subtuntutan dipenuhi")
-    // Score only for citizen row
-    expect(html).not.toContain("4,3")
+    // Place only for citizen row
+    expect(html).not.toContain("Peringkat 1")
     expect(html).not.toContain("Paling Penting Menurut Warga")
   })
 
@@ -220,7 +217,7 @@ describe("DemandStrip", () => {
     const latest = html.indexOf(">Terbaru<")
     expect(important).toBeGreaterThan(0)
     expect(latest).toBeGreaterThan(important)
-    expect(html).toContain("Kepentingan menurut warga 4,3 dari 5 · 12 penilai")
+    expect(html).toContain("Peringkat 1 menurut warga · dipilih 12 warga")
     // Row headings own the h3
     expect(html.match(/<h3 /g)).toHaveLength(2)
     expect(html.match(/<h4 /g)).toHaveLength(2)

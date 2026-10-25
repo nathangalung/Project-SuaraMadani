@@ -87,7 +87,7 @@ function regionHref(map: MapView, code: string): string {
 }
 
 const SEGMENT =
-  "flex items-center gap-1.5 whitespace-nowrap px-4 py-3 font-ui text-sm transition-colors"
+  "flex items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm transition-colors"
 
 const LAYERS = [
   { id: "laporan", label: m.data_layer_reports },
@@ -105,11 +105,11 @@ function LayerSwitch({ map }: { map: MapView }) {
       >
         {m.data_layer_label()}
       </p>
-      <ul className="flex w-fit border border-ink/12 bg-surface-raised">
+      <ul className="flex w-fit gap-1 rounded-full bg-surface-raised p-1">
         {LAYERS.map(({ id, label }) => {
           const active = map.layer === id
           return (
-            <li key={id} className="border-ink/10 border-r last:border-0">
+            <li key={id}>
               <SectionLink
                 section={MAP_SECTION}
                 // Report filters stay behind
@@ -163,15 +163,12 @@ function MapFilters({ map }: { map: ReportMap }) {
         </p>
         <ul
           aria-labelledby="peta-kategori"
-          className="flex overflow-x-auto border border-ink/12 bg-surface-raised"
+          className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-full bg-surface-raised p-1"
         >
           {chips.map((chip) => {
             const active = (chip.id ?? "all") === map.category
             return (
-              <li
-                key={chip.id ?? "all"}
-                className="border-ink/10 border-r last:border-0"
-              >
+              <li key={chip.id ?? "all"}>
                 <SectionLink
                   section={MAP_SECTION}
                   to={dataHref({ ...params, kategori: chip.id })}
@@ -357,7 +354,7 @@ function Legend({ map }: { map: MapView }) {
     ids.push("none")
   }
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-line-subtle border-t px-4 py-3 font-ui text-xs sm:px-5">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-line-subtle border-t px-4 py-3 text-xs sm:px-5">
       <span className="font-semibold">{layer.legend}</span>
       <ul className="flex flex-wrap gap-x-3 gap-y-1.5">
         {ids.map((id) => (
@@ -408,10 +405,7 @@ function ProvinceName({ map, region }: { map: MapView; region: Cell }) {
 function DemandTable({ map }: { map: DemandMap }) {
   return (
     <div className="p-4 sm:p-5">
-      <Table
-        caption={m.data_demand_province_caption()}
-        className="font-ui text-sm"
-      >
+      <Table caption={m.data_demand_province_caption()} className=" text-sm">
         <thead>
           <tr>
             <Th>{m.data_col_province()}</Th>
@@ -446,7 +440,7 @@ function DemandTable({ map }: { map: DemandMap }) {
 function ProvinceTable({ map }: { map: ReportMap }) {
   return (
     <div className="p-4 sm:p-5">
-      <Table caption={m.data_province_caption()} className="font-ui text-sm">
+      <Table caption={m.data_province_caption()} className=" text-sm">
         <thead>
           <tr>
             <Th>{m.data_col_province()}</Th>
@@ -530,9 +524,7 @@ function TopProvinces({ map }: { map: ReportMap }) {
         <h3 id="provinsi-teratas" className="font-bold text-xl">
           {m.data_top_title()}
         </h3>
-        <p className="font-ui text-ink-soft text-sm">
-          {m.data_top_lead({ filter })}
-        </p>
+        <p className=" text-ink-soft text-sm">{m.data_top_lead({ filter })}</p>
       </div>
       {top.length === 0 ? (
         <p className="text-sm">{m.data_top_none({ min: MIN_PUBLIC_N })}</p>
@@ -542,11 +534,11 @@ function TopProvinces({ map }: { map: ReportMap }) {
             <li key={region.code}>
               <Link
                 to={regionHref(map, region.code)}
-                className="block px-2 py-2 transition-colors hover:bg-surface-raised"
+                className="block rounded-xl px-2 py-2 transition-colors hover:bg-surface-raised"
               >
                 <span className="flex items-baseline justify-between gap-2 text-sm">
                   <span className="flex items-center gap-2">
-                    <span className="grid size-6 place-items-center bg-brand font-semibold font-ui text-on-accent text-xs tabular-nums">
+                    <span className="grid size-6 place-items-center rounded-full bg-brand font-semibold text-on-accent text-xs tabular-nums">
                       {i + 1}
                     </span>
                     {region.name}
@@ -555,7 +547,7 @@ function TopProvinces({ map }: { map: ReportMap }) {
                     {countText(region.count)}
                   </span>
                 </span>
-                <span className="mt-1.5 block h-2 bg-ink/8">
+                <span className="mt-1.5 block h-2 overflow-hidden rounded-full bg-ink/8">
                   <span
                     className="block h-full bg-brand"
                     style={{ width: barWidth(region.count, max ?? 0) }}
@@ -567,7 +559,7 @@ function TopProvinces({ map }: { map: ReportMap }) {
         </ol>
       )}
       <RegionSearch map={map} />
-      <div className="mt-auto flex flex-col gap-2 font-ui text-ink-soft text-xs leading-relaxed">
+      <div className="mt-auto flex flex-col gap-2 text-ink-soft text-xs leading-relaxed">
         <p>{m.data_map_note()}</p>
         <p>{m.data_coverage()}</p>
       </div>
@@ -575,7 +567,8 @@ function TopProvinces({ map }: { map: ReportMap }) {
   )
 }
 
-const ASIDE = "focus-light flex flex-col gap-4 bg-brand-soft p-5 text-ink"
+const ASIDE =
+  "focus-light flex flex-col gap-4 rounded-2xl bg-brand-soft p-5 text-ink"
 
 // Beside the map
 function NationalDemands({ map }: { map: DemandMap }) {
@@ -614,7 +607,7 @@ function NationalDemands({ map }: { map: DemandMap }) {
         <h3 id="tuntutan-nasional" className="font-bold text-xl">
           {m.data_national_title()}
         </h3>
-        <p className="font-ui text-ink-soft text-sm">
+        <p className=" text-ink-soft text-sm">
           {m.data_national_lead({ n: formatNumber(map.nationalTotal) })}
         </p>
       </div>
@@ -661,9 +654,9 @@ export function MapExplorer({ map }: { map: MapView }) {
       <LayerSwitch map={map} />
       {map.layer === "laporan" && <MapFilters map={map} />}
       <div className="grid gap-6 lg:grid-cols-[1fr_300px] lg:items-start">
-        <div className="focus-light min-w-0 border border-ink/12 bg-surface-raised text-ink">
+        <div className="focus-light min-w-0 overflow-hidden rounded-2xl border border-ink/12 bg-surface-raised text-ink">
           <div className="flex flex-wrap items-center justify-between gap-3 border-ink border-b-2 px-4 py-3 sm:px-5">
-            <p className="flex items-center gap-2 font-ui text-sm">
+            <p className="flex items-center gap-2 text-sm">
               <span
                 aria-hidden="true"
                 className="size-3 rounded-full"
@@ -675,7 +668,7 @@ export function MapExplorer({ map }: { map: MapView }) {
             </p>
             <nav
               aria-label={m.data_view_label()}
-              className="flex border-2 border-ink font-ui text-sm"
+              className="flex gap-1 rounded-full border-2 border-ink p-0.5 text-sm"
             >
               {VIEWS.map(({ id, label, Icon }) => (
                 <SectionLink
@@ -684,7 +677,7 @@ export function MapExplorer({ map }: { map: MapView }) {
                   to={dataHref({ ...params, tampilan: id })}
                   aria-current={map.view === id ? "true" : undefined}
                   className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5",
+                    "flex items-center gap-1.5 rounded-full px-3 py-1",
                     map.view === id
                       ? "bg-ink font-semibold text-surface-raised"
                       : "text-ink hover:bg-surface",
@@ -705,7 +698,7 @@ export function MapExplorer({ map }: { map: MapView }) {
                 {m.data_map_skip()}
               </a>
               {/* Map wider than phones */}
-              <p className="px-4 pt-3 font-ui text-ink-muted text-xs md:hidden">
+              <p className="px-4 pt-3 text-ink-muted text-xs md:hidden">
                 {m.data_map_scroll()}
               </p>
               <div className="scroll-shadow-x overflow-x-auto p-2 sm:p-4">
@@ -713,7 +706,7 @@ export function MapExplorer({ map }: { map: MapView }) {
               </div>
               <Legend map={map} />
               {map.layer === "tuntutan" && (
-                <p className="px-4 pb-3 font-ui text-ink-soft text-xs leading-relaxed sm:px-5">
+                <p className="px-4 pb-3 text-ink-soft text-xs leading-relaxed sm:px-5">
                   {m.data_demand_map_note()}
                 </p>
               )}
@@ -725,7 +718,7 @@ export function MapExplorer({ map }: { map: MapView }) {
           )}
           <p
             id="peta-sumber"
-            className="border-line-subtle border-t px-4 py-2.5 font-ui text-ink-muted text-xs sm:px-5"
+            className="border-line-subtle border-t px-4 py-2.5 text-ink-muted text-xs sm:px-5"
           >
             {m.data_attr_boundary()}{" "}
             <a

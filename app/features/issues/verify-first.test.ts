@@ -91,7 +91,6 @@ beforeAll(async () => {
       summary: "Atap ruang kelas runtuh dan siswa belajar di halaman.",
     },
     actorId: admin,
-    campusCode: "VFA",
     now: NOW,
   })
   if (!merged.ok) throw new Error(merged.reason)
@@ -119,7 +118,6 @@ describe("verify first", () => {
         summary: "Laporan yang belum diperiksa admin.",
       },
       actorId: admin,
-      campusCode: "VFA",
       now: NOW,
     })
     expect(result.ok).toBe(false)
@@ -138,9 +136,9 @@ describe("verify first", () => {
   })
 
   test("detail and OG reads exist only for published issues", async () => {
-    expect(await getIssuePage(orgId, "ISU-VFA-26-0002")).toBeNull()
-    expect(await getPublishedIssue(orgId, "ISU-VFA-26-0002")).toBeNull()
-    const page = await getIssuePage(orgId, "ISU-VFA-26-0001")
+    expect(await getIssuePage(orgId, "ISU-2026-10-0002")).toBeNull()
+    expect(await getPublishedIssue(orgId, "ISU-2026-10-0002")).toBeNull()
+    const page = await getIssuePage(orgId, "ISU-2026-10-0001")
     expect(JSON.stringify(page)).not.toContain(SECRET)
   })
 

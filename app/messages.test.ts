@@ -130,11 +130,7 @@ describe("messages/id.json", () => {
       `${root}messages/id.json`,
     ).json()
     // DESIGN.md One Name per Thing
-    for (const key of [
-      "issue_government_label",
-      "issue_gov_status_title",
-      "data_status_lead",
-    ]) {
+    for (const key of ["issue_government_label", "data_status_lead"]) {
       expect(messages[key]?.toLowerCase()).toContain("tanggapan pemerintah")
     }
     expect(messages.issue_response_title).toContain("Instansi")
@@ -208,7 +204,7 @@ describe("messages/id.json", () => {
     const messages: Record<string, string> = await Bun.file(
       `${root}messages/id.json`,
     ).json()
-    // Issue list is Jelajahi Isu
+    // Issue list is Jelajah
     const loose = Object.entries(messages)
       .filter(([, text]) => /halaman Isu\b|\bjob\b/.test(text))
       .map(([key]) => key)

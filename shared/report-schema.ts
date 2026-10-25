@@ -18,6 +18,7 @@ import {
   CONTACT_METHODS,
   EVIDENCE_LIMITS,
   evidenceKind,
+  INDONESIA_BOUNDS,
   MAX_EVIDENCE_FILES,
   OCCURRED_ON_MIN_YEAR,
   ONGOING,
@@ -62,16 +63,16 @@ function isCode(value: unknown, format: RegExp): value is string {
 }
 
 // Rough Indonesia bounding box.
-const pointSchema = z.object(
+export const pointSchema = z.object(
   {
     lat: z
       .number(e("error_point_outside"))
-      .min(-11.5, e("error_point_outside"))
-      .max(6.5, e("error_point_outside")),
+      .min(INDONESIA_BOUNDS.south, e("error_point_outside"))
+      .max(INDONESIA_BOUNDS.north, e("error_point_outside")),
     lng: z
       .number(e("error_point_outside"))
-      .min(94, e("error_point_outside"))
-      .max(141.5, e("error_point_outside")),
+      .min(INDONESIA_BOUNDS.west, e("error_point_outside"))
+      .max(INDONESIA_BOUNDS.east, e("error_point_outside")),
   },
   e("error_point_outside"),
 )

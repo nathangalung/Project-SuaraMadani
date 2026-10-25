@@ -95,6 +95,20 @@
     ],
     "ignoreDependencies": [
       "lefthook"
-    ]
+    ],
+    "ignoreIssues": {
+      "app/components/ui/error-summary.tsx": [
+        "exports"
+      ],
+      "app/features/issues/issue-card.tsx": [
+        "exports"
+      ],
+      "app/features/issues/issue-status.tsx": [
+        "exports"
+      ],
+      "app/features/report/steps/location.tsx": [
+        "exports"
+      ]
+    }
   }
 }

@@ -67,6 +67,8 @@ export const issues = pgTable(
       .notNull()
       .references(() => organizations.id),
     year: smallint("year").notNull(),
+    // 0: before monthly codes
+    month: smallint("month").notNull().default(0),
     number: integer("number").notNull(),
     publicCode: text("public_code").notNull(),
     title: text("title").notNull(),
@@ -115,7 +117,7 @@ export const issues = pgTable(
   (t) => [
     unique("issues_org_id_id_key").on(t.orgId, t.id),
     unique("issues_org_id_public_code_key").on(t.orgId, t.publicCode),
-    unique("issues_number_key").on(t.orgId, t.year, t.number),
+    unique("issues_number_key").on(t.orgId, t.year, t.month, t.number),
     // One per sort, keyset id
     index("issues_published_idx")
       .on(t.orgId, desc(t.publishedAt), desc(t.id))

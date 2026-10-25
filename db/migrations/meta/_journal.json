@@ -246,6 +246,27 @@
       "when": 1792581019488,
       "tag": "0034_replies_decided",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792612555122,
+      "tag": "0035_monthly_codes_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792614172660,
+      "tag": "0036_tuntutan_rankings",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792943187253,
+      "tag": "0037_ranking_prefix",
+      "breakpoints": true
     }
   ]
 }

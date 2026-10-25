@@ -5,7 +5,8 @@ Multi-tenant civic reporting platform for student organisations. PLAN.md is the 
 ## Ownership
 
 - The backend is ours: server/, worker/, db/, shared/, infra/, .github/, e2e/, docs/, app/**/*.server.ts and the .ts resource routes under app/routes/.
-- The frontend belongs to a teammate: app/**/*.tsx, app/components/, app/root.tsx, app/routes.ts, DESIGN.md, public/. Do not edit them. List what they need instead.
+- The frontend belongs to a teammate: app/**/*.tsx, app/components/, app/root.tsx, app/routes.ts, DESIGN.md, public/. Never change its UI or UX (layout, styles, copy, flows, components). The one exception is integration: replacing placeholder or dummy data, hardcoded mocks and stub handlers with real loaders, actions and server data, keeping the markup and behaviour the teammate built.
+- The backend follows the frontend's features. When they disagree, change the backend to match what the UI does, built properly (RLS, audit, rate limits, tests first), never the UI to match the backend.
 - messages/id.json: only `mail_` and `api_` keys.
 - Git is read-only for agents. Never run git add, commit, push, stash or worktree. The user commits.
 - Port 5173 is the user's dev server. Agents use 5198 and 5199 only and stop every server they start.

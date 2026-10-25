@@ -34,7 +34,7 @@ export function Badge({
     <span
       className={cn(
         // Wrapped lines stay apart
-        "inline-flex items-center gap-1.5 px-2.5 py-0.5 font-bold font-ui text-[0.8rem] leading-tight",
+        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 font-semibold text-sm leading-tight",
         tones[tone],
         className,
       )}

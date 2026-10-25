@@ -17,7 +17,12 @@ import { purgeIssuePages, runPublish } from "../issues/publish.server.ts"
 import { forwardReport } from "../report/forward.server.ts"
 import { requireAdmin } from "./access.server.ts"
 import { closeAccount } from "./close-account.server.ts"
-import { type ReporterContact, revealContact } from "./contact.server.ts"
+import {
+  type ReporterAccount,
+  type ReporterContact,
+  revealAccount,
+  revealContact,
+} from "./contact.server.ts"
 import {
   type CloseErrorKey,
   ISSUE_SUMMARY_LENGTH,
@@ -44,6 +49,7 @@ import { type ReviewDecision, reviewReport } from "./verify.server.ts"
 export type ReviewActionData =
   | { conflict: true }
   | { contact: ReporterContact | null }
+  | { account: ReporterAccount | null }
   | { errors: ReviewErrorKey[]; intent: string }
 
 export type IssueActionData =
@@ -153,6 +159,17 @@ export async function reportPageAction({ request, context, params }: Args) {
   const report = await getReviewReport(tenant.id, role, params.code ?? "")
   if (!report) throw data(null, { status: 404 })
   const form = await request.formData()
+  if (text(form, "intent") === "show_account") {
+    const account = await revealAccount(tenant.id, role, {
+      reportId: report.id,
+      actorId: session.user.id,
+    })
+    // Email and number, never cached
+    return data<ReviewActionData>(
+      { account },
+      { headers: { "Cache-Control": "private, no-store" } },
+    )
+  }
   if (text(form, "intent") === "show_contact") {
     const contact = await revealContact(tenant.id, role, {
       reportId: report.id,
@@ -176,7 +193,6 @@ export async function reportPageAction({ request, context, params }: Args) {
       reportIds: [report.id],
       target: parsed.target,
       actorId,
-      campusCode: tenant.campusCode,
       now: new Date(),
     })
     if (!merged.ok) {
@@ -193,7 +209,7 @@ export async function reportPageAction({ request, context, params }: Args) {
 
   if (parsed.action === "forward") {
     const forwarded = await forwardReport({
-      source: { id: tenant.id, campusCode: tenant.campusCode },
+      source: { id: tenant.id },
       reportId: report.id,
       targetOrgId: parsed.targetOrgId,
       actorId,

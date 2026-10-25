@@ -37,13 +37,14 @@ describe("/masuk flow", () => {
     expect(m.signin_page_intro()).toContain("Daftar")
     expect(html).toContain(`>${m.signin_page_heading()}</h1>`)
     expect(html).toContain(`>${m.signin_tab_up()}</button>`)
-    expect(html).toMatch(/href="\/privasi"[^>]*>Kebijakan privasi<\/a>/)
+    // NIK line removed 22 Oct
+    expect(html).not.toContain(m.signin_privacy_note())
   })
 
-  test("home Buat akun opens Daftar", () => {
+  test("home Buat akun opens Daftar", async () => {
     const context = new RouterContextProvider()
     context.set(sessionContext, null)
-    const data = loader({
+    const data = await loader({
       request: new Request("http://itb.localhost/masuk?daftar=1"),
       context,
     } as unknown as Parameters<typeof loader>[0])
@@ -52,6 +53,11 @@ describe("/masuk flow", () => {
     const html = render(null, null, { signUp: data.signUp })
     expect(html).toContain('name="phone"')
     expect(html).toContain(m.signin_age())
+    // Every Daftar field is marked
+    expect(
+      html.match(/aria-hidden="true" class="ml-0.5 text-danger">\*/g),
+    ).toHaveLength(4)
+    expect(html).toContain(m.field_required_note())
   })
 
   test("signed in, one next step plus switching email", () => {
@@ -78,10 +84,10 @@ describe("/masuk flow", () => {
     )
   })
 
-  test("a tuntutan follow returns to its tuntutan", () => {
+  test("a tuntutan follow returns to its tuntutan", async () => {
     const context = new RouterContextProvider()
     context.set(sessionContext, null)
-    const data = loader({
+    const data = await loader({
       request: new Request(
         "http://itb.localhost/masuk?kembali=%2Ftuntutan%2FTUN-ITB-26-0003",
       ),
@@ -92,13 +98,14 @@ describe("/masuk flow", () => {
     expect(html).toMatch(/href="\/tuntutan\/TUN-ITB-26-0003"[^>]*>Lanjutkan</)
   })
 
-  test("an account without a number is asked for one", () => {
+  test("an account without a number is asked for one", async () => {
     const context = new RouterContextProvider()
     context.set(sessionContext, {
       user: { email: "dilepas@contoh.id", phoneNumber: null },
     } as never)
-    const data = loader({
-      request: new Request("http://itb.localhost/masuk"),
+    // Return path skips staff lookup
+    const data = await loader({
+      request: new Request("http://itb.localhost/masuk?kembali=%2Flacak"),
       context,
     } as unknown as Parameters<typeof loader>[0])
     expect(data.needsPhone).toBe(true)

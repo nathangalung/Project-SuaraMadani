@@ -96,8 +96,10 @@ export const demands = pgTable(
     // Complaint hid it, PLAN §5.10
     hiddenAt: at("hidden_at"),
     hiddenReason: text("hidden_reason").$type<TakedownReason>(),
-    // Top prefix before hash clear
+    // Legacy, demand_ratings only
     maxPrefixRatings: integer("max_prefix_ratings"),
+    // Top ranking prefix, kept
+    maxPrefixRankings: integer("max_prefix_rankings"),
     lastActivityAt: at("last_activity_at").notNull().defaultNow(),
     // No FK: rows outlive users
     createdBy: uuid("created_by"),
@@ -306,7 +308,7 @@ export const demandFollows = pgTable(
   ],
 )
 
-// Citizen importance, one per account
+// Legacy rating, no code writes
 export const demandRatings = pgTable(
   "demand_ratings",
   {
@@ -333,6 +335,36 @@ export const demandRatings = pgTable(
       .where(sql`${t.clientHash} IS NOT NULL`),
     demandRef("demand_ratings_demand_fk", t),
     check("demand_ratings_score_check", sql`${t.score} BETWEEN 1 AND 5`),
+    tenantPolicy(),
+  ],
+)
+
+// Own top list, anonymous
+export const demandRankings = pgTable(
+  "demand_rankings",
+  {
+    orgId: orgRef(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    demandId: uuid("demand_id").notNull(),
+    // 1 is most important
+    position: smallint("position").notNull(),
+    // Hashed prefix, cleared later
+    clientHash: text("client_hash"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.userId, t.demandId] }),
+    unique("demand_rankings_position_key").on(t.orgId, t.userId, t.position),
+    index("demand_rankings_demand_idx").on(t.orgId, t.demandId),
+    index("demand_rankings_user_idx").on(t.userId),
+    index("demand_rankings_client_idx")
+      .on(t.orgId, t.demandId, t.clientHash)
+      .where(sql`${t.clientHash} IS NOT NULL`),
+    demandRef("demand_rankings_demand_fk", t),
+    check("demand_rankings_position_check", sql`${t.position} BETWEEN 1 AND 5`),
     tenantPolicy(),
   ],
 )

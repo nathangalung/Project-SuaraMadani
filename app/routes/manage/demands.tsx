@@ -116,7 +116,7 @@ export default function ManageDemands({ loaderData }: Route.ComponentProps) {
           </Table>
         )}
         {capped ? (
-          <p className="mt-3 font-ui text-ink-muted text-sm">
+          <p className="mt-3 text-ink-muted text-sm">
             {m.manage_issues_capped({ count: rows.length })}
           </p>
         ) : null}

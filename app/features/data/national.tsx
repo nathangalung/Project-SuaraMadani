@@ -40,14 +40,12 @@ function CampusCard({ campus }: { campus: NationalCampus }) {
   return (
     <a
       href={campus.href}
-      className="group flex h-full items-start justify-between gap-4 border border-line-subtle bg-surface-raised p-5 transition-colors hover:border-ink"
+      className="group flex h-full items-start justify-between gap-4 rounded-2xl border border-line-subtle bg-surface-raised p-5 transition-colors hover:border-ink"
     >
       <span className="flex min-w-0 flex-col gap-1">
         <span className="font-bold text-xl">{campus.campusName}</span>
         <span className="text-ink-soft">{campus.name}</span>
-        <span className="truncate font-ui text-ink-muted text-sm">
-          {campus.host}
-        </span>
+        <span className="truncate text-ink-muted text-sm">{campus.host}</span>
       </span>
       <ArrowUpRight
         aria-hidden="true"
@@ -143,7 +141,10 @@ function KeyNumbers({
       className="bg-ink text-surface-raised"
     >
       <Container className="py-12">
-        <h2 id="angka-utama" className="font-bold text-3xl sm:text-4xl">
+        <h2
+          id="angka-utama"
+          className="font-bold font-heading text-[clamp(2rem,4.4vw,3rem)] leading-[1.1] [font-synthesis-weight:none]"
+        >
           {m.data_key_title()}
         </h2>
         <dl className="view-rise-list mt-8 grid grid-cols-2 gap-x-6 gap-y-8 md:grid-cols-4">
@@ -151,12 +152,12 @@ function KeyNumbers({
             <div
               key={tile.label}
               style={{ "--i": i } as CSSProperties}
-              className="flex flex-col-reverse justify-end border-brand border-l-4 pl-4"
+              className="flex flex-col-reverse justify-end"
             >
               <dt className="mt-2 text-sm text-surface-raised/80">
                 {tile.label}
                 {tile.note && (
-                  <span className="block font-ui text-surface-raised/70 text-xs">
+                  <span className="block text-surface-raised/70 text-xs">
                     {tile.note}
                   </span>
                 )}
@@ -183,10 +184,7 @@ function CampusTable({ campuses }: { campuses: NationalCampus[] }) {
           className="view-rise mb-8"
         />
         <div className="mx-auto max-w-6xl">
-          <Table
-            caption={m.national_by_campus_caption()}
-            className="font-ui text-sm"
-          >
+          <Table caption={m.national_by_campus_caption()} className=" text-sm">
             <thead>
               <tr>
                 <Th>{m.national_col_campus()}</Th>
@@ -245,7 +243,7 @@ function BarTable({
 }) {
   const max = maxOf(rows.map((row) => row.issues))
   return (
-    <div className="border border-line-subtle bg-surface-raised p-5 sm:p-6">
+    <div className="rounded-2xl border border-line-subtle bg-surface-raised p-5 sm:p-6">
       {rows.length === 0 && empty ? (
         <>
           <h3 className="font-bold text-lg">{title}</h3>
@@ -253,7 +251,7 @@ function BarTable({
         </>
       ) : (
         // Caption names the card
-        <Table caption={title} className="font-ui text-sm">
+        <Table caption={title} className=" text-sm">
           <thead>
             <tr>
               <Th>{head}</Th>
@@ -269,7 +267,10 @@ function BarTable({
                   className="w-full border-line-subtle border-b px-3 py-2 text-left font-semibold"
                 >
                   {row.label}
-                  <span aria-hidden="true" className="mt-1.5 block h-1.5">
+                  <span
+                    aria-hidden="true"
+                    className="mt-1.5 block h-1.5 overflow-hidden rounded-full"
+                  >
                     <span
                       className="bar-grow block h-full"
                       style={
@@ -347,7 +348,7 @@ function Spread({ view }: { view: NationalData }) {
             />
           </div>
         </div>
-        <p className="mx-auto mt-6 max-w-6xl font-ui text-ink-muted text-sm">
+        <p className="mx-auto mt-6 max-w-6xl text-ink-muted text-sm">
           {m.national_hidden_note({ max: HIDDEN_MAX })}
         </p>
       </Container>
@@ -436,7 +437,7 @@ export default function NationalPage({ view }: { view: NationalView }) {
   return (
     <>
       <PageHeader title={m.national_title()} description={m.national_lead()}>
-        <p className="mt-4 font-ui text-ink-muted text-sm">
+        <p className="mt-4 text-ink-muted text-sm">
           {m.national_updated({
             time: formatDateTime(new Date(view.computedAt)),
           })}

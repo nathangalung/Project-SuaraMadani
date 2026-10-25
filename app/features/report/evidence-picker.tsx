@@ -123,12 +123,16 @@ export function EvidencePicker({
     )
     onChange(files.filter((_, i) => i !== index))
   }
-  const hint = m.evidence_hint({
-    max: MAX_EVIDENCE_FILES,
-    size: EVIDENCE_LIMITS.image / MB,
-    videoSize: EVIDENCE_LIMITS.video / MB,
-    megapixels: MAX_FULL_DECODE_PIXELS / 1_000_000,
-  })
+  // One rule per line
+  const rules = [
+    m.evidence_rule_types(),
+    m.evidence_rule_count({ max: MAX_EVIDENCE_FILES }),
+    m.evidence_rule_photo({
+      size: EVIDENCE_LIMITS.image / MB,
+      megapixels: MAX_FULL_DECODE_PIXELS / 1_000_000,
+    }),
+    m.evidence_rule_video({ videoSize: EVIDENCE_LIMITS.video / MB }),
+  ]
   const add = (event: ChangeEvent<HTMLInputElement>) => {
     const chosen = Array.from(event.currentTarget.files ?? [])
     onChange([...files, ...chosen])
@@ -154,18 +158,18 @@ export function EvidencePicker({
   } as const
   return (
     <div className="flex flex-col gap-6">
-      <div
-        className={cn(
-          "flex flex-col gap-1.5",
-          error && "border-l-4 border-danger pl-4",
-        )}
-      >
-        <p
+      <div className="flex flex-col gap-1.5">
+        <div
           id={`${INPUT_ID}-hint`}
-          className="font-ui text-[0.95rem] text-ink-muted"
+          className="mb-2 text-[0.95rem] text-ink-muted"
         >
-          {hint}
-        </p>
+          <ul className="list-disc space-y-1 pl-5">
+            {rules.map((rule) => (
+              <li key={rule}>{rule}</li>
+            ))}
+          </ul>
+          <p className="mt-2">{m.evidence_hint_send()}</p>
+        </div>
         {/* biome-ignore lint/a11y/noStaticElementInteractions: drop mirrors the inputs */}
         <div
           onDragOver={(event) => {
@@ -232,7 +236,7 @@ export function EvidencePicker({
         {error && <ErrorMessage id={INPUT_ID}>{error}</ErrorMessage>}
       </div>
       {missing.length > 0 && (
-        <ul className="flex flex-col gap-1 border-danger border-l-4 pl-4">
+        <ul className="flex flex-col gap-1 text-danger">
           {missing.map((entry) => (
             <li key={`${entry.name}-${entry.size}`}>
               {m.evidence_missing({ name: entry.name })}

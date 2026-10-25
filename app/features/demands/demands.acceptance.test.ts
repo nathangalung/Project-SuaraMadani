@@ -1,4 +1,11 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "bun:test"
 import { rm } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { drizzle } from "drizzle-orm/node-postgres"
@@ -20,10 +27,10 @@ import {
   type FullApp,
   fullApp,
   hostsChanged,
+  insertedUsers,
   loaderWith,
   mailbox,
   queued,
-  routeContext,
   type Staff,
   signedIn,
   staffSession,
@@ -38,7 +45,6 @@ import {
 import { defaultFilesDir } from "../../../server/files.server.ts"
 import { jakartaIsoDate } from "../../../shared/format.ts"
 import { createBriefScanHandler } from "../../../worker/evidence-brief.ts"
-import { hideRaterName } from "./rating.server.ts"
 
 const HOST = "accdem.localhost"
 const ORIGIN = `http://${HOST}`
@@ -177,13 +183,22 @@ function update(
   })
 }
 
-function rate(
+function rankList(
   cookie: string,
-  code: string,
-  fields: Record<string, string>,
+  codes: string[],
+  fields: Record<string, string> = {},
   ip = "10.7.0.1",
 ) {
-  return app.request(`${ORIGIN}/tuntutan/${code}/nilai`, {
+  const body = new URLSearchParams({
+    intent: "rank",
+    submissionId: crypto.randomUUID(),
+    turnstileToken: CAPTCHA_PASS,
+    ...fields,
+  })
+  for (const [index, code] of codes.entries()) {
+    body.append(`rank-${code}`, String(index + 1))
+  }
+  return app.request(`${ORIGIN}/tuntutan/peringkat`, {
     method: "POST",
     headers: {
       cookie,
@@ -191,25 +206,37 @@ function rate(
       "content-type": "application/x-www-form-urlencoded",
       "x-client-ip": ip,
     },
-    body: new URLSearchParams({
-      intent: "rate",
-      submissionId: crypto.randomUUID(),
-      score: "4",
-      visibility: "anonymous",
-      turnstileToken: CAPTCHA_PASS,
-      ...fields,
-    }),
+    body,
   })
 }
 
-async function ratingOf(code: string, userId: string) {
-  const { rows } = await su.query<{ score: number; show_name: boolean }>(
-    `SELECT r.score, r.show_name FROM demand_ratings r
+async function listOf(userId: string): Promise<string[]> {
+  const { rows } = await su.query<{ code: string }>(
+    `SELECT d.public_code AS code FROM demand_rankings r
      JOIN demands d ON d.id = r.demand_id
-     WHERE d.public_code = $1 AND r.user_id = $2`,
-    [code, userId],
+     WHERE r.user_id = $1 ORDER BY r.position`,
+    [userId],
   )
-  return rows[0] ?? null
+  return rows.map((row) => row.code)
+}
+
+/** Counted lists, Given step. */
+async function countedLists(code: string, accounts: number) {
+  for (const userId of await insertedUsers(su, accounts, 30)) {
+    await su.query(
+      `INSERT INTO demand_rankings (org_id, demand_id, user_id, position)
+       SELECT org_id, id, $2, 1 FROM demands WHERE public_code = $1`,
+      [code, userId],
+    )
+  }
+}
+
+async function editorDemand<T>(code: string): Promise<T> {
+  const editor = await app.request(`${ORIGIN}/kelola/tuntutan/${code}.data`, {
+    headers: { cookie: admin.cookie },
+  })
+  expect(editor.status).toBe(200)
+  return (await loaderWith<{ demand: T }>(editor, "demand")).demand
 }
 
 beforeAll(async () => {
@@ -424,42 +451,57 @@ describe("tuntutan editor", () => {
   })
 })
 
-describe("importance ratings", () => {
-  test("[AC-DEMAND-06] Given published, closed, draft and hidden tuntutan, when people rate, change and withdraw, then only signed-in, Turnstile-checked ratings of published tuntutan are kept, one per account", async () => {
-    const code = await published()
-    const page = await app.request(`${ORIGIN}/tuntutan/${code}/nilai`)
+describe("citizen ranking", () => {
+  // Campus-wide counts, clean start
+  beforeEach(async () => {
+    await su.query("DELETE FROM demand_rankings")
+  })
+
+  test("[AC-DEMAND-06] Given published, closed, draft and hidden tuntutan, when people save, change and withdraw a top-five list, then only signed-in, Turnstile-checked lists of published tuntutan are kept, one whole list per account", async () => {
+    const first = await published()
+    const second = await published()
+    const page = await app.request(`${ORIGIN}/tuntutan/peringkat`)
     expect(page.headers.get("Cache-Control")).toBe("private, no-store")
-    expect((await rate("", code, {})).status).toBe(401)
-    const rater = await signedIn(HOST, person("nilai"))
+    expect((await rankList("", [first])).status).toBe(401)
+    const ranker = await signedIn(HOST, person("peringkat"))
     expect(
-      (await rate(rater.cookie, code, { turnstileToken: "robot" })).status,
+      (await rankList(ranker.cookie, [first], { turnstileToken: "robot" }))
+        .status,
     ).toBe(403)
-    expect((await rate(rater.cookie, code, { score: "6" })).status).toBe(400)
-    expect((await rate(rater.cookie, code, {})).status).toBe(303)
-    expect(await ratingOf(code, rater.userId)).toEqual({
-      score: 4,
-      show_name: false,
-    })
-    await rate(rater.cookie, code, { score: "2", visibility: "named" })
-    expect(await ratingOf(code, rater.userId)).toEqual({
-      score: 2,
-      show_name: true,
-    })
-    await changeState(
-      code,
-      "close",
-      "Ditutup karena tuntutan sudah dibahas dalam audiensi.",
+    expect((await rankList(ranker.cookie, [])).status).toBe(400)
+    const doubled = await postForm(
+      app,
+      `${ORIGIN}/tuntutan/peringkat`,
+      ranker.cookie,
+      {
+        intent: "rank",
+        submissionId: crypto.randomUUID(),
+        turnstileToken: CAPTCHA_PASS,
+        [`rank-${first}`]: "1",
+        [`rank-${second}`]: "1",
+      },
     )
-    const late = await signedIn(HOST, person("telat"))
-    expect((await rate(late.cookie, code, {})).status).toBe(409)
+    expect(doubled.status).toBe(400)
+    expect(await listOf(ranker.userId)).toEqual([])
+    expect((await rankList(ranker.cookie, [second, first])).status).toBe(303)
+    expect(await listOf(ranker.userId)).toEqual([second, first])
+    expect((await rankList(ranker.cookie, [first])).status).toBe(303)
+    expect(await listOf(ranker.userId)).toEqual([first])
     const withdraw = await postForm(
       app,
-      `${ORIGIN}/tuntutan/${code}/nilai`,
-      rater.cookie,
+      `${ORIGIN}/tuntutan/peringkat`,
+      ranker.cookie,
       { intent: "withdraw" },
     )
     expect(withdraw.status).toBe(303)
-    expect(await ratingOf(code, rater.userId)).toBeNull()
+    expect(await listOf(ranker.userId)).toEqual([])
+    expect((await rankList(ranker.cookie, [second])).status).toBe(303)
+    const closed = await published()
+    await changeState(
+      closed,
+      "close",
+      "Ditutup karena tuntutan sudah dibahas dalam audiensi.",
+    )
     const draft = await createDraft({ title: "Draf yang belum terbit" })
     // Takedown hides back to draft
     const hidden = await published()
@@ -468,83 +510,122 @@ describe("importance ratings", () => {
        WHERE public_code = $1`,
       [hidden],
     )
-    for (const closedOff of [draft, hidden]) {
-      expect((await rate(rater.cookie, closedOff, {})).status).toBe(404)
-      expect(
-        (await app.request(`${ORIGIN}/tuntutan/${closedOff}/nilai`)).status,
-      ).toBe(404)
+    for (const off of [closed, draft, hidden]) {
+      expect((await rankList(ranker.cookie, [first, off])).status).toBe(404)
+      expect(await listOf(ranker.userId)).toEqual([second])
     }
   })
 
-  test("[AC-DEMAND-07] Given ratings from new and older accounts, when the tuntutan page is read, then young accounts wait seven days, the score needs ten raters and only counted raters who chose to be named are listed, without contact data", async () => {
+  test("[AC-DEMAND-07] Given lists from a new and an older account, when the tuntutan page and the admin editor are read, then young accounts wait seven days, the place shows from ten counted rankers and no ranker is named", async () => {
     const code = await published()
     const { id } = await demandRow(code)
-    const named = await insertUser(su, "bernama.lama@contoh.id")
+    const old = await insertUser(su, "peringkat.lama@contoh.id")
     await su.query(
       `UPDATE users SET name = 'Rina Lama', created_at = now() - interval '30 days' WHERE id = $1`,
-      [named],
+      [old],
     )
-    await su.query(
-      `INSERT INTO demand_ratings (org_id, demand_id, user_id, score, show_name)
-       VALUES ($1, $2, $3, 5, true)`,
-      [orgId, id, named],
-    )
-    const young = await insertUser(su, "bernama.baru@contoh.id")
+    const young = await insertUser(su, "peringkat.baru@contoh.id")
     await su.query("UPDATE users SET name = 'Budi Baru' WHERE id = $1", [young])
-    await su.query(
-      `INSERT INTO demand_ratings (org_id, demand_id, user_id, score, show_name)
-       VALUES ($1, $2, $3, 1, true)`,
-      [orgId, id, young],
-    )
+    for (const userId of [old, young]) {
+      await su.query(
+        `INSERT INTO demand_rankings (org_id, demand_id, user_id, position)
+         VALUES ($1, $2, $3, 1)`,
+        [orgId, id, userId],
+      )
+    }
     const html = await (await app.request(`${ORIGIN}/tuntutan/${code}`)).text()
-    expect(html).toContain("Skor tampil setelah ada minimal 10 penilai")
-    expect(html).toContain("Rina Lama")
-    expect(html).not.toContain("Budi Baru")
-    expect(html).not.toContain("bernama.lama@contoh.id")
-    const editor = await app.request(`${ORIGIN}/kelola/tuntutan/${code}.data`, {
-      headers: { cookie: admin.cookie },
-    })
-    const { demand } = await loaderWith<{
-      demand: { pendingRaters: number }
-    }>(editor, "demand")
-    expect(demand.pendingRaters).toBe(1)
+    expect(html).toContain(
+      "Peringkat tampil setelah minimal 10 warga menyusun peringkatnya. Saat ini 1 warga.",
+    )
+    for (const hidden of [
+      "Rina Lama",
+      "Budi Baru",
+      "peringkat.lama@contoh.id",
+    ]) {
+      expect(html).not.toContain(hidden)
+    }
+    const demand = await editorDemand<{ pendingRankers: number }>(code)
+    expect(demand.pendingRankers).toBe(1)
+    await countedLists(code, 9)
+    const shown = await (await app.request(`${ORIGIN}/tuntutan/${code}`)).text()
+    expect(shown).toContain("Peringkat 1 dari 1 tuntutan yang dipilih warga.")
   })
 
-  test("[AC-DEMAND-08] Given twenty accounts that rated from one address prefix, when a twenty-first account rates from it, then the server answers 429 while another prefix is served", async () => {
+  test("[AC-DEMAND-08] Given twenty accounts whose lists hold a tuntutan from one address prefix, when a twenty-first account saves one from it, then the server answers 429 and keeps its old list while another prefix, or a list without that tuntutan, is served", async () => {
     const code = await published()
+    const other = await published()
     for (let i = 0; i < 20; i++) {
       const one = await signedIn(HOST, person(`prefiks${i}`))
-      expect((await rate(one.cookie, code, {}, "10.66.0.9")).status).toBe(303)
+      expect((await rankList(one.cookie, [code], {}, "10.66.0.9")).status).toBe(
+        303,
+      )
     }
     const extra = await signedIn(HOST, person("keduapuluhsatu"))
-    const capped = await rate(extra.cookie, code, {}, "10.66.0.9")
+    expect(
+      (await rankList(extra.cookie, [other], {}, "10.68.0.9")).status,
+    ).toBe(303)
+    const capped = await rankList(extra.cookie, [other, code], {}, "10.66.0.9")
     expect(capped.status).toBe(429)
-    expect(await ratingOf(code, extra.userId)).toBeNull()
-    expect((await rate(extra.cookie, code, {}, "10.67.0.9")).status).toBe(303)
+    expect(await listOf(extra.userId)).toEqual([other])
+    expect((await rankList(extra.cookie, [code], {}, "10.66.0.9")).status).toBe(
+      429,
+    )
+    expect(
+      (await rankList(extra.cookie, [code, other], {}, "10.67.0.9")).status,
+    ).toBe(303)
+    expect(
+      (await rankList(extra.cookie, [other], {}, "10.66.0.9")).status,
+    ).toBe(303)
   })
 
-  test("[AC-DEMAND-10] Given ten ratings of a tuntutan, when the admin editor is read, then it flags the tuntutan when one address prefix holds more than 30% of them, and not at 30%", async () => {
+  test("[AC-DEMAND-10] Given ten rankers of a tuntutan, when the admin editor is read, then it flags the tuntutan when one address prefix holds more than 30% of them, and not at 30%", async () => {
     const flagOf = async (shared: number) => {
       const code = await published()
       for (let i = 0; i < 10; i++) {
         const one = await signedIn(HOST, person(`anomali${shared}x${i}`))
         const ip = i < shared ? "10.80.0.1" : `10.81.${shared}.${i}`
-        expect((await rate(one.cookie, code, {}, ip)).status).toBe(303)
+        expect((await rankList(one.cookie, [code], {}, ip)).status).toBe(303)
       }
-      const editor = await app.request(
-        `${ORIGIN}/kelola/tuntutan/${code}.data`,
-        { headers: { cookie: admin.cookie } },
-      )
-      expect(editor.status).toBe(200)
-      const { demand } = await loaderWith<{
-        demand: { prefixAnomaly: boolean }
-      }>(editor, "demand")
-      return demand.prefixAnomaly
+      return (await editorDemand<{ prefixAnomaly: boolean }>(code))
+        .prefixAnomaly
     }
     expect(await flagOf(4)).toBe(true)
     expect(await flagOf(3)).toBe(false)
   })
 
+  test("[AC-DEMAND-12] Given ten counted rankers, one of them a reporter, when an admin closes that reporter's account, then the tuntutan JSON counts nine rankers, shows no place and never names a ranker", async () => {
+    const code = await published()
+    await countedLists(code, 9)
+    const account = person("tutupperingkat")
+    const ranker = await signedIn(HOST, account)
+    expect((await rankList(ranker.cookie, [code])).status).toBe(303)
+    await su.query(
+      "UPDATE users SET created_at = now() - interval '30 days' WHERE id = $1",
+      [ranker.userId],
+    )
+    const report = await submitReport(app, HOST, ranker.cookie)
+    const json = async () =>
+      (await app.request(`${ORIGIN}/api/v1/tuntutan/${code}`)).json()
+    const before = await json()
+    expect(before.demand.rank).toEqual({ place: 1, rankers: 10 })
+    const closed = await postForm(
+      app,
+      `${ORIGIN}/kelola/laporan/${report.code}/tutup-akun.data`,
+      admin.cookie,
+      { reason: "data_subject_request", confirm: "yes" },
+    )
+    expect(closed.status).toBe(200)
+    const after = await json()
+    expect(after.demand.ranking).toMatchObject({ rankers: 9, shown: false })
+    expect(after.demand.rank).toEqual({ place: null, rankers: 9 })
+    const text = JSON.stringify([before, after])
+    for (const hidden of [account.email, account.name, ranker.userId]) {
+      expect(text).not.toContain(hidden)
+    }
+  })
+})
+
+describe("policy briefs", () => {
   test("[AC-DEMAND-09] Given a sub-tuntutan, when the admin uploads a policy brief, then only a PDF up to 10 MB is taken, and it downloads as a sandboxed attachment only after a clean scan and publication", async () => {
     const code = await published()
     const [item] = await items(code)
@@ -673,53 +754,6 @@ describe("tuntutan editor tools", () => {
       "demand.issue_link",
       "demand.issue_unlink",
     ])
-  })
-
-  test("[AC-DEMAND-12] Given a counted rater who chose to be named, when an admin hides the name under a content standard, then the public page drops the name, the rating stays, and the hide is audited", async () => {
-    const code = await published()
-    const { id } = await demandRow(code)
-    const named = await insertUser(su, "disembunyikan.lama@contoh.id")
-    await su.query(
-      `UPDATE users SET name = 'Sari Tersembunyi', created_at = now() - interval '30 days' WHERE id = $1`,
-      [named],
-    )
-    await su.query(
-      `INSERT INTO demand_ratings (org_id, demand_id, user_id, score, show_name)
-       VALUES ($1, $2, $3, 4, true)`,
-      [orgId, id, named],
-    )
-    const page = async () =>
-      (await app.request(`${ORIGIN}/tuntutan/${code}`)).text()
-    expect(await page()).toContain("Sari Tersembunyi")
-    const { tenant, session } = await routeContext(HOST, admin.cookie)
-    if (!session) throw new Error("no admin session")
-    const hide = (userId: string, reason: string) =>
-      hideRaterName(tenant, {
-        code,
-        userId,
-        reason: reason as "standard_2",
-        actorId: session.user.id,
-      })
-    expect(await hide(named, "out_of_scope")).toEqual({
-      ok: false,
-      reason: "not_allowed",
-    })
-    expect(await hide(crypto.randomUUID(), "standard_2")).toEqual({
-      ok: false,
-      reason: "not_found",
-    })
-    expect(await hide(named, "standard_2")).toEqual({ ok: true })
-    expect(await page()).not.toContain("Sari Tersembunyi")
-    const kept = await su.query(
-      "SELECT score, show_name FROM demand_ratings WHERE demand_id = $1 AND user_id = $2",
-      [id, named],
-    )
-    expect(kept.rows).toEqual([{ score: 4, show_name: true }])
-    const audit = await su.query(
-      "SELECT reason_code FROM audit_log WHERE action = 'demand.rater_hide' AND org_id = $1 AND actor_id = $2",
-      [orgId, session.user.id],
-    )
-    expect(audit.rows).toEqual([{ reason_code: "standard_2" }])
   })
 
   test("[AC-DEMAND-13] Given a draft with a loaded word, double exclamation marks and a shouted slogan, when the admin editor is read, then it lists each finding as advice that does not block publishing, and a neutral draft gets none", async () => {

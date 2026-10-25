@@ -335,7 +335,7 @@ export function MergeForm({
             label={m.manage_merge_new()}
             defaultChecked={!existing || noTargets}
           />
-          <div className="mt-2 mb-4 ml-8 flex flex-col gap-6 border-line-subtle border-l-4 pl-4 group-has-[#merge-target-existing:checked]:hidden">
+          <div className="mt-2 mb-4 ml-8 flex flex-col gap-6 group-has-[#merge-target-existing:checked]:hidden">
             <TextInput
               id={FIELD_IDS.issue_title}
               name="title"
@@ -362,7 +362,7 @@ export function MergeForm({
             disabled={noTargets}
           />
           {noTargets ? null : (
-            <div className="mt-2 ml-8 flex flex-col gap-6 border-line-subtle border-l-4 pl-4 group-has-[#merge-target-new:checked]:hidden">
+            <div className="mt-2 ml-8 flex flex-col gap-6 group-has-[#merge-target-new:checked]:hidden">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                 <TextInput
                   id="merge-search-input"

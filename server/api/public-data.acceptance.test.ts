@@ -35,11 +35,11 @@ import {
 const ITB = "accapi.localhost"
 const UGM = "accapib.localhost"
 const EMPTY = "accapic.localhost"
-const PUBLISHED = "ISU-ACCAPI-26-0001"
-const DRAFT = "ISU-ACCAPI-26-0002"
-const TAKEN = "ISU-ACCAPI-26-0003"
-const FORMULA = "ISU-ACCAPI-26-0004"
-const OTHER = "ISU-ACCAPIB-26-0001"
+const PUBLISHED = "ISU-2026-10-0001"
+const DRAFT = "ISU-2026-10-0002"
+const TAKEN = "ISU-2026-10-0003"
+const FORMULA = "ISU-2026-10-0004"
+const OTHER = "ISU-2026-10-0005"
 const LICENSE = "https://creativecommons.org/licenses/by/4.0/"
 
 const su = superuserPool()
@@ -171,11 +171,11 @@ const FIELDS: DemandFields = {
 }
 
 /** Counted and young raters. */
-async function rate(orgId: string, count: number, ageDays: number) {
+async function rank(orgId: string, count: number, ageDays: number) {
   for (let i = 0; i < count; i++) {
     const user = await insertUser(
       su,
-      `penilai-${ageDays}-${i}-${crypto.randomUUID().slice(0, 6)}@contoh.id`,
+      `peringkat-${ageDays}-${i}-${crypto.randomUUID().slice(0, 6)}@contoh.id`,
     )
     await su.query(
       `UPDATE users SET created_at = now() - make_interval(days => $2) WHERE id = $1`,
@@ -186,9 +186,9 @@ async function rate(orgId: string, count: number, ageDays: number) {
       [demandCode],
     )
     await su.query(
-      `INSERT INTO demand_ratings (org_id, demand_id, user_id, score)
-       VALUES ($1, $2, $3, $4)`,
-      [orgId, rows[0]?.id, user, (i % 5) + 1],
+      `INSERT INTO demand_rankings (org_id, demand_id, user_id, position)
+       VALUES ($1, $2, $3, 1)`,
+      [orgId, rows[0]?.id, user],
     )
   }
 }
@@ -488,7 +488,7 @@ describe("public data API", () => {
     expect(await res.json()).toEqual({ error: "short_query" })
   })
 
-  test("[AC-API-12] Given a tuntutan rated by young and old accounts, when its JSON is read, then the mean appears only once ten counted raters exist", async () => {
+  test("[AC-API-12] Given a tuntutan ranked by young and old accounts, when its JSON is read, then its citizen place appears only once ten counted rankers exist", async () => {
     const orgId = (
       await su.query<{ id: string }>(
         "SELECT id FROM organizations WHERE host = $1",
@@ -496,19 +496,25 @@ describe("public data API", () => {
       )
     ).rows[0]?.id
     if (!orgId) throw new Error("no org")
-    await rate(orgId, 9, 30)
-    await rate(orgId, 3, 1)
+    await rank(orgId, 9, 30)
+    await rank(orgId, 3, 1)
     const nine = await (
       await get(ITB, `/api/v1/tuntutan/${demandCode}`, client())
     ).json()
-    expect(nine.demand.importance.raters).toBe(9)
-    expect(nine.demand.importance.mean ?? null).toBeNull()
-    await rate(orgId, 1, 30)
+    expect(nine.demand.ranking).toMatchObject({ rankers: 9, shown: false })
+    expect(nine.demand.rank).toEqual({ place: null, rankers: 9 })
+    await rank(orgId, 1, 30)
     const ten = await (
       await get(ITB, `/api/v1/tuntutan/${demandCode}`, client())
     ).json()
-    expect(ten.demand.importance.raters).toBe(10)
-    expect(typeof ten.demand.importance.mean).toBe("number")
+    expect(ten.demand.ranking).toMatchObject({ rankers: 10, shown: true })
+    expect(ten.demand.rank).toEqual({ place: 1, rankers: 10 })
+    const list = await (await get(ITB, "/api/v1/tuntutan", client())).json()
+    const row = list.demands.find(
+      (one: { code: string }) => one.code === demandCode,
+    )
+    expect(row.rank).toEqual({ place: 1, rankers: 10 })
     expect(personal(ten)).toEqual([])
+    expect(personal(list)).toEqual([])
   })
 })

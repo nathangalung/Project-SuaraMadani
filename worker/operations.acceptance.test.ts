@@ -253,7 +253,7 @@ describe("evidence and takedown pipeline", () => {
     ).json()
     const src = json.issue.evidence[0]?.media?.[0]?.src as string
     expect((await app.request(src)).status).toBe(200)
-    const row = await issueRow(su, issue)
+    const row = await issueRow(su, HOST, issue)
     const removed = await postForm(
       app,
       `${ORIGIN}/kelola/isu/${issue}`,

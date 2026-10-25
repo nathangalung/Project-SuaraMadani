@@ -259,7 +259,7 @@ describe("session", () => {
     const lines: Record<string, unknown>[] = []
     await run(
       { ...deps(), log: (line) => lines.push(line) },
-      "http://itb.localhost/kelola/laporan/ITB-26-ABCDE",
+      "http://itb.localhost/kelola/laporan/LPR-2026-10-0001",
     )
     expect(lines[0]?.path).toBe("/kelola/laporan/:code")
   })
@@ -382,6 +382,33 @@ describe("staff paths", () => {
     expect(status).toBe(200)
   })
 
+  test("the dev TOTP switch skips enrolment only, never the role or the 12h cap", async () => {
+    const status = async (
+      totp: boolean,
+      role: "admin" | null,
+      created = "2026-10-13T09:00:00Z",
+    ) => {
+      const base = staffDeps(false, role)
+      const session = sessionFor(false)
+      session.session.createdAt = new Date(created)
+      const outcome = await run(
+        {
+          ...base,
+          readSession: async () => ({ session, setCookie: [] }),
+          totpRequired: () => totp,
+        },
+        "http://itb.localhost/kelola/antrean",
+        cookie,
+      )
+      return outcome.status
+    }
+    expect(await status(false, "admin")).toBe(200)
+    expect(await status(true, "admin")).toBe(403)
+    expect(await status(false, null)).toBe(403)
+    // 13 hours old
+    expect(await status(false, "admin", "2026-10-12T21:00:00Z")).toBe(403)
+  })
+
   test("a member of another campus is 403", async () => {
     const { status } = await run(
       staffDeps(true, null),
@@ -443,7 +470,7 @@ describe("staff paths", () => {
   test("any spelling React Router routes to /kelola is gated", async () => {
     for (const path of [
       "/KELOLA",
-      "/Kelola/laporan/ITB-26-X",
+      "/Kelola/laporan/LPR-2026-10-0001",
       "/%6Belola",
       "/%6belola/laporan/Y",
       "/kelola%2Fbukti",

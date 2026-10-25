@@ -59,11 +59,10 @@ export function repoFiles(root: string): string[] {
   if (listed.exitCode !== 0) {
     throw new Error(`git ls-files failed: ${listed.stderr.toString()}`)
   }
+  // Unmerged paths repeat per stage
+  const files = new Set(listed.stdout.toString().split("\0"))
   // Tracked but deleted
-  return listed.stdout
-    .toString()
-    .split("\0")
-    .filter((file) => file && existsSync(join(root, file)))
+  return [...files].filter((file) => file && existsSync(join(root, file)))
 }
 
 /** Per-file totals from lcov text. */

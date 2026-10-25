@@ -168,7 +168,7 @@ export default function ManageComplaint({
           {COMPLAINT_STATUS_TEXT[c.status]()}
         </Badge>
         {c.status === "open" ? (
-          <span className="font-ui text-ink-soft text-sm">
+          <span className="text-ink-soft text-sm">
             {m.manage_complaint_due({ date: formatDate(dueAt) })}
           </span>
         ) : null}
@@ -186,10 +186,10 @@ export default function ManageComplaint({
           <dt className="font-semibold">{m.manage_col_received()}</dt>
           <dd>{formatDateTime(c.createdAt)}</dd>
         </dl>
-        <p className="mt-4 whitespace-pre-line border-line-subtle border-l-4 pl-4 leading-relaxed">
+        <p className="mt-4 whitespace-pre-line leading-relaxed">
           {c.explanation}
         </p>
-        <p className="mt-3 font-ui text-ink-muted text-sm">
+        <p className="mt-3 text-ink-muted text-sm">
           {m.manage_complaint_identity_note()}
         </p>
       </section>
@@ -279,10 +279,10 @@ export default function ManageComplaint({
             <h3 className="font-bold text-lg">
               {m.manage_appeal_text_title()}
             </h3>
-            <p className="mt-1 font-ui text-ink-muted text-sm">
+            <p className="mt-1 text-ink-muted text-sm">
               {formatDateTime(c.appeal.at)}
             </p>
-            <p className="mt-2 whitespace-pre-line border-line-subtle border-l-4 pl-4 leading-relaxed">
+            <p className="mt-2 whitespace-pre-line leading-relaxed">
               {c.appeal.text}
             </p>
           </div>
@@ -304,7 +304,7 @@ export default function ManageComplaint({
               ? m.manage_decide_appeal_title()
               : m.manage_decide_title()}
           </h2>
-          <p className="mt-1 mb-5 font-ui text-[0.95rem] text-ink-soft">
+          <p className="mt-1 mb-5 text-[0.95rem] text-ink-soft">
             {m.manage_decide_lead()}
           </p>
           {blocked ? (
@@ -350,7 +350,7 @@ export default function ManageComplaint({
           <h2 id="penghapusan" className={H2}>
             {m.manage_takedowns_title()}
           </h2>
-          <p className="mt-1 mb-4 font-ui text-[0.95rem] text-ink-soft">
+          <p className="mt-1 mb-4 text-[0.95rem] text-ink-soft">
             {m.manage_takedowns_lead()}
           </p>
           <Table caption={m.manage_takedowns_caption()}>

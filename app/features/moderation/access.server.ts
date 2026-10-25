@@ -12,6 +12,9 @@ import {
   tenantContext,
 } from "../../context.ts"
 
+// Route modules reach server here
+export { staffLinks } from "../../../server/shell.server.ts"
+
 export type Admin = {
   tenant: TenantContext
   session: SessionContext

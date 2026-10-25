@@ -7,14 +7,14 @@ import { FollowCard, type FollowState } from "./follow-card"
 function render(state: FollowState, kind: "issue" | "demand" = "issue") {
   const Stub = createRoutesStub([
     {
-      path: "/isu/ISU-ITB-26-0001",
+      path: "/isu/ISU-2026-10-0001",
       Component: () => (
-        <FollowCard code="ISU-ITB-26-0001" state={state} kind={kind} />
+        <FollowCard code="ISU-2026-10-0001" state={state} kind={kind} />
       ),
     },
   ])
   return renderToStaticMarkup(
-    <Stub initialEntries={["/isu/ISU-ITB-26-0001"]} />,
+    <Stub initialEntries={["/isu/ISU-2026-10-0001"]} />,
   )
 }
 

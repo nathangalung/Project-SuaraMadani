@@ -10,7 +10,6 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { RouterContextProvider } from "react-router"
-import { rateDemand } from "~/features/demands/rating.server"
 import { migrate } from "../../../db/migrate.ts"
 import {
   insertOrg,
@@ -43,7 +42,7 @@ import {
 import { loader as briefLoader } from "./brief"
 import { action as detailAction, loader as detailLoader } from "./detail"
 import { loader as ogLoader } from "./og-image"
-import { action as rateAction, loader as rateLoader } from "./rate"
+import { loader as rateLoader } from "./rate"
 import { action as unfollowAction, loader as unfollowLoader } from "./unfollow"
 
 process.env.LACAK_LINK_KEYS ||= `1:${Buffer.alloc(32, 9).toString("base64")}`
@@ -123,12 +122,6 @@ function args(
     url: new URL(url),
     pattern: "",
   } as never
-}
-
-function formOf(fields: Record<string, string>): FormData {
-  const form = new FormData()
-  for (const [key, value] of Object.entries(fields)) form.set(key, value)
-  return form
 }
 
 async function thrown(run: Promise<unknown>): Promise<Response | number> {
@@ -374,107 +367,13 @@ describe("signed unfollow link", () => {
   })
 })
 
-describe("importance rating page", () => {
-  test("an open tuntutan is rateable, a closed one is shown only, a draft is 404", async () => {
-    const code = await make()
-    const page = await rateLoader(args(`/tuntutan/${code}/nilai`, { code }))
-    expect(page.demand).toMatchObject({ code, title: FIELDS.title, open: true })
-    expect(page.own).toBeNull()
-    await act(code, "close")
-    expect(
-      (await rateLoader(args(`/tuntutan/${code}/nilai`, { code }))).demand.open,
-    ).toBe(false)
-    const draft = await make(false)
-    expect(
-      await thrown(
-        rateLoader(args(`/tuntutan/${draft}/nilai`, { code: draft })),
-      ),
-    ).toBe(404)
-    const lower = code.toLowerCase()
-    const moved = await thrown(
-      rateLoader(args(`/tuntutan/${lower}/nilai`, { code: lower })),
-    )
+describe("old rating link", () => {
+  test("Given the retired rating URL, when it is opened, then it moves permanently to the ranking page", async () => {
+    const moved = await thrown(Promise.resolve().then(() => rateLoader()))
+    expect(moved instanceof Response && moved.status).toBe(301)
     expect(moved instanceof Response && moved.headers.get("Location")).toBe(
-      `/tuntutan/${code}/nilai`,
+      "/tuntutan/peringkat",
     )
-  })
-
-  test("Given a saved rating, when the citizen withdraws it, then it is gone and the page opens", async () => {
-    const code = await make()
-    const saved = await rateDemand({
-      tenant: context(true).get(tenantContext),
-      session: session(),
-      code,
-      form: formOf({
-        intent: "rate",
-        submissionId: crypto.randomUUID(),
-        score: "5",
-        visibility: "anonymous",
-      }),
-      remoteIp: null,
-      deps: {
-        verifyCaptcha: async () => ({ ok: true }),
-        hashKey: () => Buffer.alloc(32, 7),
-      },
-    })
-    expect(saved.status).toBe(200)
-    const res = await thrown(
-      rateAction(
-        args(
-          `/tuntutan/${code}/nilai`,
-          { code },
-          { signedIn: true, form: { intent: "withdraw" } },
-        ),
-      ),
-    )
-    expect(res instanceof Response && res.headers.get("Location")).toBe(
-      `/tuntutan/${code}#kepentingan`,
-    )
-    const { rows } = await su.query(
-      "SELECT 1 FROM demand_ratings WHERE user_id = $1",
-      [citizen],
-    )
-    expect(rows).toHaveLength(0)
-  })
-
-  test("no captcha token is 403, signed out 401, no submission id 400, an oversized body 413", async () => {
-    const code = await make()
-    const path = `/tuntutan/${code}/nilai`
-    const rate = {
-      intent: "rate",
-      submissionId: crypto.randomUUID(),
-      score: "4",
-      visibility: "anonymous",
-    }
-    const refused = await rateAction(
-      args(path, { code }, { signedIn: true, form: rate }),
-    )
-    expect(refused).toMatchObject({
-      data: { error: "captcha_failed" },
-      init: { status: 403 },
-    })
-    const out = await rateAction(args(path, { code }, { form: rate }))
-    expect(out).toMatchObject({ init: { status: 401 } })
-    const { submissionId: _id, ...unkeyed } = rate
-    const malformed = await rateAction(
-      args(path, { code }, { signedIn: true, form: unkeyed }),
-    )
-    expect(malformed).toMatchObject({
-      data: { errors: [] },
-      init: { status: 400 },
-    })
-    const big = {
-      request: new Request(`http://fdrt.localhost${path}`, {
-        method: "POST",
-        headers: { "content-length": "9000" },
-        body: "x".repeat(9000),
-      }),
-      params: { code },
-      context: context(true),
-    } as never
-    expect(await thrown(rateAction(big))).toBe(413)
-    const { rows } = await su.query("SELECT 1 FROM demand_ratings")
-    expect(rows).toHaveLength(0)
   })
 })
 

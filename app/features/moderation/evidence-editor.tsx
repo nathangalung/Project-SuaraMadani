@@ -157,9 +157,7 @@ type BoxListProps = {
 function BoxList({ boxes, onChange, onRemove }: BoxListProps) {
   if (boxes.length === 0) {
     return (
-      <p className="font-ui text-ink-muted text-sm">
-        {m.manage_evidence_no_boxes()}
-      </p>
+      <p className="text-ink-muted text-sm">{m.manage_evidence_no_boxes()}</p>
     )
   }
   return (
@@ -182,7 +180,7 @@ function BoxList({ boxes, onChange, onRemove }: BoxListProps) {
                 style: event.currentTarget.value as RedactionStyle,
               })
             }
-            className="h-9 rounded-md border border-line bg-surface-raised px-2 text-sm"
+            className="select-ui h-9 rounded-md border border-line bg-surface-raised px-2 text-sm"
           >
             <option value="fill">{m.manage_evidence_style_fill()}</option>
             <option value="pixelate">
@@ -348,7 +346,7 @@ export function EvidenceDecisionForm(props: FormProps) {
             aria-label={m.manage_evidence_video_label({ position })}
             className="w-full border border-line-subtle bg-ink"
           />
-          <p className="font-ui text-[0.95rem] text-ink-soft">
+          <p className="text-[0.95rem] text-ink-soft">
             {m.manage_evidence_video_hint()}
           </p>
         </>
@@ -363,11 +361,11 @@ export function EvidenceDecisionForm(props: FormProps) {
             <input type="hidden" name="pagesSent" value="1" />
           ) : null}
           <noscript>
-            <p className="border-ink/30 border-l-4 bg-surface p-4 text-sm">
+            <p className="text-ink-soft text-sm">
               {m.manage_evidence_noscript()}
             </p>
           </noscript>
-          <p id={hintId} className="font-ui text-[0.95rem] text-ink-soft">
+          <p id={hintId} className="text-[0.95rem] text-ink-soft">
             {m.manage_evidence_draw_hint()}
           </p>
           <fieldset className="flex flex-wrap items-center gap-x-5 gap-y-1">

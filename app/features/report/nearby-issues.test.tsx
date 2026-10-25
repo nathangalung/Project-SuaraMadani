@@ -5,7 +5,7 @@ import { NearbyList, nearbyHref } from "./nearby-issues"
 
 function render(count: number): string {
   const issues = Array.from({ length: count }, (_, i) => ({
-    code: `ISU-ITB-26-000${i + 1}`,
+    code: `ISU-2026-10-000${i + 1}`,
     title: `Jalan rusak ${i + 1}`,
     reportCount: 3,
   }))
@@ -29,8 +29,8 @@ describe("Isu Serupa di Dekat Anda", () => {
     const html = render(2)
     expect(html).toContain(">Isu Serupa di Dekat Anda</h2>")
     expect(html).toContain("Kota Bandung")
-    expect(html).toContain('href="/isu/ISU-ITB-26-0001"')
-    expect(html).toContain('href="/isu/ISU-ITB-26-0001#ikuti"')
+    expect(html).toContain('href="/isu/ISU-2026-10-0001"')
+    expect(html).toContain('href="/isu/ISU-2026-10-0001#ikuti"')
     expect(html).not.toContain("wilayah=32.73")
   })
 

@@ -116,7 +116,7 @@ function input(): DatasetInput {
     ranking: {
       laporan: [
         {
-          code: "ISU-ITB-26-0001",
+          code: "ISU-2026-10-0001",
           title: "Jalan berlubang",
           categoryId: "program",
           govStatus: "awaiting_response",
@@ -288,7 +288,7 @@ describe("datasets", () => {
       {
         order: "laporan",
         rank: 1,
-        code: "ISU-ITB-26-0001",
+        code: "ISU-2026-10-0001",
         title: "Jalan berlubang",
         category: "program",
         gov_status: "awaiting_response",

@@ -54,7 +54,6 @@ async function seedIssue(options: { publish: boolean } = { publish: true }) {
       summary: "Beberapa laporan menyebut atap ruang kelas runtuh.",
     },
     actorId: moderator,
-    campusCode: "ITB",
     now: NOW,
   })
   if (!merged.ok) throw new Error(merged.reason)
@@ -345,7 +344,6 @@ describe("runIssueAction", () => {
       reportIds: [report.id],
       target: { kind: "existing", issueId: issue.id },
       actorId: moderator,
-      campusCode: "ITB",
       now: NOW,
     })
     const { rows } = await su.query(

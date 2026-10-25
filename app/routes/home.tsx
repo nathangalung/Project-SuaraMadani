@@ -7,6 +7,7 @@ import { Hero } from "~/features/home/hero"
 import { loadHome } from "~/features/home/home.server"
 import { IssueShowcase } from "~/features/home/issue-showcase"
 import { Rings, StarPair } from "~/features/home/ornaments"
+import { Twibbon } from "~/features/home/twibbon"
 import { m } from "~/paraglide/messages.js"
 import type { loader as rootLoader } from "~/root"
 import { nationalContext, tenantContext } from "../context.ts"
@@ -90,6 +91,7 @@ function CampusHome({ issues, demands }: Omit<Tenant, "scope">) {
           </p>
         )}
       </div>
+      <Twibbon />
     </>
   )
 }

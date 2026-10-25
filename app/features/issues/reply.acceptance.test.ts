@@ -195,7 +195,7 @@ describe("agency right of reply", () => {
       status: 400,
       body: { errors: ["agency", "sender_role", "body", "source_url"] },
     })
-    expect((await send("ISU-ACCRPL-26-0999", officer.cookie)).status).toBe(404)
+    expect((await send("ISU-2026-10-0999", officer.cookie)).status).toBe(404)
     for (let i = 0; i < 5; i++) {
       expect((await send(code, officer.cookie)).status).toBe(201)
     }
@@ -225,7 +225,7 @@ describe("agency right of reply", () => {
     if (!pending) throw new Error("no reply")
     const result = await decide(pending.id, { intent: "accept" })
     expect(result.ok).toBe(true)
-    expect((await issueRow(su, code)).gov_status).toBe("responded")
+    expect((await issueRow(su, HOST, code)).gov_status).toBe("responded")
     const json = await (
       await app.request(`${ORIGIN}/api/v1/isu/${code}`)
     ).json()

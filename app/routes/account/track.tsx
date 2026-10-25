@@ -92,7 +92,7 @@ export default function Track({ loaderData }: Route.ComponentProps) {
               canUpload={loaderData.link === null}
             />
           ) : (
-            <Card className="mx-auto max-w-2xl p-5 sm:p-6">
+            <Card className="mx-auto max-w-2xl rounded-xl p-5 sm:p-6">
               <p>
                 {loaderData.link === "invalid"
                   ? m.track_link_invalid()

@@ -3,6 +3,8 @@ import {
   CONSENT_KEYS,
   EVIDENCE_LIMITS,
   evidenceKind,
+  INDONESIA_BOUNDS,
+  inIndonesia,
   REPORT_ERROR_KEYS,
   REPORT_STEPS,
 } from "./report-fields.ts"
@@ -72,5 +74,19 @@ describe("report fields", () => {
     expect(evidenceKind({ type: "image/jpeg", name: "tanpa-ekstensi" })).toBe(
       "image",
     )
+  })
+
+  test("Indonesia box includes its edges only", () => {
+    const { south, north, west, east } = INDONESIA_BOUNDS
+    expect(inIndonesia({ lat: -6.2, lng: 106.8 })).toBe(true)
+    for (const lat of [south, north]) {
+      expect(inIndonesia({ lat, lng: west })).toBe(true)
+      expect(inIndonesia({ lat, lng: east })).toBe(true)
+    }
+    expect(inIndonesia({ lat: south - 0.01, lng: 110 })).toBe(false)
+    expect(inIndonesia({ lat: north + 0.01, lng: 110 })).toBe(false)
+    expect(inIndonesia({ lat: 0, lng: west - 0.01 })).toBe(false)
+    expect(inIndonesia({ lat: 0, lng: east + 0.01 })).toBe(false)
+    expect(inIndonesia({ lat: Number.NaN, lng: 110 })).toBe(false)
   })
 })

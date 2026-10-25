@@ -125,7 +125,7 @@ function MemberRow({
                 </span>
               ) : null}
             </p>
-            <p className="font-ui text-ink-muted text-sm">
+            <p className="text-ink-muted text-sm">
               {m.team_joined({ date: formatDate(member.joinedAt) })}
             </p>
           </div>
@@ -146,7 +146,7 @@ function MemberRow({
       </div>
       <div className="mt-3 max-w-xl">
         {self ? (
-          <p className="font-ui text-ink-muted text-sm">{m.team_self_note()}</p>
+          <p className="text-ink-muted text-sm">{m.team_self_note()}</p>
         ) : (
           <ActionPanel
             id={`remove-${member.userId}`}
@@ -230,7 +230,7 @@ export function InvitationList({
               <p className="font-semibold [overflow-wrap:anywhere]">
                 {invitation.email}
               </p>
-              <p className="font-ui text-ink-muted text-sm">
+              <p className="text-ink-muted text-sm">
                 {invitation.expired
                   ? m.team_invitation_expired()
                   : m.team_invitation_until({

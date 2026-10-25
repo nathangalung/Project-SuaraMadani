@@ -32,7 +32,6 @@ const HOST = "accrep.localhost"
 const OTHER = "accrepb.localhost"
 const ORIGIN = `http://${HOST}`
 const su = superuserPool()
-const YEAR = jakartaIsoDate(new Date()).slice(2, 4)
 let app: FullApp
 let orgId = ""
 let restore = () => {}
@@ -138,9 +137,12 @@ describe("report submission", () => {
     const res = await submit(reporter.cookie, body())
     expect(res.status).toBe(201)
     const result = await actionData<Submitted>(res)
-    expect(result.code).toMatch(
-      new RegExp(`^ACCREP-${YEAR}-[0-9A-HJKMNP-TV-Z]{5}$`),
+    // Monthly LPR, Jakarta calendar
+    expect(result.code).toMatch(/^LPR-\d{4}-(0[1-9]|1[0-2])-\d{4}$/)
+    const months = [sentAt, Date.now()].map((t) =>
+      jakartaIsoDate(new Date(t)).slice(0, 7),
     )
+    expect(months).toContain(result.code.slice(4, 11))
     expect(result.evidence).toHaveLength(1)
     const { rows } = await su.query<{
       status: string
@@ -368,7 +370,7 @@ describe("report submission", () => {
     expect(await own.text()).toContain(code)
     const elsewhere = await app.request(`http://${OTHER}/lapor/sukses/${code}`)
     expect(elsewhere.status).toBe(404)
-    const unsent = await app.request(`${ORIGIN}/lapor/sukses/ACCREP-26-00000`)
+    const unsent = await app.request(`${ORIGIN}/lapor/sukses/LPR-2026-01-9999`)
     expect(unsent.status).toBe(404)
   })
 

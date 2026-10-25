@@ -106,7 +106,7 @@ export function LogoForm({
             className="max-h-20 max-w-24 object-contain"
           />
         </div>
-        <span className="font-ui text-ink-muted text-xs">
+        <span className="text-ink-muted text-xs">
           {custom ? m.settings_logo_custom() : m.settings_logo_default()}
         </span>
       </div>

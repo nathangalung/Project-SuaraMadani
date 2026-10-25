@@ -51,12 +51,12 @@ function AttentionList({ items }: { items: Item[] }) {
     return <p className="mt-3 text-ink-muted">{m.manage_attention_none()}</p>
   }
   return (
-    <ul className="mt-3 border-ink border-t-2">
+    <ul className="mt-4 divide-y divide-line-subtle overflow-hidden rounded-2xl border border-line-subtle bg-surface-raised">
       {open.map((item) => (
-        <li key={item.key} className="border-line-subtle border-b">
+        <li key={item.key}>
           <Link
             to={item.to}
-            className="group flex min-h-12 items-center justify-between gap-3 py-3 font-semibold text-ink transition-colors hover:text-accent"
+            className="group flex min-h-14 items-center justify-between gap-3 px-6 py-4 font-semibold text-ink transition-colors hover:bg-brand-soft"
           >
             <span className="underline-offset-4 group-hover:underline">
               {item.text}
@@ -108,22 +108,22 @@ export default function ManageHome({ loaderData }: Route.ComponentProps) {
         <h2 id="ringkasan-antrean" className={H2}>
           {m.manage_queue_title()}
         </h2>
-        <ul className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <ul className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
           {QUEUE_STATUSES.map((status) => (
             <li key={status}>
               <Link
                 to={`/kelola/antrean?status=${status}`}
-                className="flex h-full flex-col-reverse justify-end border border-line-subtle border-l-4 border-l-brand bg-surface-raised p-4 transition-colors hover:border-ink hover:border-l-brand"
+                className="flex h-full flex-col-reverse justify-end rounded-2xl border border-line-subtle bg-surface-raised p-6 transition-colors hover:border-brand"
               >
-                <span className="mt-2 text-sm">
+                <span className="mt-3">
                   <span className="block font-semibold text-ink">
                     {REPORT_STATUS_TEXT[status]()}
                   </span>
-                  <span className="block font-ui text-ink-muted text-xs">
+                  <span className="mt-1 block text-ink-muted text-sm">
                     {NOTE[status]()}
                   </span>
                 </span>
-                <span className="font-bold text-4xl text-ink tabular-nums leading-none">
+                <span className="font-heading text-5xl text-brand tabular-nums leading-none">
                   {formatNumber(summary.counts[status])}
                 </span>
               </Link>
@@ -131,14 +131,14 @@ export default function ManageHome({ loaderData }: Route.ComponentProps) {
           ))}
         </ul>
         {summary.oldestWaiting ? (
-          <p className="mt-3 font-ui text-ink-soft text-sm">
+          <p className="mt-3 text-ink-soft text-sm">
             {m.manage_home_oldest({
               date: formatDate(summary.oldestWaiting),
             })}
           </p>
         ) : null}
         {summary.forwardedIn > 0 ? (
-          <p className="mt-1 font-ui text-ink-soft text-sm">
+          <p className="mt-1 text-ink-soft text-sm">
             {m.manage_attention_forwarded_in({
               count: formatNumber(summary.forwardedIn),
             })}

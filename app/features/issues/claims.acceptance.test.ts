@@ -77,7 +77,7 @@ async function issueWith(count: number): Promise<{
   const { code: report } = await submitReport(app, HOST, first.cookie)
   const code = await reportToIssue(app, su, HOST, admin.cookie, report)
   await publishIssue(app, su, HOST, admin.cookie, code)
-  const { id } = await issueRow(su, code)
+  const { id } = await issueRow(su, HOST, code)
   for (const other of reporters.slice(1)) {
     const extra = await submitReport(app, HOST, other.cookie)
     await review(app, su, HOST, admin.cookie, extra.code, {
@@ -323,7 +323,7 @@ describe("resolution claims and ratings", () => {
     })
     expect(section?.others.n).toBe(10)
     expect(JSON.stringify(section)).not.toContain("mean")
-    const review = await claimReview(orgId, (await issueRow(su, code)).id)
+    const review = await claimReview(orgId, (await issueRow(su, HOST, code)).id)
     expect(review?.excluded).toBe(3)
   })
 
@@ -339,7 +339,7 @@ describe("resolution claims and ratings", () => {
       status: 429,
       body: { error: "prefix_cap" },
     })
-    const review = await claimReview(orgId, (await issueRow(su, code)).id)
+    const review = await claimReview(orgId, (await issueRow(su, HOST, code)).id)
     expect(review?.anomaly).toEqual({ prefix: true, young: true })
     const calm = await issueWith(1)
     const calmClaim = await claim(calm.code)
@@ -351,7 +351,10 @@ describe("resolution claims and ratings", () => {
         [orgId, calmClaim, userId, `p${i}`],
       )
     }
-    const fine = await claimReview(orgId, (await issueRow(su, calm.code)).id)
+    const fine = await claimReview(
+      orgId,
+      (await issueRow(su, HOST, calm.code)).id,
+    )
     expect(fine?.anomaly).toEqual({ prefix: false, young: false })
   })
 })
@@ -425,7 +428,7 @@ describe("survey Sudah beres?", () => {
       status: 200,
       body: { saved: "not_fixed", decided: "reopen" },
     })
-    expect((await issueRow(su, code)).gov_status).toBe("reopened")
+    expect((await issueRow(su, HOST, code)).gov_status).toBe("reopened")
     const { rows } = await su.query<{ outcome: string; basis: string }>(
       "SELECT outcome, basis FROM resolution_claims WHERE id = $1",
       [claimId],
@@ -462,7 +465,7 @@ describe("survey Sudah beres?", () => {
       status: 200,
       body: { saved: "fixed", decided: null },
     })
-    expect((await issueRow(su, code)).gov_status).toBe("claimed_resolved")
+    expect((await issueRow(su, HOST, code)).gov_status).toBe("claimed_resolved")
     const two = await answer(
       code,
       links.get(await emailOf(second.userId)) ?? null,
@@ -472,7 +475,9 @@ describe("survey Sudah beres?", () => {
       status: 200,
       body: { saved: "fixed", decided: "confirm" },
     })
-    expect((await issueRow(su, code)).gov_status).toBe("confirmed_resolved")
+    expect((await issueRow(su, HOST, code)).gov_status).toBe(
+      "confirmed_resolved",
+    )
     const { rows } = await su.query<{ outcome: string; basis: string }>(
       "SELECT outcome, basis FROM resolution_claims WHERE id = $1",
       [claimId],

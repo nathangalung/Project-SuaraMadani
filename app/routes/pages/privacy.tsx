@@ -14,7 +14,7 @@ import { DISTRICT_MIN_REPORTS } from "../../../shared/report-fields.ts"
 import type { Route } from "./+types/privacy"
 
 // Draft, legal review before launch
-const UPDATED = "2026-10-16"
+const UPDATED = "2026-10-24"
 
 // Server constant, no client chunk
 export function loader() {
@@ -80,11 +80,13 @@ export default function Privacy({ loaderData }: Route.ComponentProps) {
             items={[
               m.privacy_data_account,
               m.privacy_data_report,
+              m.privacy_data_point,
               m.privacy_data_evidence,
               m.privacy_data_contact,
               m.privacy_data_consent,
               m.privacy_data_complaint,
               m.privacy_data_follow,
+              m.privacy_data_ranking,
               m.privacy_data_technical,
             ]}
           />

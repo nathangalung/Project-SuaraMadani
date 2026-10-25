@@ -115,7 +115,6 @@ async function seedIssue(org: "a" | "b", publish = true) {
       summary: "Beberapa laporan menyebut atap ruang kelas runtuh.",
     },
     actorId: moderator,
-    campusCode: tenant(org).campusCode,
     now: NOW,
   })
   if (!merged.ok) throw new Error(merged.reason)

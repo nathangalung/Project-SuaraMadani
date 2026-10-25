@@ -56,7 +56,7 @@ function reporter(
 
 const record = {
   msg: "server error",
-  path: "/isu/ISU-ITB-26-0001",
+  path: "/isu/ISU-2026-10-0001",
   error: "TypeError",
   message: "boom",
   stack: BUN_STACK,
@@ -127,6 +127,23 @@ describe("scrub", () => {
   test("caps the length", () => {
     expect(scrub("a".repeat(5000)).length).toBeLessThanOrEqual(512)
   })
+
+  test("keeps public monthly codes, masks phones beside them", () => {
+    for (const text of [
+      "/isu/ISU-2026-10-0001",
+      "/api/v1/isu/ISU-2031-12-12345/",
+      "report LPR-2026-01-999999 failed",
+    ]) {
+      expect(scrub(text)).toBe(text)
+    }
+    for (const phone of PHONES) {
+      const clean = scrub(`ISU-2026-10-0001 ${phone}`)
+      expect(clean).toBe("ISU-2026-10-0001 [number]")
+    }
+    // Code-shaped phone, not a code
+    expect(scrub("ISU-0812-34-567890")).toBe("ISU-[number]")
+    expect(scrub("LPR-2026-10-08123456789")).not.toContain("08123456789")
+  })
 })
 
 describe("stackFrames", () => {
@@ -191,7 +208,7 @@ describe("errorEvent", () => {
       platform: "node",
       level: "error",
       logger: "server error",
-      transaction: "/isu/ISU-ITB-26-0001",
+      transaction: "/isu/ISU-2026-10-0001",
       release: "abc123",
       environment: "production",
       tags: {

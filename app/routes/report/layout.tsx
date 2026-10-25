@@ -9,7 +9,7 @@ import { queueSlow } from "~/features/report/queue-delay.server"
 import { StepList, useDoneSteps } from "~/features/report/step-list"
 import { type ReportOutlet, useCurrentStep } from "~/features/report/step-page"
 import { m } from "~/paraglide/messages.js"
-import { sessionContext, tenantContext } from "../../context.ts"
+import { tenantContext } from "../../context.ts"
 import type { Route } from "./+types/layout"
 
 export function headers() {
@@ -20,7 +20,6 @@ export async function loader({ context }: Route.LoaderArgs) {
   const tenant = context.get(tenantContext)
   return {
     ...reportIntake(tenant),
-    signedIn: context.get(sessionContext) !== null,
     slow: await queueSlow(tenant.id),
   }
 }
@@ -46,13 +45,12 @@ export default function ReportLayout({ loaderData }: Route.ComponentProps) {
     <ToastProvider>
       <PageHeader
         title={m.report_title()}
-        description={
-          loaderData.signedIn ? m.report_lead_signed_in() : m.report_lead()
-        }
+        description={m.report_lead()}
         titleAs="p"
       />
-      <div className="mt-8 bg-page">
-        <Container width="5xl" className="pt-10 pb-24 sm:pt-14 sm:pb-10">
+      <div className="bg-page">
+        {/* Form close to the title */}
+        <Container width="5xl" className="pt-6 pb-24 sm:pt-8 sm:pb-10">
           {loaderData.slow ? <QueueNote className="mb-8" /> : null}
           <div className="grid gap-10 lg:grid-cols-[14rem_1fr]">
             <div className="hidden lg:block">

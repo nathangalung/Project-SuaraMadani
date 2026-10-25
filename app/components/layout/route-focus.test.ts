@@ -52,7 +52,7 @@ describe("routeKey", () => {
     const at = (pathname: string, search = "") => routeKey({ pathname, search })
     expect(at("/isu")).toBe(at("/isu"))
     expect(at("/isu")).not.toBe(at("/isu", "?urut=aktivitas"))
-    expect(at("/isu")).not.toBe(at("/isu/ISU-ITB-26-0001"))
+    expect(at("/isu")).not.toBe(at("/isu/ISU-2026-10-0001"))
   })
 })
 

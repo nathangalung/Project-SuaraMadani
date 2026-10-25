@@ -381,7 +381,7 @@ describe("staff and campus boundaries", () => {
         `INSERT INTO content_complaints (org_id, user_id, issue_id, public_code, submission_id, reason, part, explanation)
          VALUES ($1, $2, $3, 'ADU-ACCAUTH-26-7K3QX', gen_random_uuid(), 'hate', 'title_summary', 'Penjelasan aduan yang cukup panjang.')
          RETURNING public_code AS code`,
-        [orgA, owner.userId, (await issueRow(su, issue)).id],
+        [orgA, owner.userId, (await issueRow(su, HOST, issue)).id],
       )
     ).rows[0]?.code
     const own = await get(`${ORIGIN}/kelola/laporan/${sent.code}`, both.cookie)

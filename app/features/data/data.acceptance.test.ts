@@ -83,7 +83,7 @@ async function issueAt(
     [
       thirdId,
       issueNumber,
-      `ISU-ACCDATC-26-${String(issueNumber).padStart(4, "0")}`,
+      `ISU-2026-10-${String(issueNumber).padStart(4, "0")}`,
       province,
       fields.gov ?? "awaiting_response",
       fields.verified ?? 1,
@@ -137,7 +137,7 @@ beforeAll(async () => {
     await postForm(app, `${ORIGIN}/kelola/laporan/${code}`, admin.cookie, {
       intent: "merge",
       target: "existing",
-      issueId: (await issueRow(su, issue)).id,
+      issueId: (await issueRow(su, HOST, issue)).id,
     })
   }
   const rejected = await signedIn(HOST, person("ditolak"))

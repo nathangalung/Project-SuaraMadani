@@ -111,8 +111,8 @@ describe("listOwnReports", () => {
     const hidden = await addReport(orgB, user, "Digabung ke isu draf")
     const { rows } = await su.query<{ id: string; public_code: string }>(
       `INSERT INTO issues (org_id, year, number, public_code, title, summary, category_id, subcategory_id, province_code, regency_code, published_at)
-       VALUES ($1, 2026, 1, 'ISU-TRB-26-0001', 'Terbit', 'Ringkasan isu terbit.', 'program', 'program.infrastruktur', '32', '32.73', now()),
-              ($1, 2026, 2, 'ISU-TRB-26-0002', 'Draf', 'Ringkasan isu draf.', 'program', 'program.infrastruktur', '32', '32.73', NULL)
+       VALUES ($1, 2026, 1, 'ISU-2026-10-0001', 'Terbit', 'Ringkasan isu terbit.', 'program', 'program.infrastruktur', '32', '32.73', now()),
+              ($1, 2026, 2, 'ISU-2026-10-0002', 'Draf', 'Ringkasan isu draf.', 'program', 'program.infrastruktur', '32', '32.73', NULL)
        RETURNING id, public_code`,
       [orgB],
     )
@@ -122,15 +122,15 @@ describe("listOwnReports", () => {
       "INSERT INTO issue_reports (org_id, issue_id, report_id) VALUES ($1, $2, $3), ($1, $4, $5)",
       [
         orgB,
-        issueOf("ISU-TRB-26-0001"),
+        issueOf("ISU-2026-10-0001"),
         shown,
-        issueOf("ISU-TRB-26-0002"),
+        issueOf("ISU-2026-10-0002"),
         hidden,
       ],
     )
     const { reports: list } = await listOwnReports(orgB, user)
     const byTitle = new Map(list.map((r) => [r.title, r.merged]))
-    expect(byTitle.get("Digabung ke isu terbit")?.code).toBe("ISU-TRB-26-0001")
+    expect(byTitle.get("Digabung ke isu terbit")?.code).toBe("ISU-2026-10-0001")
     expect(byTitle.get("Digabung ke isu draf")?.code).toBeNull()
     expect(byTitle.get("Digabung ke isu draf")?.at).toBeInstanceOf(Date)
     const [plain] = (await listOwnReports(orgA, userA)).reports
@@ -156,15 +156,28 @@ describe("listOwnReports", () => {
 
 describe("reportCodeExists", () => {
   test("finds a sent code at its own campus only", async () => {
-    const code = "TRA-26-7K3QX"
+    const code = "LPR-2026-10-0001"
     await withTenant(orgA, (tx) =>
       tx
         .insert(reports)
         .values(reportValues(orgA, userA, { publicCode: code })),
     )
     expect(await reportCodeExists(orgA, code)).toBe(true)
-    expect(await reportCodeExists(orgA, "TRA-26-ZZZZZ")).toBe(false)
+    expect(await reportCodeExists(orgA, "LPR-2026-10-0002")).toBe(false)
     expect(await reportCodeExists(orgB, code)).toBe(false)
+  })
+
+  test("two campuses may hold the same number", async () => {
+    const code = "LPR-2026-10-0003"
+    for (const org of [orgA, orgB]) {
+      await withTenant(org, (tx) =>
+        tx
+          .insert(reports)
+          .values(reportValues(org, userA, { publicCode: code })),
+      )
+    }
+    expect(await reportCodeExists(orgA, code)).toBe(true)
+    expect(await reportCodeExists(orgB, code)).toBe(true)
   })
 })
 

@@ -17,7 +17,8 @@ export function describedBy(
 }
 
 // Question heading inside the card
-export const STEP_HEADING = "text-xl font-bold leading-snug sm:text-2xl"
+export const STEP_HEADING =
+  "font-bold font-heading text-xl leading-snug [font-synthesis-weight:none] sm:text-2xl"
 
 export type FieldProps = {
   id: string
@@ -54,7 +55,7 @@ function GroupMark() {
 
 function Hint({ id, children }: { id: string; children: ReactNode }) {
   return (
-    <p id={`${id}-hint`} className="font-ui text-[0.95rem] text-ink-muted">
+    <p id={`${id}-hint`} className="text-[0.95rem] text-ink-muted">
       {children}
     </p>
   )
@@ -88,7 +89,10 @@ function Label({
   asHeading?: boolean
 }) {
   const content = (
-    <label htmlFor={id} className={asHeading ? STEP_HEADING : "font-semibold"}>
+    <label
+      htmlFor={id}
+      className={asHeading ? STEP_HEADING : "font-semibold font-ui"}
+    >
       {label}
       {optional && ` ${m.field_optional()}`}
       {requiredMark && <RequiredMark />}
@@ -120,13 +124,7 @@ export function Field({
     />
   )
   return (
-    <div
-      className={cn(
-        "flex flex-col gap-1.5",
-        error && "border-l-4 border-danger pl-4",
-        className,
-      )}
-    >
+    <div className={cn("flex flex-col gap-1.5", className)}>
       {aside ? (
         <div className="flex items-baseline justify-between gap-3">
           {labelNode}
@@ -167,27 +165,47 @@ export function TextInput({
   requiredMark,
   labelAsHeading,
   aside,
+  prefix,
   className,
   type = "text",
   ...rest
-}: InputProps) {
+}: InputProps & {
+  // Fixed text inside, e.g. +62
+  prefix?: string
+}) {
+  const input = (
+    <input
+      type={type}
+      className={cn(
+        controlClass,
+        type === "file" ? FILE_CLASS : "h-12",
+        "w-full",
+        prefix && "pl-16",
+      )}
+      required={requiredMark}
+      {...controlProps(id, hint, error)}
+      {...rest}
+    />
+  )
   return (
     <Field
       {...{ id, label, hint, error, optional, requiredMark, labelAsHeading }}
       aside={aside}
       className={className}
     >
-      <input
-        type={type}
-        className={cn(
-          controlClass,
-          type === "file" ? FILE_CLASS : "h-12",
-          "w-full",
-        )}
-        required={requiredMark}
-        {...controlProps(id, hint, error)}
-        {...rest}
-      />
+      {prefix ? (
+        <div className="relative">
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 left-0 flex items-center border-line border-r-2 px-3 font-semibold text-ink"
+          >
+            {prefix}
+          </span>
+          {input}
+        </div>
+      ) : (
+        input
+      )}
     </Field>
   )
 }
@@ -252,13 +270,11 @@ export function Fieldset({
     <fieldset
       id={id}
       aria-describedby={describedBy(id, Boolean(hint), Boolean(error))}
-      className={cn(
-        "min-w-0",
-        error && "border-l-4 border-danger pl-4",
-        className,
-      )}
+      className={cn("min-w-0", className)}
     >
-      <legend className={legendHidden ? "sr-only" : "mb-1.5 font-semibold"}>
+      <legend
+        className={legendHidden ? "sr-only" : "mb-1.5 font-semibold font-ui"}
+      >
         {legendAsHeading ? (
           <h1 className={STEP_HEADING}>
             {legend}
@@ -288,6 +304,8 @@ type ChoiceProps = {
   hint?: ReactNode
   // Compact row, no hint
   inline?: boolean
+  // Required box, red asterisk
+  requiredMark?: boolean
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "id" | "type" | "className">
 
 function Choice({
@@ -296,6 +314,7 @@ function Choice({
   hint,
   type,
   inline,
+  requiredMark,
   ...rest
 }: ChoiceProps & { type: "radio" | "checkbox" }) {
   if (inline) {
@@ -320,11 +339,13 @@ function Choice({
         type={type}
         aria-describedby={hint ? `${id}-hint` : undefined}
         className="mt-0.5 size-5 shrink-0 cursor-pointer accent-brand"
+        required={requiredMark || undefined}
         {...rest}
       />
       <div className="flex flex-col gap-0.5">
-        <label htmlFor={id} className="cursor-pointer font-semibold">
+        <label htmlFor={id} className="cursor-pointer font-semibold font-ui">
           {label}
+          {requiredMark && <RequiredMark />}
         </label>
         {hint && <Hint id={id}>{hint}</Hint>}
       </div>

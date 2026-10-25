@@ -85,7 +85,7 @@ beforeAll(async () => {
     await postForm(app, `${ORIGIN}/kelola/laporan/${code}`, admin.cookie, {
       intent: "merge",
       target: "existing",
-      issueId: (await issueRow(su, issue)).id,
+      issueId: (await issueRow(su, HOST, issue)).id,
     })
   }
   // Two hidden, five shown

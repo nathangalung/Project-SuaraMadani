@@ -97,9 +97,9 @@ afterAll(async () => {
 
 // CMP-04: UU PDP Pasal 7
 test("export: every campus, only the subject, no secrets", async () => {
-  const mine = await report(orgA, subject, "SJA-26-AAAAA")
-  await report(orgB, subject, "SJB-26-BBBBB")
-  await report(orgA, other, "SJA-26-OTHER")
+  const mine = await report(orgA, subject, "LPR-2026-10-0001")
+  await report(orgB, subject, "LPR-2026-10-0002")
+  await report(orgA, other, "LPR-2026-10-0003")
   await su.query(
     "INSERT INTO report_contacts (org_id, report_id, phone, method) VALUES ($1, $2, $3, 'whatsapp')",
     [orgA, mine, PHONE],
@@ -125,12 +125,12 @@ test("export: every campus, only the subject, no secrets", async () => {
     const codes = Object.values(data.campuses).flatMap((tables) =>
       (tables.reports ?? []).map((row) => row.public_code),
     )
-    expect(codes.sort()).toEqual(["SJA-26-AAAAA", "SJB-26-BBBBB"])
+    expect(codes.sort()).toEqual(["LPR-2026-10-0001", "LPR-2026-10-0002"])
     expect(data.campuses.sja?.report_contacts).toEqual([
       expect.objectContaining({ phone: PHONE, method: "whatsapp" }),
     ])
     const text = JSON.stringify(data)
-    expect(text).not.toContain("SJA-26-OTHER")
+    expect(text).not.toContain("LPR-2026-10-0003")
     expect(text).not.toContain("orang.lain@contoh.id")
     expect(text).not.toContain("rahasia-token-subjek")
   }
@@ -142,7 +142,7 @@ test("export: every campus, only the subject, no secrets", async () => {
 
 // CMP-06, PRIV-18: global erasure
 test("delete: refused while reports, staff or superadmin", async () => {
-  await report(orgB, subject, "SJB-26-BBBBB")
+  await report(orgB, subject, "LPR-2026-10-0002")
   expect(await deleteSubject(migrator, EMAIL)).toEqual({
     ok: false,
     reason: "has_reports",
@@ -167,7 +167,7 @@ test("delete: refused while reports, staff or superadmin", async () => {
 })
 
 test("delete: the account goes, history stays, audited", async () => {
-  const kept = await report(orgA, other, "SJA-26-OTHER")
+  const kept = await report(orgA, other, "LPR-2026-10-0003")
   // Followers and reporters are members
   await su.query(
     "INSERT INTO members (organization_id, user_id, role) VALUES ($1, $2, 'reporter')",
@@ -303,7 +303,7 @@ describe("bun db/subject.ts", () => {
   })
 
   test("Given reports remain, when delete runs, then exit is 1 and the account stays", async () => {
-    await report(orgA, subject, "SJA-26-AAAAA")
+    await report(orgA, subject, "LPR-2026-10-0001")
     const { code, out } = await run(["delete", EMAIL, "--confirm"])
     expect(code).toBe(1)
     expect(JSON.parse(out[0] ?? "{}")).toMatchObject({ reason: "has_reports" })

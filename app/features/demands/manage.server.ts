@@ -30,10 +30,10 @@ import type { PurgeDeps } from "../../../server/purge.server.ts"
 import {
   BRIEF_MAX_BYTES,
   type DemandCategory,
+  type DemandRank,
   type DemandScope,
-  emptyImportance,
+  emptyRank,
   formatDemandCode,
-  type Importance,
   MAX_DEMAND_ISSUES,
   MAX_DEMAND_ITEMS,
 } from "../../../shared/demands.ts"
@@ -51,10 +51,10 @@ import {
 } from "../../../shared/status.ts"
 import { citedIssues, purgeDemandPages } from "./purge.server.ts"
 import {
-  pendingRaters,
-  prefixAnomaly,
-  readImportance,
-} from "./rating.server.ts"
+  pendingRankers,
+  rankingPrefixAnomaly,
+  readCitizenRanking,
+} from "./ranking.server.ts"
 
 export { demandProgress }
 
@@ -344,7 +344,13 @@ export function createDemand(
     tenant.id,
     async (tx) => {
       const year = Number(jakartaIsoDate(input.now ?? new Date()).slice(0, 4))
-      const number = await nextCounter(tx, tenant.id, year, "demand")
+      // Tuntutan stay yearly
+      const number = await nextCounter(
+        tx,
+        tenant.id,
+        { year, month: 0 },
+        "demand",
+      )
       const code = formatDemandCode(tenant.campusCode, year, number)
       const [row] = await tx
         .insert(demands)
@@ -1290,10 +1296,11 @@ export type ManagedDemand = DemandFields & {
   frozen: boolean
   items: ManagedItem[]
   issues: { code: string; title: string; published: boolean }[]
-  importance: Importance
+  rank: DemandRank
+  ranking: { rankers: number; shown: boolean }
   // Accounts too new yet
-  pendingRaters: number
-  // PLAN 5.7 admin flag
+  pendingRankers: number
+  // Optional, frontend fixtures omit
   prefixAnomaly?: boolean
 }
 
@@ -1382,13 +1389,14 @@ export function getManagedDemand(
         )
         .where(eq(demandIssues.demandId, row.id))
         .orderBy(asc(issues.publicCode))
-      const ratings = await readImportance(tx, [row.id])
+      const ranking = await readCitizenRanking(tx)
       return {
         ...row,
         frozen: await closedNow(tx, row),
-        importance: ratings.get(row.id) ?? emptyImportance(),
-        pendingRaters: await pendingRaters(tx, row.id),
-        prefixAnomaly: await prefixAnomaly(tx, row.id),
+        rank: ranking.places.get(row.id) ?? emptyRank(),
+        ranking: { rankers: ranking.rankers, shown: ranking.shown },
+        pendingRankers: await pendingRankers(tx),
+        prefixAnomaly: await rankingPrefixAnomaly(tx, row.id),
         items: items.map((item) => ({
           ...item,
           briefs: briefs

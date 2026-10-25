@@ -100,47 +100,61 @@ export function isDemandCategory(value: string): value is DemandCategory {
   return (DEMAND_CATEGORIES as readonly string[]).includes(value)
 }
 
-// Importance, 1 lowest to 5
-export const IMPORTANCE_SCORES = [1, 2, 3, 4, 5] as const
-export type ImportanceScore = (typeof IMPORTANCE_SCORES)[number]
+// Starting Values: citizen ranking
+export const RANKING_SIZE = 5
+export const RANKING_MIN_RANKERS = 10
+export const RANKING_ACCOUNT_DAYS = 7
 
-// Starting Values: importance rating
-export const IMPORTANCE_MIN_RATERS = 10
-export const IMPORTANCE_ACCOUNT_DAYS = 7
-export const IMPORTANCE_NAMES_SHOWN = 20
-
-export function isImportanceScore(value: number): value is ImportanceScore {
-  return (IMPORTANCE_SCORES as readonly number[]).includes(value)
+/** Borda: first place most. */
+export function rankingPoints(position: number): number {
+  return RANKING_SIZE + 1 - position
 }
 
-type ImportanceCounts = Record<ImportanceScore, number>
-
-export type Importance = {
-  raters: number
-  counts: ImportanceCounts
-  // Null below the threshold
-  mean: number | null
+export type RankRow = {
+  demandId: string
+  points: number
+  rankers: number
+  raisedOn: string
 }
 
-export function emptyImportance(): Importance {
-  return { raters: 0, counts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }, mean: null }
+export type DemandRank = {
+  // Null below threshold or unranked
+  place: number | null
+  rankers: number
 }
 
-/** Counted rows, public summary. */
-export function importanceOf(
-  rows: readonly { score: number; n: number }[],
-): Importance {
-  const summary = emptyImportance()
-  let sum = 0
-  for (const row of rows) {
-    if (!isImportanceScore(row.score) || row.n <= 0) continue
-    summary.counts[row.score] += row.n
-    summary.raters += row.n
-    sum += row.score * row.n
-  }
-  if (summary.raters >= IMPORTANCE_MIN_RATERS) {
-    // One decimal, as shown
-    summary.mean = Math.round((sum / summary.raters) * 10) / 10
-  }
-  return summary
+export type CitizenRanking = {
+  // Counted accounts with a list
+  rankers: number
+  shown: boolean
+  places: Map<string, DemandRank>
+}
+
+export function emptyRank(): DemandRank {
+  return { place: null, rankers: 0 }
+}
+
+/** Order by points, rankers, age. */
+export function citizenRanking(
+  rows: readonly RankRow[],
+  rankers: number,
+): CitizenRanking {
+  const shown = rankers >= RANKING_MIN_RANKERS
+  const ranked = rows
+    .filter((row) => row.points > 0)
+    .toSorted(
+      (a, b) =>
+        b.points - a.points ||
+        b.rankers - a.rankers ||
+        a.raisedOn.localeCompare(b.raisedOn) ||
+        a.demandId.localeCompare(b.demandId),
+    )
+  const places = new Map<string, DemandRank>()
+  ranked.forEach((row, index) => {
+    places.set(row.demandId, {
+      place: shown ? index + 1 : null,
+      rankers: row.rankers,
+    })
+  })
+  return { rankers, shown, places }
 }

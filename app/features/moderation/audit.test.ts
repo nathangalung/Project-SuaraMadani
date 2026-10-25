@@ -47,7 +47,9 @@ beforeAll(async () => {
     "INSERT INTO members (organization_id, user_id, role) VALUES ($1, $2, 'admin')",
     [orgA, moderator],
   )
-  const values = reportValues(orgA, moderator, { publicCode: "AUA-26-AAAAA" })
+  const values = reportValues(orgA, moderator, {
+    publicCode: "LPR-2026-10-0001",
+  })
   const { rows } = await su.query<{ id: string }>(
     `INSERT INTO reports (org_id, user_id, public_code, submission_id, relation, province_code,
        regency_code, district_code, title, story, category_id, subcategory_id, occurred_on,
@@ -131,7 +133,7 @@ describe("listAudit", () => {
     ])
     expect(page.rows[2]).toMatchObject({
       entityType: "report",
-      entityCode: "AUA-26-AAAAA",
+      entityCode: "LPR-2026-10-0001",
       actorRole: "admin",
       changedColumns: ["status"],
       reasonCode: "standard_2",

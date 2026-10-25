@@ -1,31 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { renderToStaticMarkup } from "react-dom/server"
 import { MemoryRouter } from "react-router"
-import { InfoCard } from "./about-parts"
 import { PolicyPage } from "./policy-page"
 import { updatedOn } from "./prose"
-
-describe("about parts", () => {
-  test("cards are plain, band ones keep the blue ring", () => {
-    const html = renderToStaticMarkup(
-      <ul>
-        <InfoCard title="Judul" tone="band">
-          isi
-        </InfoCard>
-        <InfoCard title="Judul" titleAs="h3" tone="ink">
-          isi
-        </InfoCard>
-      </ul>,
-    )
-    const [band, ink] = html.match(/<li [^>]*>/g) ?? []
-    expect(band).toContain("focus-light")
-    expect(ink).toContain("bg-ink text-on-accent")
-    expect(html).toContain("<h4")
-    expect(html).toContain("<h3")
-    expect(html).not.toContain("shadow-")
-    expect(html).not.toContain("<svg")
-  })
-})
 
 describe("policy page", () => {
   const html = renderToStaticMarkup(

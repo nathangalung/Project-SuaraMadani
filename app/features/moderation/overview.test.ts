@@ -62,7 +62,7 @@ async function issue(
     `INSERT INTO issues (org_id, year, number, public_code, title, summary, category_id,
        subcategory_id, province_code, regency_code, advocacy_status, gov_status,
        report_count, published_at, taken_down_at, takedown_reason)
-     VALUES ($1, 2026, $2::int, 'ISU-T-26-' || $2::text, 'Judul isu uji', 'Ringkasan isu uji.',
+     VALUES ($1, 2026, $2::int, 'ISU-2026-10-' || lpad($2::text, 4, '0'), 'Judul isu uji', 'Ringkasan isu uji.',
        'program', 'program.pendidikan', '32', '32.73', $3, $4, 1, $5, $6, $7) RETURNING id`,
     [
       org,

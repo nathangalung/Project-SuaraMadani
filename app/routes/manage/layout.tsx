@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from "react-router"
+import { manageNav } from "~/components/layout/site-nav"
 import { Container } from "~/components/ui/container"
 import { m } from "~/paraglide/messages.js"
 
@@ -7,37 +8,27 @@ export function headers() {
   return { "Cache-Control": "private, no-store" }
 }
 
-// Inactive reads as a link
+// Pill strip, scrolls on phones
 const NAV =
-  "font-semibold text-accent underline underline-offset-4 hover:decoration-2 aria-[current=page]:text-ink aria-[current=page]:decoration-2"
-
-// Current on own page only
-const LINKS = [
-  { to: "/kelola", label: m.manage_home_title },
-  { to: "/kelola/antrean", label: m.manage_queue_title },
-  { to: "/kelola/isu", label: m.manage_issues_title },
-  { to: "/kelola/tuntutan", label: m.manage_demands_title },
-  { to: "/kelola/aduan", label: m.manage_complaints_title },
-  { to: "/kelola/audit", label: m.manage_audit_title },
-  { to: "/kelola/anggota", label: m.team_title },
-  { to: "/kelola/pengaturan", label: m.settings_nav },
-] as const
+  "block whitespace-nowrap rounded-full px-4 py-2 font-semibold text-ink transition-colors duration-(--dur-hover) hover:bg-brand-soft motion-reduce:transition-none aria-[current=page]:bg-brand aria-[current=page]:text-on-accent"
 
 export default function ManageLayout() {
   return (
-    <Container width="5xl" className="py-8 pb-16">
-      <nav
-        aria-label={m.manage_nav_label()}
-        className="mb-8 flex flex-wrap items-baseline gap-x-6 gap-y-2 border-line-subtle border-b pb-4"
-      >
-        <span className="font-bold font-heading text-ink-muted [font-synthesis-weight:none]">
+    <Container width="6xl" className="py-8 pb-16">
+      <nav aria-label={m.manage_nav_label()} className="mb-10">
+        <p className="mb-3 font-heading text-ink-muted text-lg">
           {m.manage_title()}
-        </span>
-        {LINKS.map((link) => (
-          <NavLink key={link.to} to={link.to} end className={NAV}>
-            {link.label()}
-          </NavLink>
-        ))}
+        </p>
+        <ul className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-full bg-surface-raised p-1">
+          {/* Section stays current on detail */}
+          {manageNav().map((link) => (
+            <li key={link.to}>
+              <NavLink to={link.to} end={link.end} className={NAV}>
+                {link.label}
+              </NavLink>
+            </li>
+          ))}
+        </ul>
       </nav>
       <Outlet />
     </Container>

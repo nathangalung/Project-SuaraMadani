@@ -186,9 +186,9 @@ describe("auth limiter", () => {
 describe("document handler", () => {
   test("other paths reach React Router", async () => {
     const { app, seen } = appWith()
-    const res = await app.request(`${host}/isu/ISU-ITB-26-0042`)
+    const res = await app.request(`${host}/isu/ISU-2026-10-0042`)
     expect(await res.text()).toBe("document")
-    expect(seen).toEqual([{ url: `${host}/isu/ISU-ITB-26-0042` }])
+    expect(seen).toEqual([{ url: `${host}/isu/ISU-2026-10-0042` }])
   })
 
   test("the public URL scheme comes from the proxy header", async () => {
@@ -334,7 +334,7 @@ describe("compression", () => {
 
   test("images, small bodies and redirects stay raw", async () => {
     const png = serving(page, "image/png")
-    const image = await png.request(`${host}/isu/ISU-ITB-26-0001/og.png`, {
+    const image = await png.request(`${host}/isu/ISU-2026-10-0001/og.png`, {
       headers: gzip,
     })
     expect(image.headers.has("Content-Encoding")).toBe(false)
@@ -378,10 +378,10 @@ describe("canonical query", () => {
     for (const [url, location] of [
       ["/?index=r1", "/"],
       ["/isu?_routes=x&q=abcd", "/isu?q=abcd"],
-      ["/isu/ISU-ITB-26-0001?index=zz", "/isu/ISU-ITB-26-0001"],
+      ["/isu/ISU-2026-10-0001?index=zz", "/isu/ISU-2026-10-0001"],
       [
-        "/isu/ISU-ITB-26-0001/og.png?v=1&index=r1",
-        "/isu/ISU-ITB-26-0001/og.png?v=1",
+        "/isu/ISU-2026-10-0001/og.png?v=1&index=r1",
+        "/isu/ISU-2026-10-0001/og.png?v=1",
       ],
     ] as const) {
       const res = await app.request(`${host}${url}`)
@@ -925,17 +925,17 @@ describe("request log", () => {
   test("private codes and ids never reach the log", async () => {
     const id = "0199c2b0-1d2e-7000-8000-00000000abcd"
     const cases: [string, string][] = [
-      ["/lapor/sukses/ITB-26-ABCDE", "/lapor/sukses/:code"],
+      ["/lapor/sukses/LPR-2026-10-0001", "/lapor/sukses/:code"],
       ["/aduan/A-26-QWERT", "/aduan/:code"],
       [`/undangan/${id}`, "/undangan/:id"],
       [
-        "/kelola/laporan/ITB-26-ABCDE/tutup-akun",
+        "/kelola/laporan/LPR-2026-10-0001/tutup-akun",
         "/kelola/laporan/:code/tutup-akun",
       ],
       ["/kelola/aduan/A-26-QWERT", "/kelola/aduan/:code"],
       [`/kelola/bukti/${id}/asli`, "/kelola/bukti/:id/asli"],
-      ["/KELOLA/Laporan/ITB-26-ABCDE", "/KELOLA/Laporan/:code"],
-      ["/isu/ITB-26-0001", "/isu/ITB-26-0001"],
+      ["/KELOLA/Laporan/LPR-2026-10-0001", "/KELOLA/Laporan/:code"],
+      ["/isu/ISU-2026-10-0001", "/isu/ISU-2026-10-0001"],
     ]
     for (const [path, logged] of cases) {
       const { app, lines } = appWith()
@@ -1017,7 +1017,7 @@ describe("security events", () => {
       const { app, lines } = appWith({
         handleDocument: async () => new Response(null, { status }),
       })
-      await app.request(`${host}/kelola/laporan/ITB-26-ABCDE`)
+      await app.request(`${host}/kelola/laporan/LPR-2026-10-0001`)
       expect(events(lines)).toEqual([
         expect.objectContaining({
           event,

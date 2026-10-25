@@ -1,15 +1,21 @@
-import { CircleAlert } from "lucide-react"
+import { CircleAlert, CircleCheck, Info, type LucideIcon } from "lucide-react"
 import type { ReactNode } from "react"
 import { cn } from "./cn"
 
 type Tone = "neutral" | "info" | "success" | "danger"
 
-// Left rule, tinted fill
+// Icon carries tone, no box
 const tones: Record<Tone, string> = {
-  neutral: "border-ink/30 bg-surface",
-  info: "border-brand bg-brand-soft",
-  success: "border-success bg-mint-soft",
-  danger: "flex gap-3 border-danger bg-danger-soft text-danger-ink",
+  neutral: "text-ink-soft",
+  info: "flex gap-3 text-ink",
+  success: "flex gap-3 text-ink",
+  danger: "flex gap-3 text-danger",
+}
+
+const icons: Partial<Record<Tone, { Icon: LucideIcon; className: string }>> = {
+  info: { Icon: Info, className: "text-accent" },
+  success: { Icon: CircleCheck, className: "text-success" },
+  danger: { Icon: CircleAlert, className: "" },
 }
 
 export function Note({
@@ -21,19 +27,14 @@ export function Note({
   className?: string
   children: ReactNode
 }) {
+  const icon = icons[tone]
   return (
-    <div
-      className={cn(
-        "border-l-4 p-4 text-sm leading-relaxed",
-        tones[tone],
-        className,
-      )}
-    >
-      {tone === "danger" ? (
+    <div className={cn("text-sm leading-relaxed", tones[tone], className)}>
+      {icon ? (
         <>
-          <CircleAlert
+          <icon.Icon
             aria-hidden="true"
-            className="mt-0.5 size-[1.1rem] shrink-0"
+            className={cn("mt-0.5 size-[1.1rem] shrink-0", icon.className)}
           />
           <div>{children}</div>
         </>

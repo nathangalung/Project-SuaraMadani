@@ -3,7 +3,7 @@ import { returnPath } from "./return-path.ts"
 
 describe("returnPath", () => {
   test("an issue page or /lacak", () => {
-    expect(returnPath("/isu/ISU-ITB-26-0042")).toBe("/isu/ISU-ITB-26-0042")
+    expect(returnPath("/isu/ISU-2026-10-0042")).toBe("/isu/ISU-2026-10-0042")
     expect(returnPath("/lacak")).toBe("/lacak")
   })
 

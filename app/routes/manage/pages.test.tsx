@@ -47,7 +47,7 @@ type Props<T extends (...args: never[]) => unknown> = Parameters<T>[0]
 
 const report = {
   id: "0199c2b0-1d2e-7000-8000-000000000002",
-  code: "ITB-26-7K3QX",
+  code: "LPR-2026-10-0001",
   status: "submitted",
   relation: "self",
   otherConsent: null,
@@ -74,7 +74,7 @@ const report = {
 
 const issue: ManagedIssue = {
   id: "0199c2b0-1d2e-7000-8000-000000000001",
-  code: "ISU-ITB-26-0001",
+  code: "ISU-2026-10-0001",
   title: "Jalan berlubang di Dago",
   summary: "Warga melaporkan lubang besar.",
   verificationLabel: "verified",
@@ -88,7 +88,11 @@ const issue: ManagedIssue = {
   subcategoryId: "program.pendidikan",
   regencyCode: "32.73",
   reports: [
-    { code: "ITB-26-7K3QX", title: "Jalan berlubang", forwardConsent: false },
+    {
+      code: "LPR-2026-10-0001",
+      title: "Jalan berlubang",
+      forwardConsent: false,
+    },
   ],
   record: { referrals: [], responses: [], events: [] },
 }
@@ -131,12 +135,12 @@ describe("manage pages", () => {
       `<title>${m.manage_report_title({ code: report.code })} · ${SITE}</title>`,
     )
     expect(html.match(/href="\/kelola"/g)?.length).toBe(1)
-    // Underline without hover, phones
+    // Pill in a raised strip
     const back = html.match(/<a[^>]*href="\/kelola"[^>]*>/)?.[0] ?? ""
     expect(back).not.toContain('aria-current="page"')
     const tokens = (back.match(/class="([^"]*)"/)?.[1] ?? "").split(" ")
-    expect(tokens).toContain("underline")
-    expect(tokens).toContain("text-accent")
+    expect(tokens).toContain("rounded-full")
+    expect(html).toMatch(/<ul class="[^"]*rounded-full[^"]*bg-surface-raised/)
   })
 
   test("issue: the report list has a heading, a site title", () => {

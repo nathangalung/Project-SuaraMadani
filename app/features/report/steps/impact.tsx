@@ -35,6 +35,7 @@ export function ImpactStep({ draft }: { draft: Draft }) {
       step="impact"
       title={m.step_impact_title()}
       errors={errors}
+      setErrors={setErrors}
       onContinue={onContinue}
     >
       <CheckboxGroup

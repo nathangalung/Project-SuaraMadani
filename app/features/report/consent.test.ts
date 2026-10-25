@@ -18,7 +18,7 @@ let orgA = ""
 let orgB = ""
 let owner = ""
 let other = ""
-const CODE = "CNS-26-AAAAA"
+const CODE = "LPR-2026-10-0001"
 
 beforeAll(async () => {
   await migrate(testUrl("TEST_DATABASE_MIGRATOR_URL"))

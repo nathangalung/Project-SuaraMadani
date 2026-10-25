@@ -159,9 +159,9 @@ describe("listPublishedDemands", () => {
     expect(await getDemandPage(itb.id, "TUN-ITB-26-0001")).toBeNull()
   })
 
-  test("filters by scope, province, status and search", async () => {
+  test("filters by scope, province, status, category and search", async () => {
     const regional = await make(REGIONAL)
-    const national = await make(NATIONAL)
+    const national = await make({ ...NATIONAL, category: "bantuan_sosial" })
     await fulfilFirst(regional)
     const codes = async (query: Record<string, string>) => {
       const result = await listPublishedDemands(itb.id, query)
@@ -174,6 +174,10 @@ describe("listPublishedDemands", () => {
     expect(await codes({ status: "partially_fulfilled" })).toEqual([regional])
     expect(await codes({ status: "not_fulfilled" })).toEqual([national])
     expect(await codes({ q: "bantuan sosial" })).toEqual([national])
+    expect(await codes({ kategori: "bantuan_sosial" })).toEqual([national])
+    expect(await codes({ kategori: "kesehatan" })).toEqual([])
+    // Unknown category is ignored
+    expect(await codes({ kategori: "bukan'kategori" })).toHaveLength(2)
     expect(await listPublishedDemands(itb.id, { q: "ai" })).toEqual({
       kind: "short_query",
     })
@@ -327,12 +331,12 @@ describe("getDemandPage", () => {
     await fulfilFirst(code)
     await su.query(
       `INSERT INTO issues (org_id, year, number, public_code, title, summary, category_id, subcategory_id, province_code, regency_code, report_count, published_at)
-       VALUES ($1, 2026, 1, 'ISU-ITB-26-0001', 'Air bersih mati dua minggu', 'Suplai air bersih tidak mengalir di tiga kelurahan.', 'program', 'program.air', '32', '32.73', 1, now())`,
+       VALUES ($1, 2026, 1, 'ISU-2026-10-0001', 'Air bersih mati dua minggu', 'Suplai air bersih tidak mengalir di tiga kelurahan.', 'program', 'program.air', '32', '32.73', 1, now())`,
       [itb.id],
     )
     await linkIssue(itb, {
       code,
-      issueCode: "ISU-ITB-26-0001",
+      issueCode: "ISU-2026-10-0001",
       actorId: admin,
     })
     const item = (await getManagedDemand(itb.id, code))?.items[1]
@@ -374,7 +378,7 @@ describe("getDemandPage", () => {
       ["brief", 2],
     ])
     expect(page?.issues).toEqual([
-      { code: "ISU-ITB-26-0001", title: "Air bersih mati dua minggu" },
+      { code: "ISU-2026-10-0001", title: "Air bersih mati dua minggu" },
     ])
     expect(
       (await publicBriefFile(itb.id, code, briefId, filesDir))?.itemNumber,

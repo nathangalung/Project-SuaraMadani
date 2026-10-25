@@ -87,6 +87,7 @@ export const AUDIT_ACTIONS = [
   "account.close_minor",
   "account.close",
   "report.view_contact",
+  "report.view_account",
   "issue.edit",
   "settings.identity",
   "evidence.decide",

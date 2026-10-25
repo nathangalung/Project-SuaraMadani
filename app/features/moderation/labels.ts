@@ -60,6 +60,7 @@ export const AUDIT_ACTION_TEXT: Record<AuditAction, Text> = {
   "account.close_minor": m.audit_account_close_minor,
   "account.close": m.audit_account_close,
   "report.view_contact": m.audit_report_view_contact,
+  "report.view_account": m.audit_report_view_account,
   "issue.edit": m.audit_issue_edit,
   "evidence.decide": m.audit_evidence_decide,
   "evidence.download_original": m.audit_evidence_download_original,

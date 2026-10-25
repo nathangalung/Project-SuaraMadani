@@ -56,7 +56,7 @@ async function issueWithClaim(
   values: { reporters?: string[]; published?: boolean; gov?: string } = {},
 ) {
   number++
-  const code = `ISU-SV-26-${String(number).padStart(4, "0")}`
+  const code = `ISU-2026-10-${String(number).padStart(4, "0")}`
   const { rows } = await su.query<{ id: string }>(
     `INSERT INTO issues (org_id, year, number, public_code, title, summary,
        category_id, subcategory_id, province_code, regency_code,

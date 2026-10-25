@@ -68,9 +68,9 @@ export function DetailsStep({ draft }: { draft: Draft }) {
   const [titleLength, setTitleLength] = useState(saved.title?.length ?? 0)
   const today = latestIsoDate(new Date())
 
-  const onContinue = (form: HTMLFormElement) => {
+  const read = (form: HTMLFormElement): DetailsAnswer => {
     const data = new FormData(form)
-    const answer: DetailsAnswer = {
+    return {
       title: formText(data, "title"),
       story: formText(data, "story"),
       categoryId: categoryId || undefined,
@@ -79,6 +79,11 @@ export function DetailsStep({ draft }: { draft: Draft }) {
       agency: formText(data, "agency"),
       urgency,
     }
+  }
+  const check = (form: HTMLFormElement) => validateDetails(read(form), today)
+
+  const onContinue = (form: HTMLFormElement) => {
+    const answer = read(form)
     const found = validateDetails(answer, today)
     setErrors(found)
     if (found.length > 0) return
@@ -91,6 +96,8 @@ export function DetailsStep({ draft }: { draft: Draft }) {
       step="details"
       title={m.step_details_title()}
       errors={errors}
+      setErrors={setErrors}
+      validate={check}
       onContinue={onContinue}
     >
       <TextInput

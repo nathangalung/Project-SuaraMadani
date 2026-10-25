@@ -52,10 +52,3 @@ export function siteIdentity(
     statusHref: httpsUrl(tenant.settings.statusUrl),
   }
 }
-
-/** About page only, not shell. */
-export function creditLine(
-  tenant: Pick<TenantContext, "settings">,
-): string | undefined {
-  return text(tenant.settings.credit)
-}

@@ -104,9 +104,7 @@ function ThemePreview({ values }: { values: Record<string, string> }) {
           {m.theme_preview_heading()}
         </p>
         <p className="mt-1 text-ink-soft text-sm">{m.theme_preview_body()}</p>
-        <p className="mt-1 font-ui text-ink-muted text-xs">
-          {m.theme_preview_meta()}
-        </p>
+        <p className="mt-1 text-ink-muted text-xs">{m.theme_preview_meta()}</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="rounded-[10px] bg-brand px-4 py-2 font-heading text-on-accent text-sm">
             {m.theme_preview_button()}
@@ -159,10 +157,7 @@ export function ThemeEditor({
       <input type="hidden" name="intent" value="theme" />
       <div className="flex min-w-0 flex-col gap-8">
         {failures.length > 0 ? (
-          <div
-            id="theme-contrast"
-            className="border-danger border-l-4 bg-danger-soft p-4 text-danger-ink text-sm"
-          >
+          <div id="theme-contrast" className="text-danger text-sm">
             <p className="font-bold">{m.theme_failures_title()}</p>
             <ul className="mt-2 list-disc pl-5">
               {failures.map((failure) => (
@@ -231,7 +226,7 @@ export function ThemeEditor({
               )}
             </div>
             {group === "background" ? (
-              <p className="mt-3 font-ui text-ink-muted text-sm">
+              <p className="mt-3 text-ink-muted text-sm">
                 {m.theme_background_hint()}
               </p>
             ) : null}
@@ -246,9 +241,7 @@ export function ThemeEditor({
       <aside className="lg:sticky lg:top-6 lg:self-start">
         <p className="mb-2 font-bold">{m.theme_preview_title()}</p>
         <ThemePreview values={values} />
-        <p className="mt-3 font-ui text-ink-muted text-sm">
-          {m.theme_preview_hint()}
-        </p>
+        <p className="mt-3 text-ink-muted text-sm">{m.theme_preview_hint()}</p>
       </aside>
     </Form>
   )

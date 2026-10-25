@@ -89,10 +89,12 @@ beforeAll(async () => {
   for (let i = 0; i < 6; i++) {
     await suDb
       .insert(reports)
-      .values(reportValues(orgA, user, { publicCode: `NA-26-${i}` }))
+      .values(
+        reportValues(orgA, user, { publicCode: `LPR-2026-10-000${i + 1}` }),
+      )
   }
   await su.query(
-    "UPDATE reports SET status = 'forwarded', forwarded_to_org_id = $2 WHERE org_id = $1 AND public_code = 'NA-26-0'",
+    "UPDATE reports SET status = 'forwarded', forwarded_to_org_id = $2 WHERE org_id = $1 AND public_code = 'LPR-2026-10-0001'",
     [orgA, orgB],
   )
   // A: 5 program, 3 bencana

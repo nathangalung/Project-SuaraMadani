@@ -13,10 +13,15 @@ type Collection = Extract<
   { type: "GeometryCollection" }
 >
 
+const topo = topology as unknown as Topo
+// Also reverse-geocodes report points
+export const PROVINCE_FEATURES = feature(
+  topo,
+  topo.objects.provinces as Collection,
+)
+
 function project(): { shapes: ProvinceShape[]; height: number } {
-  const topo = topology as unknown as Topo
-  const provinces = topo.objects.provinces as Collection
-  const collection = feature(topo, provinces)
+  const collection = PROVINCE_FEATURES
   const projection = geoMercator().fitWidth(MAP_WIDTH, collection)
   const [[, top], [, bottom]] = geoPath(projection).bounds(collection)
   const [x, y] = projection.translate()

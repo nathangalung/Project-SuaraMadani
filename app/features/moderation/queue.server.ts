@@ -161,6 +161,7 @@ async function readReport(tx: Tx, code: string) {
       regencyCode: reports.regencyCode,
       districtName: district.name,
       villageName: village.name,
+      point: reports.point,
       createdAt: reports.createdAt,
       verifiedAt: reports.verifiedAt,
       forwardedFromOrgId: reports.forwardedFromOrgId,

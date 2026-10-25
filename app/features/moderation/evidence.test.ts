@@ -306,7 +306,6 @@ describe("decideEvidence", () => {
         summary: "Beberapa warga melaporkan lubang besar di jalan.",
       },
       actorId: moderator,
-      campusCode: "ITB",
       now: new Date(),
       notify: false,
     })
@@ -380,7 +379,6 @@ describe("getEvidenceEditor", () => {
         summary: "Beberapa warga melaporkan lubang besar di jalan.",
       },
       actorId: moderator,
-      campusCode: "ITB",
       now: new Date(),
       notify: false,
     })

@@ -92,14 +92,20 @@ export async function withTenant<T>(
 export async function nextCounter(
   tx: Tx,
   orgId: string,
-  year: number,
+  period: { year: number; month: number },
   kind: CounterKind,
 ): Promise<number> {
+  const { year, month } = period
   const [row] = await tx
     .insert(orgCounters)
-    .values({ orgId, year, kind, next: 1 })
+    .values({ orgId, year, month, kind, next: 1 })
     .onConflictDoUpdate({
-      target: [orgCounters.orgId, orgCounters.year, orgCounters.kind],
+      target: [
+        orgCounters.orgId,
+        orgCounters.year,
+        orgCounters.month,
+        orgCounters.kind,
+      ],
       set: { next: sql`${orgCounters.next} + 1` },
     })
     .returning({ next: orgCounters.next })

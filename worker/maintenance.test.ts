@@ -218,7 +218,7 @@ describe("maintenance-daily", () => {
     const { rows: issue } = await su.query<{ id: string }>(
       `INSERT INTO issues (org_id, year, number, public_code, title, summary,
          category_id, subcategory_id, province_code, regency_code, gov_status)
-       VALUES ($1, 2026, 901, 'ISU-MTA-26-0901', 'Judul isu', 'Ringkasan.',
+       VALUES ($1, 2026, 901, 'ISU-2026-10-0901', 'Judul isu', 'Ringkasan.',
          'program', 'program.pendidikan', '32', '32.73', 'claimed_resolved')
        RETURNING id`,
       [orgA],
@@ -249,7 +249,7 @@ describe("maintenance-daily", () => {
     await su.query("DELETE FROM issues WHERE id = $1", [issue[0]?.id])
   })
 
-  test("a tuntutan keeps its top prefix, hashes clear", async () => {
+  test("a tuntutan keeps its top ranking prefix, hashes clear", async () => {
     const { rows: demand } = await su.query<{ id: string }>(
       `INSERT INTO demands (org_id, year, number, public_code, scope, title,
          body, summary, target, raised_on)
@@ -257,36 +257,48 @@ describe("maintenance-daily", () => {
          'Teks.', 'Ringkasan.', 'Kementerian', '2026-09-01') RETURNING id`,
       [orgA],
     )
-    const rated: [string, number][] = [
+    const ranked: [string, number][] = [
       ["burst", 31],
       ["burst", 31],
       ["other", 31],
       ["burst", 1],
     ]
-    for (const [n, [hash, days]] of rated.entries()) {
-      const rater = await insertUser(su, `tuntutan${n}@contoh.id`)
+    for (const [n, [hash, days]] of ranked.entries()) {
+      const ranker = await insertUser(su, `tuntutan${n}@contoh.id`)
       await su.query(
-        `INSERT INTO demand_ratings (org_id, demand_id, user_id, score, client_hash, created_at, updated_at)
-         VALUES ($1, $2, $3, 5, $4, $5, $5)`,
+        `INSERT INTO demand_rankings (org_id, demand_id, user_id, position, client_hash, created_at, updated_at)
+         VALUES ($1, $2, $3, 1, $4, $5, $5)`,
         [
           orgA,
           demand[0]?.id,
-          rater,
+          ranker,
           hash,
           new Date(NOW.getTime() - days * DAY),
         ],
       )
     }
+    // Legacy ratings still clear
+    const rater = await insertUser(su, "tuntutan.lama@contoh.id")
+    await su.query(
+      `INSERT INTO demand_ratings (org_id, demand_id, user_id, score, client_hash, created_at, updated_at)
+       VALUES ($1, $2, $3, 5, 'legacy', $4, $4)`,
+      [orgA, demand[0]?.id, rater, new Date(NOW.getTime() - 31 * DAY)],
+    )
     const result = await run()
-    expect(result.ratingPrefixes).toBe(3)
+    expect(result.ratingPrefixes).toBe(4)
     const { rows } = await su.query(
-      `SELECT d.max_prefix_ratings AS n,
+      `SELECT d.max_prefix_rankings AS n,
          count(r.client_hash)::int AS kept
-       FROM demands d JOIN demand_ratings r ON r.demand_id = d.id
-       WHERE d.id = $1 GROUP BY d.max_prefix_ratings`,
+       FROM demands d JOIN demand_rankings r ON r.demand_id = d.id
+       WHERE d.id = $1 GROUP BY d.max_prefix_rankings`,
       [demand[0]?.id],
     )
     expect(rows).toEqual([{ n: 3, kept: 1 }])
+    const legacy = await su.query(
+      "SELECT client_hash FROM demand_ratings WHERE demand_id = $1",
+      [demand[0]?.id],
+    )
+    expect(legacy.rows).toEqual([{ client_hash: null }])
     await su.query("DELETE FROM demands WHERE id = $1", [demand[0]?.id])
   })
 
@@ -294,7 +306,7 @@ describe("maintenance-daily", () => {
     const { rows: issue } = await su.query<{ id: string }>(
       `INSERT INTO issues (org_id, year, number, public_code, title, summary,
          category_id, subcategory_id, province_code, regency_code, gov_status)
-       VALUES ($1, 2026, 902, 'ISU-MTA-26-0902', 'Judul isu', 'Ringkasan.',
+       VALUES ($1, 2026, 902, 'ISU-2026-10-0902', 'Judul isu', 'Ringkasan.',
          'program', 'program.pendidikan', '32', '32.73', 'claimed_resolved')
        RETURNING id`,
       [orgA],

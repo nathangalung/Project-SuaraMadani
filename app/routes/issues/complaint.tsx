@@ -1,4 +1,4 @@
-import { ChevronLeft, Lock } from "lucide-react"
+import { ChevronLeft } from "lucide-react"
 import { data, Link, redirect, useRevalidator } from "react-router"
 import { Badge } from "~/components/ui/badge"
 import { Card } from "~/components/ui/card"
@@ -114,15 +114,6 @@ export default function ComplaintPage({ loaderData }: Route.ComponentProps) {
                   intro={m.complaint_sign_in_intro()}
                 />
               </div>
-              <p className="mt-6 flex gap-2 border-line-subtle border-t pt-4 text-ink-soft text-sm leading-relaxed">
-                <Lock aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-                <span>
-                  {m.signin_privacy_note()}{" "}
-                  <Link to="/privasi" className={LINK}>
-                    {m.privacy_link()}
-                  </Link>
-                </span>
-              </p>
             </section>
           )}
         </Card>

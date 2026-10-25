@@ -124,9 +124,11 @@ test.describe("public data API", () => {
     expect(meta.attribution).toContain("CC BY 4.0")
     const issues = body.issues as { url: string; api: string }[]
     expect(issues.length).toBeGreaterThan(0)
+    // Monthly code since 22 Oct
+    const code = String.raw`ISU-\d{4}-(0[1-9]|1[0-2])-\d{4,6}$`
     for (const issue of issues) {
-      expect(issue.url).toMatch(new RegExp(`^${ORIGIN}/isu/ISU-`))
-      expect(issue.api).toMatch(new RegExp(`^${ORIGIN}/api/v1/isu/ISU-`))
+      expect(issue.url).toMatch(new RegExp(`^${ORIGIN}/isu/${code}`))
+      expect(issue.api).toMatch(new RegExp(`^${ORIGIN}/api/v1/isu/${code}`))
     }
   })
 

@@ -14,7 +14,7 @@ export function ExploreTabs({ current }: { current: "isu" | "tuntutan" }) {
       aria-label={m.explore_tabs_label()}
       className="mt-8 flex justify-center"
     >
-      <ul className="inline-flex border-2 border-brand">
+      <ul className="inline-flex gap-1 rounded-full border-2 border-brand bg-surface-raised p-1">
         {TABS.map((tab) => {
           const active = tab.key === current
           return (
@@ -23,10 +23,10 @@ export function ExploreTabs({ current }: { current: "isu" | "tuntutan" }) {
                 to={tab.to}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "block min-w-32 px-6 py-2.5 text-center font-bold transition-colors duration-(--dur-hover) motion-reduce:transition-none",
+                  "block min-w-32 rounded-full px-6 py-2 text-center font-bold transition-colors duration-(--dur-hover) motion-reduce:transition-none",
                   active
                     ? "bg-brand text-on-accent"
-                    : "bg-surface-raised text-accent hover:bg-brand-soft",
+                    : "text-accent hover:bg-brand-soft",
                 )}
               >
                 {tab.label()}

@@ -1,6 +1,7 @@
 import { SearchX } from "lucide-react"
 import { data, Link, redirect } from "react-router"
 import { PageHeader } from "~/components/layout/page-header"
+import { SECTION_TITLE } from "~/components/layout/section-heading"
 import { ButtonLink } from "~/components/ui/button"
 import { Container } from "~/components/ui/container"
 import { Note } from "~/components/ui/note"
@@ -87,11 +88,11 @@ export default function IssueList({ loaderData }: Route.ComponentProps) {
             regionName={region ?? undefined}
             regions={loaderData.regions}
           />
-          <section aria-labelledby="issues-results" className="mt-6">
+          <section aria-labelledby="issues-results" className="mt-12">
             {result.kind === "results" ? (
               <>
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <h2 id="issues-results" className="font-bold text-lg">
+                  <h2 id="issues-results" className={SECTION_TITLE}>
                     {result.page > 1
                       ? m.issues_results_page({ page: result.page })
                       : m.issues_results_title()}
@@ -105,10 +106,10 @@ export default function IssueList({ loaderData }: Route.ComponentProps) {
                 {result.issues.length === 0 ? (
                   <EmptyResults filtered={filtered} />
                 ) : (
-                  <ul className="mt-5 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                  <ul className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                     {result.issues.map((issue) => (
-                      <li key={issue.code} className="flex">
-                        <IssueCard issue={issue} className="w-full" />
+                      <li key={issue.code}>
+                        <IssueCard issue={issue} />
                       </li>
                     ))}
                   </ul>
@@ -140,7 +141,7 @@ export default function IssueList({ loaderData }: Route.ComponentProps) {
                   </nav>
                 ) : null}
                 {result.issues.length > 0 ? (
-                  <p className="mt-12 border-ink/15 border-t pt-6 text-ink-soft">
+                  <p className="mt-16 text-ink-soft">
                     {m.issues_closing()}{" "}
                     <Link to="/lapor" className={LINK}>
                       {m.report_start()}

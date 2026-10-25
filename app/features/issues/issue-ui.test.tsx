@@ -17,7 +17,7 @@ function render(node: ReactNode): string {
 }
 
 const ISSUE: ListedIssue = {
-  code: "ISU-ITB-26-0042",
+  code: "ISU-2026-10-0042",
   title: "Air bersih tidak mengalir",
   excerpt: "Distribusi air terhenti sejak awal bulan.",
   categoryId: "program",
@@ -36,19 +36,24 @@ describe("IssueCard", () => {
   test("the title is the one link and covers the card", () => {
     const html = render(<IssueCard issue={ISSUE} />)
     expect(html.match(/<a /g)).toHaveLength(1)
-    expect(html).toContain('href="/isu/ISU-ITB-26-0042"')
+    expect(html).toContain('href="/isu/ISU-2026-10-0042"')
     expect(html).toContain("after:inset-0")
     expect(html).toContain("has-[a:focus-visible]:outline-focus")
   })
 
-  test("badges name their axis, dates are absolute", () => {
+  test("marks name their axis, no badge boxes", () => {
     const html = render(<IssueCard issue={ISSUE} />)
-    expect(html).toContain(`${m.issue_government_label()}: Ditanggapi`)
+    expect(html).toMatch(
+      new RegExp(`${m.issue_stage_label()}: </span>.*Ditanggapi`),
+    )
     expect(html).toContain("Program dan Pelayanan")
     expect(html).toContain("Aktivitas terakhir 12 Oktober 2026")
     expect(html).toContain("Coblong, Kota Bandung")
     expect(html).toContain(ISSUE.excerpt)
     expect(html).not.toMatch(/hari lalu|bg-danger text/)
+    // Rounded card, no left bar
+    expect(html).toContain("rounded-2xl")
+    expect(html).not.toContain("border-l-")
   })
 })
 
@@ -147,43 +152,80 @@ describe("issue filters", () => {
     expect(none).not.toContain("Hapus saringan wilayah")
   })
 
-  test("the advocacy group names who acts", () => {
+  test("status filter lists the five public stages", () => {
     const html = render(<IssueFilters regions={REGIONS} query={{}} />)
-    expect(html).toContain('<optgroup label="Advokasi pengelola">')
-    expect(html).toContain('<optgroup label="Tanggapan pemerintah">')
+    const select = html.slice(html.indexOf('id="issues-status"'))
+    for (const label of [
+      "Terverifikasi",
+      "Diteruskan",
+      "Ditanggapi",
+      "Dalam penanganan",
+      "Selesai",
+    ]) {
+      expect(select).toContain(`>${label}</option>`)
+    }
+    expect(select.slice(0, select.indexOf("</select>"))).not.toContain(
+      "<optgroup",
+    )
   })
 })
 
 describe("StatusTracker", () => {
-  test("main path statuses mark one current step", () => {
-    for (const [index, status] of TRACKER_STEPS.entries()) {
-      expect(trackerState(status)).toEqual({
-        reached: index,
-        current: true,
-        offPath: null,
-      })
+  test("five public stages, one current", () => {
+    const states = [
+      { advocacy: "monitoring", government: "awaiting_response" },
+      { advocacy: "referred", government: "awaiting_response" },
+      { advocacy: "referred", government: "responded" },
+      { advocacy: "referred", government: "in_progress" },
+      { advocacy: "referred", government: "confirmed_resolved" },
+    ] as const
+    expect(TRACKER_STEPS).toEqual([
+      "verified",
+      "referred",
+      "responded",
+      "in_progress",
+      "done",
+    ])
+    for (const [index, status] of states.entries()) {
+      expect(trackerState(status)).toEqual({ reached: index, note: null })
       const html = render(<StatusTracker status={status} labelledBy="s" />)
       expect(html.match(/aria-current="step"/g)).toHaveLength(1)
       expect(html.match(/\(selesai\)/g)?.length ?? 0).toBe(index)
     }
   })
 
-  test("off-path statuses state themselves in text", () => {
-    const off = GOVERNMENT_STATUSES.filter(
-      (s) => !(TRACKER_STEPS as readonly string[]).includes(s),
+  test("hidden government statuses explain themselves", () => {
+    const noted = GOVERNMENT_STATUSES.filter(
+      (s) =>
+        ![
+          "awaiting_response",
+          "responded",
+          "in_progress",
+          "confirmed_resolved",
+        ].includes(s),
     )
-    expect(off).toHaveLength(4)
-    for (const status of off) {
+    expect(noted).toHaveLength(5)
+    for (const government of noted) {
+      const status = { advocacy: "referred", government } as const
       const html = render(<StatusTracker status={status} labelledBy="s" />)
-      expect(html).not.toContain('aria-current="step"')
-      expect(trackerState(status).current).toBe(false)
+      expect(html.match(/aria-current="step"/g)).toHaveLength(1)
+      expect(trackerState(status).note as string | null).toBe(government)
       expect(html).toContain("Status saat ini:")
     }
-    expect(trackerState("reopened").reached).toBe(3)
+    // Claimed is not done yet
+    expect(
+      trackerState({ advocacy: "referred", government: "claimed_resolved" })
+        .reached,
+    ).toBe(3)
   })
 
   test("the list is labelled by its heading, never a progressbar", () => {
-    const html = render(<StatusTracker status="responded" labelledBy="h" />)
+    const html = render(
+      <StatusTracker
+        status={{ advocacy: "referred", government: "responded" }}
+        labelledBy="h"
+      />,
+    )
     expect(html).toMatch(/^<ol aria-labelledby="h"/)
     expect(html).not.toContain("progressbar")
   })

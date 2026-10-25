@@ -64,18 +64,17 @@ async function published(title: string): Promise<string> {
   return created.code
 }
 
-/** Counted raters, same score. */
-async function rated(code: string, raters: number, score: number) {
-  const { rows } = await su.query<{ id: string }>(
-    "SELECT id FROM demands WHERE public_code = $1",
-    [code],
-  )
-  for (const userId of await insertedUsers(su, raters, 30)) {
-    await su.query(
-      `INSERT INTO demand_ratings (org_id, demand_id, user_id, score)
-       VALUES ($1, $2, $3, $4)`,
-      [tenant.id, rows[0]?.id, userId, score],
-    )
+/** One list per account. */
+async function ranked(lists: string[][], ageDays: number) {
+  const accounts = await insertedUsers(su, lists.length, ageDays)
+  for (const [n, list] of lists.entries()) {
+    for (const [index, code] of list.entries()) {
+      await su.query(
+        `INSERT INTO demand_rankings (org_id, demand_id, user_id, position)
+         SELECT org_id, id, $2, $3 FROM demands WHERE public_code = $1`,
+        [code, accounts[n], index + 1],
+      )
+    }
   }
 }
 
@@ -104,17 +103,21 @@ type Home = {
 }
 
 describe("campus home", () => {
-  test("[AC-HOME-01] Given rated tuntutan and published issues, when the campus home is read, then the citizens' top three need ten counted raters and go by mean then raters, the latest three come newest first, and six issues are listed newest first", async () => {
-    const top = await published("Nilai lima")
-    const many = await published("Nilai empat, dua belas penilai")
-    const few = await published("Nilai empat, sepuluh penilai")
-    const fourth = await published("Nilai tiga")
-    const thin = await published("Nilai lima, sembilan penilai")
-    await rated(top, 10, 5)
-    await rated(many, 12, 4)
-    await rated(few, 10, 4)
-    await rated(fourth, 10, 3)
-    await rated(thin, 9, 5)
+  test("[AC-HOME-01] Given ranked tuntutan and published issues, when the campus home is read, then the citizens' top three go by Borda points then rankers and count only accounts at least seven days old, the latest three come newest first, and six issues are listed newest first", async () => {
+    const top = await published("Peringkat pertama")
+    const many = await published("Dua puluh empat poin, enam warga")
+    const few = await published("Dua puluh empat poin, lima warga")
+    const young = await published("Hanya akun baru")
+    // Points 35, 24, 24, 0
+    await ranked(
+      [
+        ...Array.from({ length: 6 }, () => [top, many]),
+        ...Array.from({ length: 4 }, () => [few]),
+        [top, few],
+      ],
+      30,
+    )
+    await ranked([[young, few, many]], 1)
     const base = {
       orgId: tenant.id,
       year: 2026,
@@ -126,7 +129,7 @@ describe("campus home", () => {
       reportCount: 1,
     }
     const at = (hours: number) => new Date(Date.now() - hours * 3_600_000)
-    const code = (n: number) => `ISU-ACCHOME-26-${String(n).padStart(4, "0")}`
+    const code = (n: number) => `ISU-2026-10-${String(n).padStart(4, "0")}`
     await drizzle({ client: su })
       .insert(issues)
       .values([
@@ -145,7 +148,7 @@ describe("campus home", () => {
     const home = await loaderWith<Home>(res, "demands")
     const codes = (list: { code: string }[]) => list.map((one) => one.code)
     expect(codes(home.demands.important)).toEqual([top, many, few])
-    expect(codes(home.demands.latest)).toEqual([thin, fourth, few])
+    expect(codes(home.demands.latest)).toEqual([young, few, many])
     expect(codes(home.issues)).toEqual([7, 6, 5, 4, 3, 2].map(code))
   })
 })

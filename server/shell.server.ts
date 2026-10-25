@@ -2,6 +2,7 @@ import type { SessionContext, TenantContext } from "../app/context.ts"
 import { m } from "../app/paraglide/messages.js"
 import { jakartaYear } from "../shared/format.ts"
 import { accountLabel } from "../shared/phone.ts"
+import { isSuperadmin, memberRole, STAFF_ROLES } from "./auth.server.ts"
 import { globalIntakePause, intakePaused } from "./intake.server.ts"
 import { siteIdentity } from "./site-identity.server.ts"
 import {
@@ -32,8 +33,22 @@ export function shellData(
     intakePaused: intakePaused(tenant, globalPause),
     identity: siteIdentity(tenant),
     year: jakartaYear(now),
-    user: session ? { email: accountLabel(session.user) } : null,
+    user: session
+      ? { email: accountLabel(session.user), manage: false, platform: false }
+      : null,
   }
+}
+
+/** Header links, middleware still gates. */
+export async function staffLinks(
+  orgId: string,
+  userId: string,
+): Promise<{ manage: boolean; platform: boolean }> {
+  const [role, platform] = await Promise.all([
+    memberRole(orgId, userId),
+    isSuperadmin(userId),
+  ])
+  return { manage: role !== null && STAFF_ROLES.includes(role), platform }
 }
 
 export type ShellData = ReturnType<typeof shellData>

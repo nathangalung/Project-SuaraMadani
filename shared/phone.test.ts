@@ -26,6 +26,8 @@ describe("normalizePhone", () => {
 
   test("short and long mobile numbers at the edges", () => {
     expect(normalizePhone("0812345678")).toBe("+62812345678")
+    // Typed after the +62 prefix
+    expect(normalizePhone("812 3456 7890")).toBe("+6281234567890")
     expect(normalizePhone("0812345678901")).toBe("+62812345678901")
   })
 
@@ -35,7 +37,6 @@ describe("normalizePhone", () => {
       "   ",
       "0221234567",
       "+6221234567",
-      "81234567890",
       "+1 415 555 0100",
       "+60123456789",
       "081234567",

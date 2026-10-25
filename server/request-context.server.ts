@@ -16,6 +16,7 @@ import {
   type SessionRead,
   STAFF_ROLES,
   staffAccess,
+  staffTotpRequired,
   superadminAccess,
 } from "./auth.server.ts"
 import { type LogRecord, logPath, securityRecord, writeLog } from "./log.ts"
@@ -34,6 +35,8 @@ export type RootDeps = {
   memberRole: (orgId: string, userId: string) => Promise<MemberRole | null>
   isSuperadmin: (userId: string) => Promise<boolean>
   apexHost: () => string
+  // Absent means TOTP required
+  totpRequired?: () => boolean
   now: () => Date
   // Security events, tests capture
   log?: (line: LogRecord) => void
@@ -152,6 +155,7 @@ export function createRootMiddleware(
           user: session.user,
           session: session.session,
           now: deps.now(),
+          totp: deps.totpRequired?.() ?? true,
         })
       // Unenrolled superadmin sees enrol link
       if (!allowed) throw refuse(session, superadmin)
@@ -168,6 +172,7 @@ export function createRootMiddleware(
           user: session.user,
           session: session.session,
           now: deps.now(),
+          totp: deps.totpRequired?.() ?? true,
         })
       if (!allowed || !role) {
         const staff = role !== null && STAFF_ROLES.includes(role)
@@ -189,4 +194,5 @@ export const rootMiddleware = createRootMiddleware({
   isSuperadmin: (userId) => isSuperadmin(userId),
   apexHost,
   now: () => new Date(),
+  totpRequired: () => staffTotpRequired(),
 })

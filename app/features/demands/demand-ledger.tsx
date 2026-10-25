@@ -6,8 +6,8 @@ import { m } from "~/paraglide/messages.js"
 import { formatIsoDate } from "../../../shared/format.ts"
 import { CATEGORY_TEXT } from "./category-labels"
 import type { ListedDemand } from "./demands.server"
-import { ImportanceLine } from "./importance-line"
 import { demandPlace, STATE_TEXT } from "./labels"
+import { RankLine } from "./rank-line"
 import { FulfilmentMark } from "./status-mark"
 
 const COLUMNS = "md:grid-cols-[3rem_minmax(0,1fr)_10rem_10rem_8rem]"
@@ -99,7 +99,7 @@ export function DemandLedger({
                     .join(" · ")}
                 </span>
               </p>
-              <ImportanceLine importance={demand.importance} className="mt-2" />
+              <RankLine rank={demand.rank} className="mt-2" />
             </div>
             <p className="font-ui text-sm md:pt-1">
               <CellLabel>{m.demands_col_response()}</CellLabel>

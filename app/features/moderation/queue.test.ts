@@ -135,7 +135,6 @@ describe("getReviewReport", () => {
         summary: "Beberapa laporan menyebut atap ruang kelas runtuh.",
       },
       actorId: reporter,
-      campusCode: "ITB",
       now: new Date(),
     })
     if (!merged.ok) throw new Error(merged.reason)
@@ -215,7 +214,7 @@ describe("forwarded reports", () => {
   test("Given a report forwarded to another campus, when either side reads it, then each names the other and the copy is found", async () => {
     const report = await seedReport("in_review")
     const forwarded = await forwardReport({
-      source: { id: orgA, campusCode: "ITB" },
+      source: { id: orgA },
       reportId: report.id,
       targetOrgId: orgB,
       actorId: reporter,
@@ -262,7 +261,6 @@ describe("closeImpact", () => {
         summary: "Beberapa laporan menyebut atap ruang kelas runtuh.",
       },
       actorId: reporter,
-      campusCode: "ITB",
       now: new Date(),
       notify: false,
     })
@@ -319,7 +317,7 @@ describe("listMergeTargets", () => {
       [
         orgA,
         n,
-        `ISU-ITB-26-${String(n).padStart(4, "0")}`,
+        `ISU-2026-10-${String(n).padStart(4, "0")}`,
         title,
         regency,
         daysAgo,
@@ -338,16 +336,16 @@ describe("listMergeTargets", () => {
     const report = { regencyCode: "32.73", title: "Sekolah rusak di Dago" }
     const ranked = await listMergeTargets(orgA, "admin", report)
     expect(ranked).toHaveLength(50)
-    expect(ranked[0]?.code).toBe("ISU-ITB-26-0001")
+    expect(ranked[0]?.code).toBe("ISU-2026-10-0001")
     const byCode = await listMergeTargets(orgA, "admin", {
       ...report,
-      query: "isu-itb-26-0042",
+      query: "isu-2026-10-0042",
     })
-    expect(byCode.map((row) => row.code)).toEqual(["ISU-ITB-26-0042"])
+    expect(byCode.map((row) => row.code)).toEqual(["ISU-2026-10-0042"])
     const byText = await listMergeTargets(orgA, "admin", {
       ...report,
       query: "ruas 17",
     })
-    expect(byText[0]?.code).toBe("ISU-ITB-26-0017")
+    expect(byText[0]?.code).toBe("ISU-2026-10-0017")
   })
 })

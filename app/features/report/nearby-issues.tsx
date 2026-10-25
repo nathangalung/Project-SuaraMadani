@@ -27,10 +27,7 @@ export function NearbyList({
 }) {
   if (issues.length === 0) return null
   return (
-    <section
-      aria-labelledby="isu-serupa"
-      className="border-ink border-l-4 bg-surface p-4"
-    >
+    <section aria-labelledby="isu-serupa">
       <h2 id="isu-serupa" className="font-bold text-lg">
         {m.report_nearby_title()}
       </h2>

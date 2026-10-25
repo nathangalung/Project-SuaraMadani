@@ -46,7 +46,7 @@ let filesDir = ""
 const savedFilesDir = process.env.FILES_DIR
 const YEAR = jakartaIsoDate(new Date()).slice(2, 4)
 const FIRST = `TUN-FDACT-${YEAR}-0001`
-const ISSUE = `ISU-FDACT-${YEAR}-0001`
+const ISSUE = "ISU-2026-10-0001"
 const MISSING_ID = "0190a000-0000-7000-8000-00000000abcd"
 
 const FIELDS: DemandFields = {
@@ -681,7 +681,7 @@ describe("related issues", () => {
     expect(
       await edit(code, {
         intent: "link_issue",
-        issueCode: `ISU-FDACT-${YEAR}-0099`,
+        issueCode: "ISU-2026-10-0099",
       }),
     ).toEqual({ errors: ["issue_code"], intent: "link_issue" })
     expect((await managed(code)).issues).toEqual([])

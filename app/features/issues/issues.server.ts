@@ -4,7 +4,9 @@ import {
   asc,
   desc,
   eq,
+  inArray,
   isNotNull,
+  ne,
   notInArray,
   type SQL,
   sql,
@@ -26,9 +28,10 @@ import type {
 } from "../../../shared/complaints.ts"
 import { daysSince } from "../../../shared/format.ts"
 import {
-  ADVOCACY_STATUSES,
   type AdvocacyStatus,
   type GovernmentStatus,
+  PUBLIC_STAGES,
+  STAGE_GOVERNMENT,
   type VerificationLabel,
 } from "../../../shared/status.ts"
 import {
@@ -392,13 +395,14 @@ function filters(query: IssueListQuery, search: string | null): SQL[] {
         : eq(issues.subcategoryId, category),
     )
   }
-  const status = query.status
-  if (status) {
-    where.push(
-      (ADVOCACY_STATUSES as readonly string[]).includes(status)
-        ? sql`${issues.advocacyStatus} = ${status}`
-        : sql`${issues.govStatus} = ${status}`,
-    )
+  const stage = PUBLIC_STAGES.find((value) => value === query.status)
+  if (stage) {
+    where.push(inArray(issues.govStatus, [...STAGE_GOVERNMENT[stage]]))
+    // Split by sent or not
+    if (stage === "verified")
+      where.push(eq(issues.advocacyStatus, "monitoring"))
+    if (stage === "referred")
+      where.push(ne(issues.advocacyStatus, "monitoring"))
   }
   const region = query.wilayah
   if (region) {

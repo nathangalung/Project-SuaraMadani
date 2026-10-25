@@ -3,16 +3,23 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { Note } from "./note"
 
 describe("Note", () => {
-  test("tones use the tinted pairs", () => {
-    const html = (tone: Parameters<typeof Note>[0]["tone"]) =>
-      renderToStaticMarkup(<Note tone={tone}>Isi</Note>)
-    expect(html("neutral")).toContain("bg-surface")
-    expect(html("info")).toContain("bg-brand-soft")
-    expect(html("success")).toContain("bg-mint-soft")
-    expect(html("danger")).toContain("text-danger-ink")
+  test("no tone draws a box or a left bar", () => {
+    for (const tone of ["neutral", "info", "success", "danger"] as const) {
+      const html = renderToStaticMarkup(<Note tone={tone}>Isi</Note>)
+      expect(html).not.toMatch(/border-l-|bg-[a-z-]*soft|bg-surface|p-4/)
+    }
   })
 
-  test("danger icon is decorative and not a live region", () => {
+  test("the icon carries the tone, text stays readable", () => {
+    const html = (tone: Parameters<typeof Note>[0]["tone"]) =>
+      renderToStaticMarkup(<Note tone={tone}>Isi</Note>)
+    expect(html("info")).toContain("text-accent")
+    expect(html("success")).toContain("text-success")
+    expect(html("danger")).toContain("text-danger")
+    expect(html("info")).toMatch(/^<div class="[^"]*text-ink/)
+  })
+
+  test("icons are decorative and not a live region", () => {
     const html = renderToStaticMarkup(<Note tone="danger">Gagal</Note>)
     expect(html).toMatch(/<svg[^>]*aria-hidden="true"/)
     expect(html).not.toContain("role=")

@@ -57,7 +57,6 @@ async function issue(consents?: string[]) {
       summary: "Warga melaporkan atap kelas runtuh sejak sebulan lalu.",
     },
     actorId: moderator,
-    campusCode: "EDT",
     now: NOW,
     notify: false,
   })

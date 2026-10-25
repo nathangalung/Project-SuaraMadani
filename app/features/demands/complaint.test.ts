@@ -219,13 +219,13 @@ describe("tuntutan content complaints", () => {
     )
     await su.query(
       `INSERT INTO issues (org_id, year, number, public_code, title, summary, category_id, subcategory_id, province_code, regency_code, report_count, published_at)
-       VALUES ($1, 2026, 9, 'ISU-TCA-26-0009', 'Isu terkait', 'Isu yang dikutip tuntutan ini.', 'bansos', 'bansos.pangan', '32', '32.73', 1, now())`,
+       VALUES ($1, 2026, 9, 'ISU-2026-10-0009', 'Isu terkait', 'Isu yang dikutip tuntutan ini.', 'bansos', 'bansos.pangan', '32', '32.73', 1, now())`,
       [orgId],
     )
     await su.query(
       `INSERT INTO demand_issues (org_id, demand_id, issue_id)
        SELECT d.org_id, d.id, i.id FROM demands d, issues i
-       WHERE d.public_code = $1 AND i.public_code = 'ISU-TCA-26-0009'`,
+       WHERE d.public_code = $1 AND i.public_code = 'ISU-2026-10-0009'`,
       [code],
     )
     const purged: string[] = []
@@ -249,7 +249,7 @@ describe("tuntutan content complaints", () => {
       `https://tca.localhost/tuntutan/${code}/dokumen/${brief.rows[0]?.id}.pdf`,
     )
     // Cited issue drops its block
-    expect(purged).toContain("https://tca.localhost/isu/ISU-TCA-26-0009")
+    expect(purged).toContain("https://tca.localhost/isu/ISU-2026-10-0009")
     expect(await getDemandPage(orgId, code)).toBeNull()
     const managed = await getManagedDemand(orgId, code)
     expect(managed?.state).toBe("draft")

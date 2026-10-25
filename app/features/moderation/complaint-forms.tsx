@@ -175,7 +175,7 @@ function DecisionForm({
       open={failed?.decision === decision}
       tone={severe ? "danger" : "default"}
     >
-      <p className="mb-5 font-ui text-[0.95rem] text-ink-soft">
+      <p className="mb-5 text-[0.95rem] text-ink-soft">
         {(demand ? DEMAND_HINT : DECISION_HINT)[decision]()}
       </p>
       <Form method="post" className="flex flex-col gap-6">

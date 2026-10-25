@@ -171,7 +171,6 @@ async function seedIssue(reporterCount = 2): Promise<Issue> {
       summary: "Beberapa laporan menyebut jalan berlubang sejak Agustus.",
     },
     actorId: admin,
-    campusCode: "ITB",
     now: NOW,
   })
   if (!merged.ok) throw new Error(merged.reason)

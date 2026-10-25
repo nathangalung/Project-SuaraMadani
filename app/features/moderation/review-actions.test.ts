@@ -325,7 +325,6 @@ async function seedIssue() {
       summary: "Beberapa laporan menyebut atap kelas runtuh sejak sebulan.",
     },
     actorId: ids.admin,
-    campusCode: "RVA",
     now: new Date(),
     notify: false,
   })
@@ -385,7 +384,7 @@ describe("reportPageAction", () => {
 
   test("Given a code of no report here, when posted, then 404", async () => {
     const result = await outcome(() =>
-      reportPageAction(args("T-26-NONE0", { intent: "start_review" })),
+      reportPageAction(args("LPR-2026-10-9999", { intent: "start_review" })),
     )
     expect(result.status).toBe(404)
   })
@@ -408,6 +407,29 @@ describe("reportPageAction", () => {
     })
     const { rows } = await su.query(
       "SELECT actor_id FROM audit_log WHERE entity_id = $1 AND action = 'report.view_contact'",
+      [report.id],
+    )
+    expect(rows).toEqual([{ actor_id: ids.admin }])
+  })
+
+  test("Given a reporter account, when shown, then it is returned uncached and audited", async () => {
+    const report = await seedReport("in_review")
+    const { rows: mine } = await su.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM reports WHERE org_id = $1 AND user_id = $2",
+      [ids.a, ids.reporter],
+    )
+    const result = await outcome(() =>
+      reportPageAction(args(report.code, { intent: "show_account" })),
+    )
+    expect(result).toMatchObject({
+      status: 200,
+      body: {
+        account: { email: "pelapor.rva@contoh.id", reports: mine[0]?.n },
+      },
+      cache: "private, no-store",
+    })
+    const { rows } = await su.query(
+      "SELECT actor_id FROM audit_log WHERE entity_id = $1 AND action = 'report.view_account'",
       [report.id],
     )
     expect(rows).toEqual([{ actor_id: ids.admin }])
@@ -616,7 +638,7 @@ describe("issuePageAction", () => {
 
   test("Given a code of no issue here, when posted, then 404", async () => {
     const result = await outcome(() =>
-      issuePageAction(args("ISU-RVA-26-9999", { intent: "publish" })),
+      issuePageAction(args("ISU-2026-10-9999", { intent: "publish" })),
     )
     expect(result.status).toBe(404)
   })
@@ -797,7 +819,7 @@ describe("closeAccountAction", () => {
   test("Given a code of no report here, when posted, then 404", async () => {
     const result = await outcome(() =>
       closeAccountAction(
-        args("T-26-NONE0", { reason: "self_declared", confirm: "yes" }),
+        args("LPR-2026-10-9999", { reason: "self_declared", confirm: "yes" }),
       ),
     )
     expect(result.status).toBe(404)

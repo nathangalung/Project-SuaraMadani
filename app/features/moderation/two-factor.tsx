@@ -202,7 +202,7 @@ function EnrollKey({
             ))}
           </ol>
         ) : null}
-        <div className={error ? "mt-4 border-danger border-l-4 pl-4" : "mt-4"}>
+        <div className="mt-4">
           <Checkbox
             id={SAVED_ID}
             name="saved"

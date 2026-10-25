@@ -70,10 +70,12 @@ export function reportValues(
   userId: string,
   overrides: Partial<typeof reports.$inferInsert> = {},
 ): typeof reports.$inferInsert {
+  // Six digits, unlike fixed codes
+  const [random = 0] = crypto.getRandomValues(new Uint32Array(1))
   return {
     orgId,
     userId,
-    publicCode: `T-26-${crypto.randomUUID().slice(0, 5).toUpperCase()}`,
+    publicCode: `LPR-2026-10-${String(random % 1_000_000).padStart(6, "0")}`,
     submissionId: crypto.randomUUID(),
     relation: "self",
     provinceCode: "32",

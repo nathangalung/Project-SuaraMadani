@@ -153,7 +153,7 @@ beforeAll(async () => {
     `INSERT INTO issues (org_id, year, number, public_code, title, summary,
        category_id, subcategory_id, province_code, regency_code,
        gov_status, advocacy_status, report_count, published_at)
-     VALUES ($1, 2026, 1, 'ISU-NTA-26-0001', 'Atap sekolah runtuh',
+     VALUES ($1, 2026, 1, 'ISU-2026-10-0001', 'Atap sekolah runtuh',
        'Ringkasan isu.', 'program', 'program.pendidikan', '32', '32.73',
        'in_progress', 'referred', 1, now()) RETURNING id`,
     [orgA],
@@ -285,7 +285,7 @@ describe("email-send", () => {
       `INSERT INTO issues (org_id, year, number, public_code, title, summary,
          category_id, subcategory_id, province_code, regency_code,
          gov_status, advocacy_status, report_count, taken_down_at, takedown_reason)
-       VALUES ($1, 2026, 90, 'ISU-NTA-26-0090', 'Judul yang diturunkan',
+       VALUES ($1, 2026, 90, 'ISU-2026-10-0090', 'Judul yang diturunkan',
          'Ringkasan.', 'program', 'program.pendidikan', '32', '32.73',
          'awaiting_response', 'monitoring', 1, now(), 'standard_1') RETURNING id`,
       [orgA],
@@ -300,7 +300,7 @@ describe("email-send", () => {
     ).toBe("sent")
     const text = sent[0]?.text ?? ""
     expect(text).not.toContain("Judul yang diturunkan")
-    expect(text).not.toContain("/isu/ISU-NTA-26-0090")
+    expect(text).not.toContain("/isu/ISU-2026-10-0090")
     expect(text).not.toContain("setelah moderator menerbitkannya")
   })
 
@@ -308,7 +308,7 @@ describe("email-send", () => {
     const reportId = await addReport()
     await su.query(
       `UPDATE reports SET forwarded_from_org_id = $2, forwarded_from_report_id = gen_random_uuid(),
-         forwarded_from_code = 'NTB-26-ASAL1' WHERE id = $1`,
+         forwarded_from_code = 'LPR-2026-10-0007' WHERE id = $1`,
       [reportId, orgB],
     )
     const id = await notification("report_forwarded", { reportId })
@@ -316,7 +316,7 @@ describe("email-send", () => {
       await createEmailSendHandler(deps())({ orgId: orgA, notificationId: id }),
     ).toBe("sent")
     const text = sent[0]?.text ?? ""
-    expect(text).toContain("NTB-26-ASAL1")
+    expect(text).toContain("LPR-2026-10-0007")
     expect(text).toContain("nta")
   })
 
@@ -829,7 +829,7 @@ describe("issue-notify", () => {
       await createEmailSendHandler(deps())({ orgId: orgA, notificationId }),
     ).toBe("sent")
     const text = sent[0]?.text ?? ""
-    expect(text).toContain("https://nta.localhost/isu/ISU-NTA-26-0001")
+    expect(text).toContain("https://nta.localhost/isu/ISU-2026-10-0001")
     const token = /berhenti\?t=([\w.-]+)/.exec(text)?.[1] ?? ""
     expect(
       verifyLink(keyring, token, {

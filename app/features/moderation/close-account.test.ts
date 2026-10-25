@@ -101,7 +101,6 @@ async function publishedIssue(reportIds: string[]) {
       summary: "Beberapa laporan menyebut atap ruang kelas runtuh.",
     },
     actorId: moderator,
-    campusCode: "ITB",
     now: NOW,
   })
   if (!merged.ok) throw new Error(merged.reason)
@@ -221,6 +220,11 @@ describe("closeAccount", () => {
       "INSERT INTO demand_ratings (org_id, demand_id, user_id, score, show_name) VALUES ($1, $2, $3, 5, true)",
       [orgA, demand[0]?.id, minor],
     )
+    await su.query(
+      `INSERT INTO demand_rankings (org_id, demand_id, user_id, position, client_hash)
+       VALUES ($1, $2, $3, 1, 'prefiks'), ($1, $2, $4, 1, 'prefiks')`,
+      [orgA, demand[0]?.id, minor, other],
+    )
     const { rows: claim } = await su.query<{ id: string }>(
       `INSERT INTO resolution_claims (org_id, issue_id)
        SELECT org_id, id FROM issues WHERE public_code = $1 RETURNING id`,
@@ -276,6 +280,11 @@ describe("closeAccount", () => {
       [minor],
     )
     expect(ratings.rows).toHaveLength(0)
+    const rankings = await su.query(
+      "SELECT user_id FROM demand_rankings WHERE demand_id = $1",
+      [demand[0]?.id],
+    )
+    expect(rankings.rows).toEqual([{ user_id: other }])
     const claimRows = await su.query(
       "SELECT 1 FROM ratings WHERE user_id = $1 UNION ALL SELECT 1 FROM fix_surveys WHERE user_id = $1",
       [minor],
@@ -312,7 +321,7 @@ describe("closeAccount", () => {
       `INSERT INTO issues (org_id, year, number, public_code, title, summary,
          category_id, subcategory_id, province_code, regency_code,
          gov_status, advocacy_status, report_count)
-       VALUES ($1, 2026, 1, 'ISU-UGM-26-0001', 'Judul', 'Ringkasan.',
+       VALUES ($1, 2026, 1, 'ISU-2026-10-0001', 'Judul', 'Ringkasan.',
          'program', 'program.pendidikan', '32', '32.73', 'awaiting_response',
          'monitoring', 0)
        RETURNING id`,

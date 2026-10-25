@@ -31,14 +31,14 @@ describe("cachePolicy", () => {
     for (const path of [
       "/lapor",
       "/lapor/lokasi",
-      "/lapor/sukses/ITB-26-7K3QX",
+      "/lapor/sukses/LPR-2026-10-0001",
       "/lacak",
       "/masuk",
-      "/isu/ISU-ITB-26-0042/laporkan",
-      "/isu/ISU-ITB-26-0042/berhenti",
-      "/isu/ISU-ITB-26-0042/nilai",
-      "/isu/ISU-ITB-26-0042/survei",
-      "/isu/ISU-ITB-26-0042/hak-jawab",
+      "/isu/ISU-2026-10-0042/laporkan",
+      "/isu/ISU-2026-10-0042/berhenti",
+      "/isu/ISU-2026-10-0042/nilai",
+      "/isu/ISU-2026-10-0042/survei",
+      "/isu/ISU-2026-10-0042/hak-jawab",
       "/tuntutan/TUN-ITB-26-0001/laporkan",
       "/tuntutan/TUN-ITB-26-0001/berhenti",
       "/tuntutan/TUN-ITB-26-0001/nilai",
@@ -65,7 +65,7 @@ describe("cachePolicy", () => {
     for (const path of [
       "/api/v1",
       "/api/v1/isu",
-      "/api/v1/isu/ISU-ITB-26-0042",
+      "/api/v1/isu/ISU-2026-10-0042",
       "/api/v1/data/tren.csv",
     ]) {
       expect(cachePolicy({ ...base, path })).toBe("public")

@@ -143,13 +143,13 @@ describe("report review", () => {
       intent: "start_review",
     })
     expect(started.status).toBe(303)
-    expect(await reportStatus(su, code)).toBe("in_review")
+    expect(await reportStatus(su, HOST, code)).toBe("in_review")
     const verified = await review(app, su, HOST, adminA.cookie, code, {
       intent: "verify",
       method: "site_photo",
     })
     expect(verified.status).toBe(303)
-    expect(await reportStatus(su, code)).toBe("verified")
+    expect(await reportStatus(su, HOST, code)).toBe("verified")
     const mails = await mailTo(email ?? "")
     expect(mails).toHaveLength(2)
     for (const mail of mails) expect(mail.text).toContain(code)
@@ -170,7 +170,7 @@ describe("report review", () => {
       reasonText: "pendek",
     })
     expect(short.status).toBe(400)
-    expect(await reportStatus(su, code)).toBe("in_review")
+    expect(await reportStatus(su, HOST, code)).toBe("in_review")
     const reasonText =
       "Laporan ini menuduh orang yang bisa dikenali tanpa bukti."
     const rejected = await review(app, su, HOST, adminA.cookie, code, {
@@ -179,7 +179,7 @@ describe("report review", () => {
       reasonText,
     })
     expect(rejected.status).toBe(303)
-    expect(await reportStatus(su, code)).toBe("rejected")
+    expect(await reportStatus(su, HOST, code)).toBe("rejected")
     const { rows } = await su.query<{
       reason_code: string
       decided_by: string
@@ -211,7 +211,7 @@ describe("issues", () => {
     const owner = await reporter("gabung")
     const { code } = await submitReport(app, HOST, owner.cookie)
     const issue = await reportToIssue(app, su, HOST, adminA.cookie, code)
-    expect(await reportStatus(su, code)).toBe("merged")
+    expect(await reportStatus(su, HOST, code)).toBe("merged")
     expect((await app.request(`${ORIGIN}/isu/${issue}`)).status).toBe(404)
     const follows = await su.query(
       "SELECT 1 FROM follows f JOIN issues i ON i.id = f.issue_id WHERE i.public_code = $1 AND f.user_id = $2",
@@ -233,7 +233,7 @@ describe("issues", () => {
       intent: "verify",
       method: "document",
     })
-    const { id } = await issueRow(su, issue)
+    const { id } = await issueRow(su, HOST, issue)
     const refused = await postForm(
       app,
       `${ORIGIN}/kelola/laporan/${next.code}`,
@@ -242,14 +242,14 @@ describe("issues", () => {
     )
     // Closed issue is no target
     expect(refused.status).toBe(400)
-    expect(await reportStatus(su, next.code)).toBe("verified")
+    expect(await reportStatus(su, HOST, next.code)).toBe("verified")
   })
 
   test("[AC-MOD-04] Given an unpublished issue, when an admin publishes it with the full checklist, then it becomes public and its followers are emailed, and a partial checklist is refused", async () => {
     const owner = await reporter("terbit")
     const { code } = await submitReport(app, HOST, owner.cookie)
     const issue = await reportToIssue(app, su, HOST, adminA.cookie, code)
-    const { id } = await issueRow(su, issue)
+    const { id } = await issueRow(su, HOST, issue)
     const email = (
       await su.query<{ email: string }>(
         "SELECT email FROM users WHERE id = $1",
@@ -288,7 +288,7 @@ describe("issues", () => {
       referFields(today(), inDays(14)),
     )
     expect(refer.status).toBe(303)
-    let row = await issueRow(su, issue)
+    let row = await issueRow(su, HOST, issue)
     expect([row.advocacy_status, row.gov_status]).toEqual([
       "referred",
       "awaiting_response",
@@ -315,7 +315,7 @@ describe("issues", () => {
       referFields(today(), inDays(14)),
     )
     expect(again.status).toBe(303)
-    row = await issueRow(su, issue)
+    row = await issueRow(su, HOST, issue)
     expect([row.advocacy_status, row.gov_status]).toEqual([
       "escalated",
       "awaiting_response",
@@ -352,7 +352,7 @@ describe("issues", () => {
       sourceUrl: "https://pu.bandung.go.id/berita/2",
     })
     expect(recorded.status).toBe(303)
-    expect((await issueRow(su, issue)).gov_status).toBe("responded")
+    expect((await issueRow(su, HOST, issue)).gov_status).toBe("responded")
     const json = await (
       await app.request(`${ORIGIN}/api/v1/isu/${issue}`)
     ).json()
@@ -431,7 +431,7 @@ describe("issues", () => {
       { intent: "forward", targetOrgId: orgB },
     )
     expect(res.status).toBe(303)
-    expect(await reportStatus(su, sent.code)).toBe("forwarded")
+    expect(await reportStatus(su, HOST, sent.code)).toBe("forwarded")
     const copy = await su.query<{
       public_code: string
       id: string
@@ -442,11 +442,20 @@ describe("issues", () => {
          (SELECT count(*)::int FROM report_contacts c WHERE c.report_id = r.id) AS contacts,
          (SELECT count(*)::int FROM evidence e WHERE e.report_id = r.id) AS files
        FROM reports r WHERE r.org_id = $1
-         AND r.forwarded_from_report_id = (SELECT id FROM reports WHERE public_code = $2)`,
-      [orgB, sent.code],
+         AND r.forwarded_from_report_id = (SELECT id FROM reports
+           WHERE org_id = $2 AND public_code = $3)`,
+      [orgB, orgA, sent.code],
     )
     expect(copy.rows).toHaveLength(1)
-    expect(copy.rows[0]?.public_code).toStartWith("ACCMODB-")
+    // Campus B's monthly counter
+    const counter = await su.query<{ code: string }>(
+      `SELECT format('LPR-%s-%s-%s', year, lpad(month::text, 2, '0'),
+         lpad(next::text, 4, '0')) AS code
+       FROM org_counters WHERE org_id = $1 AND kind = 'report'
+       ORDER BY year DESC, month DESC LIMIT 1`,
+      [orgB],
+    )
+    expect(copy.rows[0]?.public_code).toBe(counter.rows[0]?.code ?? "")
     expect(copy.rows[0]?.contacts).toBe(0)
     expect(copy.rows[0]?.files).toBe(1)
     const audits = await su.query<{ org_id: string }>(
@@ -469,7 +478,7 @@ describe("issues", () => {
 
   test("[AC-MOD-08] Given a published issue, when an admin edits its title, then the public page shows the new title and the audit log holds only column names and hashes", async () => {
     const { issue } = await publishedIssue("sunting")
-    const row = await issueRow(su, issue)
+    const row = await issueRow(su, HOST, issue)
     const title = "Penerangan jalan mati di Coblong"
     const edited = await postForm(
       app,
@@ -517,7 +526,7 @@ describe("issues", () => {
 
   test("[AC-MOD-09] Given a published issue and a Komdigi order, when an admin removes it under the legal panel, then the page answers 410 with the reason, a takedown job is queued and followers get no email", async () => {
     const { issue, owner } = await publishedIssue("hukum")
-    const row = await issueRow(su, issue)
+    const row = await issueRow(su, HOST, issue)
     const email = (
       await su.query<{ email: string }>(
         "SELECT email FROM users WHERE id = $1",
