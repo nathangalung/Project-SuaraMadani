@@ -47,36 +47,77 @@ function form(values: Record<string, string | string[]>): FormData {
 const ISSUE_ID = "0199c2b0-1d2e-7000-8000-000000000001"
 
 describe("parseReviewForm", () => {
-  test("start review carries the status the admin saw", () => {
+  const CHECKLIST = [
+    "no_personal_data",
+    "region_matches",
+    "category_complete",
+    "label_checked",
+  ]
+  const NEW = {
+    target: "new",
+    title: "Jalan desa rusak sejak banjir",
+    summary: "Warga melaporkan jalan desa rusak.",
+  }
+
+  test("no review step, decide from Terkirim", () => {
     expect(
       parseReviewForm(form({ intent: "start_review", from: "submitted" })),
-    ).toEqual({ action: "start_review", from: "submitted" })
-  })
-
-  test("verify needs a method", () => {
-    expect(
-      parseReviewForm(form({ intent: "verify", from: "in_review" })),
-    ).toEqual({ errors: ["verify_method"], intent: "verify" })
-    expect(
-      parseReviewForm(
-        form({ intent: "verify", from: "in_review", method: "news_source" }),
-      ),
-    ).toEqual({ action: "verify", from: "in_review", method: "news_source" })
-  })
-
-  test("reporter contact verifies, contacts are readable", () => {
+    ).toBeNull()
     expect(
       parseReviewForm(
         form({
           intent: "verify",
-          from: "in_review",
-          method: "reporter_contact",
+          from: "submitted",
+          method: "document",
+          target: "existing",
+          issueId: ISSUE_ID,
         }),
       ),
     ).toEqual({
       action: "verify",
-      from: "in_review",
+      from: "submitted",
+      method: "document",
+      target: { kind: "existing", issueId: ISSUE_ID },
+    })
+  })
+
+  test("verify needs a method and an issue", () => {
+    expect(
+      parseReviewForm(form({ intent: "verify", from: "submitted" })),
+    ).toBeNull()
+    expect(
+      parseReviewForm(
+        form({ intent: "verify", from: "submitted", target: "existing" }),
+      ),
+    ).toEqual({ errors: ["verify_method", "merge_issue"], intent: "verify" })
+  })
+
+  test("a new issue publishes, so the checklist is required", () => {
+    expect(
+      parseReviewForm(
+        form({
+          intent: "verify",
+          from: "submitted",
+          method: "document",
+          ...NEW,
+        }),
+      ),
+    ).toEqual({ errors: ["checklist"], intent: "verify" })
+    expect(
+      parseReviewForm(
+        form({
+          intent: "verify",
+          from: "submitted",
+          method: "reporter_contact",
+          checklist: CHECKLIST,
+          ...NEW,
+        }),
+      ),
+    ).toEqual({
+      action: "verify",
+      from: "submitted",
       method: "reporter_contact",
+      target: { kind: "new", title: NEW.title, summary: NEW.summary },
     })
   })
 
@@ -119,54 +160,94 @@ describe("parseReviewForm", () => {
     })
   })
 
-  test("reject cites a standard and explains it", () => {
+  const reason = (reasonText: string) =>
+    parseReviewForm(
+      form({ intent: "mark_unverifiable", from: "submitted", reasonText }),
+    )
+  const refused = {
+    errors: ["unverifiable_text" as const],
+    intent: "mark_unverifiable",
+  }
+
+  test("a reason is 20 to 1000 characters, counted like the browser", () => {
+    expect(reason("a".repeat(19))).toEqual(refused)
+    expect(reason("a".repeat(20))).toMatchObject({ reasonText: "a".repeat(20) })
+    expect(reason("a".repeat(1000))).toMatchObject({
+      action: "mark_unverifiable",
+    })
+    expect(reason("a".repeat(1001))).toEqual(refused)
+    // Emoji is two UTF-16 units
+    expect(reason(`${"a".repeat(998)}📷`)).toMatchObject({
+      action: "mark_unverifiable",
+    })
+    expect(reason(`${"a".repeat(999)}📷`)).toEqual(refused)
+  })
+
+  test("length is the only refusal, since the form shows only a length message", () => {
+    expect(reason("-".repeat(25))).toEqual({
+      action: "mark_unverifiable",
+      from: "submitted",
+      reasonText: "-".repeat(25),
+    })
+    expect(reason(".".repeat(40))).toMatchObject({ reasonText: ".".repeat(40) })
+    expect(reason("-".repeat(19))).toEqual(refused)
+  })
+
+  test("control characters are dropped, blank reasons refused", () => {
     expect(
-      parseReviewForm(
-        form({ intent: "reject", from: "in_review", reason: "standard_99" }),
-      ),
-    ).toEqual({ errors: ["reject_reason", "reject_text"], intent: "reject" })
-    expect(
-      parseReviewForm(
-        form({
-          intent: "reject",
-          from: "in_review",
-          reason: "standard_4",
-          reasonText:
-            "Laporan menyebut nama pegawai.\r\nKirim ulang tanpa nama.",
-        }),
-      ),
+      reason("Belum ada\u0000 bukti foto\u0007 lokasi\u001b kejadian.\u007f"),
     ).toEqual({
-      action: "reject",
-      from: "in_review",
-      reason: "standard_4",
-      reasonText: "Laporan menyebut nama pegawai.\nKirim ulang tanpa nama.",
+      action: "mark_unverifiable",
+      from: "submitted",
+      reasonText: "Belum ada bukti foto lokasi kejadian.",
+    })
+    expect(reason("Baris satu cukup panjang.\n\tBaris dua.")).toMatchObject({
+      reasonText: "Baris satu cukup panjang.\n\tBaris dua.",
+    })
+    for (const blank of [
+      " ".repeat(40),
+      "\u0000".repeat(40),
+      "\u00a0\u3000".repeat(20),
+    ]) {
+      expect(reason(blank)).toEqual(refused)
+    }
+    expect(reason("Lokasi “Jl. Dago” belum jelas 📍.")).toMatchObject({
+      reasonText: "Lokasi “Jl. Dago” belum jelas 📍.",
     })
   })
 
-  test("unverifiable has its own reasons", () => {
+  test("unverifiable needs only free text", () => {
+    expect(
+      parseReviewForm(form({ intent: "mark_unverifiable", from: "submitted" })),
+    ).toEqual({ errors: ["unverifiable_text"], intent: "mark_unverifiable" })
+    // Legacy code field ignored
     expect(
       parseReviewForm(
         form({
           intent: "mark_unverifiable",
-          from: "in_review",
-          reason: "standard_4",
-          reasonText: "Belum ada bukti yang bisa diperiksa moderator.",
+          from: "submitted",
+          reason: "no_evidence",
+          reasonText: "Belum ada bukti.\r\nKirim foto lokasi.",
         }),
       ),
-    ).toEqual({ errors: ["unverifiable_reason"], intent: "mark_unverifiable" })
-  })
-
-  test("forward needs a campus id", () => {
-    expect(
-      parseReviewForm(form({ intent: "forward", targetOrgId: "itb" })),
-    ).toEqual({ errors: ["forward_target"], intent: "forward" })
-    expect(
-      parseReviewForm(form({ intent: "forward", targetOrgId: ISSUE_ID })),
-    ).toEqual({ action: "forward", targetOrgId: ISSUE_ID })
+    ).toEqual({
+      action: "mark_unverifiable",
+      from: "submitted",
+      reasonText: "Belum ada bukti.\nKirim foto lokasi.",
+    })
   })
 
   test.each<Record<string, string>>([
     { intent: "delete" },
+    // Campus forwarding removed 25 Oct
+    { intent: "forward" },
+    // Reject form removed
+    {
+      intent: "reject",
+      from: "submitted",
+      reason: "standard_4",
+      reasonText: "Laporan menyebut nama pegawai.",
+    },
     { intent: "start_review", from: "nonsense" },
     { intent: "merge", target: "other" },
   ])("rejects %p", (values) => {
@@ -376,7 +457,11 @@ afterAll(async () => {
 describe("reportPageAction", () => {
   test("Given an editor session, when it posts a decision, then 403", async () => {
     const report = await seedReport("submitted")
-    const input = args(report.code, { intent: "start_review" })
+    const input = args(report.code, {
+      intent: "mark_unverifiable",
+      from: "submitted",
+      reasonText: "Lokasi kejadian belum bisa kami pastikan dari laporan.",
+    })
     input.context = adminContext("editor", ids.editor)
     expect((await outcome(() => reportPageAction(input))).status).toBe(403)
     expect(await statusOf(report.id)).toBe("submitted")
@@ -384,7 +469,7 @@ describe("reportPageAction", () => {
 
   test("Given a code of no report here, when posted, then 404", async () => {
     const result = await outcome(() =>
-      reportPageAction(args("LPR-2026-10-9999", { intent: "start_review" })),
+      reportPageAction(args("LPR-2026-10-9999", { intent: "verify" })),
     )
     expect(result.status).toBe(404)
   })
@@ -444,53 +529,94 @@ describe("reportPageAction", () => {
     expect(await statusOf(report.id)).toBe("submitted")
   })
 
-  test("Given a reject without a standard, when posted, then 400 names the fields", async () => {
-    const report = await seedReport("in_review")
-    const result = await outcome(() =>
+  test.each<Record<string, string>>([
+    { intent: "start_review", from: "submitted" },
+    {
+      intent: "reject",
+      from: "submitted",
+      reason: "standard_2",
+      reasonText: "Lokasi kejadian belum bisa kami pastikan dari laporan.",
+    },
+    {
+      intent: "forward",
+      from: "submitted",
+      targetOrgId: "00000000-0000-4000-8000-000000000000",
+    },
+  ])(
+    "Given removed intent %p, when posted, then 400 and nothing changes",
+    async (values) => {
+      const report = await seedReport("submitted")
+      const result = await outcome(() =>
+        reportPageAction(args(report.code, values)),
+      )
+      expect(result.status).toBe(400)
+      expect(await statusOf(report.id)).toBe("submitted")
+    },
+  )
+
+  test("Given a submitted report, when marked unverifiable with a reason, then it moves and the page reloads", async () => {
+    const report = await seedReport("submitted")
+    const blank = await outcome(() =>
       reportPageAction(
-        args(report.code, { intent: "reject", from: "in_review" }),
+        args(report.code, {
+          intent: "mark_unverifiable",
+          from: "submitted",
+          reasonText: "   ",
+        }),
       ),
     )
-    expect(result).toMatchObject({
+    expect(blank).toMatchObject({
       status: 400,
-      body: { errors: ["reject_reason", "reject_text"], intent: "reject" },
+      body: { errors: ["unverifiable_text"], intent: "mark_unverifiable" },
     })
-    expect(await statusOf(report.id)).toBe("in_review")
-  })
-
-  test("Given a submitted report, when review starts, then it moves and the page reloads", async () => {
-    const report = await seedReport("submitted")
     const result = await outcome(() =>
       reportPageAction(
-        args(report.code, { intent: "start_review", from: "submitted" }),
+        args(report.code, {
+          intent: "mark_unverifiable",
+          from: "submitted",
+          reasonText: "Lokasi kejadian belum bisa kami pastikan dari laporan.",
+        }),
       ),
     )
     expect(result).toMatchObject({
       status: 303,
       location: `/kelola/laporan/${report.code}`,
     })
-    expect(await statusOf(report.id)).toBe("in_review")
+    expect(await statusOf(report.id)).toBe("unverifiable")
   })
 
   test("Given another admin moved the report, when a stale decision posts, then 409", async () => {
-    const report = await seedReport("in_review")
+    const report = await seedReport("unverifiable")
     const result = await outcome(() =>
       reportPageAction(
-        args(report.code, { intent: "start_review", from: "submitted" }),
+        args(report.code, {
+          intent: "mark_unverifiable",
+          from: "submitted",
+          reasonText: "Lokasi kejadian belum bisa kami pastikan dari laporan.",
+        }),
       ),
     )
     expect(result).toMatchObject({ status: 409, body: { conflict: true } })
-    expect(await statusOf(report.id)).toBe("in_review")
+    expect(await statusOf(report.id)).toBe("unverifiable")
   })
 
   test("Given a reporter who refused contact, when verified by contact, then 400", async () => {
-    const report = await seedReport("in_review", { contactable: false })
+    const report = await seedReport("submitted", { contactable: false })
     const result = await outcome(() =>
       reportPageAction(
         args(report.code, {
           intent: "verify",
-          from: "in_review",
+          from: "submitted",
           method: "reporter_contact",
+          target: "new",
+          title: "Atap sekolah runtuh di Dago",
+          summary: "Beberapa laporan menyebut atap kelas runtuh.",
+          checklist: [
+            "no_personal_data",
+            "region_matches",
+            "category_complete",
+            "label_checked",
+          ],
         }),
       ),
     )
@@ -498,7 +624,7 @@ describe("reportPageAction", () => {
       status: 400,
       body: { errors: ["verify_contact"], intent: "verify" },
     })
-    expect(await statusOf(report.id)).toBe("in_review")
+    expect(await statusOf(report.id)).toBe("submitted")
   })
 
   test("Given a verified report, when merged into a new issue, then it opens the issue", async () => {
@@ -579,53 +705,6 @@ describe("reportPageAction", () => {
     )
     expect(result).toMatchObject({ status: 409, body: { conflict: true } })
     expect(await statusOf(report.id)).toBe("in_review")
-  })
-
-  test("Given another campus, when the report is forwarded, then a copy is in review there", async () => {
-    const report = await seedReport("submitted")
-    const result = await outcome(() =>
-      reportPageAction(
-        args(report.code, { intent: "forward", targetOrgId: ids.b }),
-      ),
-    )
-    expect(result).toMatchObject({
-      status: 303,
-      location: `/kelola/laporan/${report.code}`,
-    })
-    expect(await statusOf(report.id)).toBe("forwarded")
-    const { rows } = await su.query(
-      "SELECT status FROM reports WHERE org_id = $1 AND forwarded_from_report_id = $2",
-      [ids.b, report.id],
-    )
-    expect(rows).toEqual([{ status: "in_review" }])
-  })
-
-  test("Given an unknown campus, when forwarded, then 400 forward_target", async () => {
-    const report = await seedReport("submitted")
-    const result = await outcome(() =>
-      reportPageAction(
-        args(report.code, {
-          intent: "forward",
-          targetOrgId: crypto.randomUUID(),
-        }),
-      ),
-    )
-    expect(result).toMatchObject({
-      status: 400,
-      body: { errors: ["forward_target"], intent: "forward" },
-    })
-    expect(await statusOf(report.id)).toBe("submitted")
-  })
-
-  test("Given a rejected report, when forwarded, then 409", async () => {
-    const report = await seedReport("rejected")
-    const result = await outcome(() =>
-      reportPageAction(
-        args(report.code, { intent: "forward", targetOrgId: ids.b }),
-      ),
-    )
-    expect(result).toMatchObject({ status: 409, body: { conflict: true } })
-    expect(await statusOf(report.id)).toBe("rejected")
   })
 })
 

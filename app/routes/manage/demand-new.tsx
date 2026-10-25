@@ -22,7 +22,7 @@ export default function NewDemand({
   const title = m.demand_new_title()
   const pageTitle = useSiteTitle(title)
   return (
-    <div className="max-w-3xl">
+    <div>
       <title>{errorTitle(pageTitle, errors.length > 0)}</title>
       <ErrorSummary errors={errors} attempt={actionData} />
       <h1 className="font-bold font-heading text-3xl [font-synthesis-weight:none]">

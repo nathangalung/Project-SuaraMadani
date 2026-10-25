@@ -24,7 +24,6 @@ export function manageNav(): NavItem[] {
     { to: "/kelola/antrean", label: m.manage_queue_title() },
     { to: "/kelola/isu", label: m.manage_issues_title() },
     { to: "/kelola/tuntutan", label: m.manage_demands_title() },
-    { to: "/kelola/aduan", label: m.manage_complaints_title() },
     { to: "/kelola/audit", label: m.manage_audit_title() },
     { to: "/kelola/anggota", label: m.team_title() },
     { to: "/kelola/pengaturan", label: m.settings_nav() },

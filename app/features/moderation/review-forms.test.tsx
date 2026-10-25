@@ -10,6 +10,9 @@ import {
   VerifyForm,
 } from "./review-forms"
 
+// Verify also picks the issue
+const TARGET = { defaultTitle: "Jalan rusak", targets: [], search: "" }
+
 function render(Form: () => React.ReactNode) {
   const Stub = createRoutesStub([{ path: "/", Component: Form }])
   return renderToStaticMarkup(<Stub initialEntries={["/"]} />)
@@ -21,9 +24,10 @@ describe("error summary targets", () => {
       "verify_method",
       () => (
         <VerifyForm
-          from="in_review"
+          from="submitted"
           contactable
           errors={reviewErrors(["verify_method"])}
+          {...TARGET}
         />
       ),
     ],
@@ -41,7 +45,7 @@ describe("error summary targets", () => {
 
   test("verify offers all five PLAN §5.5 methods", () => {
     const html = render(() => (
-      <VerifyForm from="in_review" contactable errors={[]} />
+      <VerifyForm from="submitted" contactable errors={[]} {...TARGET} />
     ))
     expect(html).toContain("Kontak pelapor")
     expect(html.match(/name="method"/g)).toHaveLength(5)
@@ -50,15 +54,25 @@ describe("error summary targets", () => {
   test("no contact method without the reporter's consent", () => {
     const html = render(() => (
       <VerifyForm
-        from="in_review"
+        from="submitted"
         contactable={false}
         errors={reviewErrors(["verify_contact"])}
+        {...TARGET}
       />
     ))
     expect(html).not.toContain('value="reporter_contact"')
     expect(html.match(/name="method"/g)).toHaveLength(4)
     expect(html).toContain(m.manage_verify_hint_no_contact())
     expect(html).toContain(m.error_verify_contact())
+  })
+
+  test("verify carries the issue choice and checklist", () => {
+    const html = render(() => (
+      <VerifyForm from="submitted" contactable errors={[]} {...TARGET} />
+    ))
+    expect(html).toContain('name="target"')
+    expect(html).toContain('name="title"')
+    expect(html.match(/name="checklist"/g)).toHaveLength(4)
   })
 })
 
@@ -119,7 +133,7 @@ describe("merge form", () => {
     ))
     expect(html).toMatch(/<form[^>]*method="get"[^>]*>[\s\S]*?name="cari"/)
     expect(html).toContain('value="jalan"')
-    expect(html).toContain("ISU-2026-10-0001 · Jalan · kab/kota sama")
+    expect(html).toContain("ISU-2026-10-0001, Jalan, kab/kota sama")
     // Search picks the existing radio
     expect(html).toMatch(/id="merge-target-existing"[^>]*checked=""/)
   })
@@ -140,13 +154,14 @@ describe("merge form", () => {
         errors={[]}
       />
     ))
+    // Similar issues first
     const order = [
-      'id="merge-target-new"',
-      'name="title"',
-      'name="summary"',
       'id="merge-target-existing"',
       'name="cari"',
       'name="issueId"',
+      'id="merge-target-new"',
+      'name="title"',
+      'name="summary"',
     ].map((needle) => html.indexOf(needle))
     expect(order.every((at) => at > 0)).toBe(true)
     expect([...order].sort((a, b) => a - b)).toEqual(order)

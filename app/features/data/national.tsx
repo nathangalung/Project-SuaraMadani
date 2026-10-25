@@ -28,7 +28,6 @@ const PIPELINE: GovernmentStatus[] = [
   "awaiting_response",
   "responded",
   "in_progress",
-  "claimed_resolved",
   "confirmed_resolved",
 ]
 
@@ -199,7 +198,7 @@ function CampusTable({ campuses }: { campuses: NationalCampus[] }) {
                 <tr key={campus.id}>
                   <th
                     scope="row"
-                    className="border-line-subtle border-b px-3 py-2 text-left font-semibold"
+                    className="border-line-subtle border-r border-b px-4 py-3 text-left font-semibold"
                   >
                     {campus.campusName}
                   </th>

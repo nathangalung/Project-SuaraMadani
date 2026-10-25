@@ -159,8 +159,10 @@ U="$(sql "$RUN-pg" "SELECT u.id FROM users u
   ORDER BY (SELECT count(*) FROM follows f WHERE f.user_id = u.id) DESC, u.id LIMIT 1")"
 I1="$(sql "$RUN-pg" "SELECT id FROM issues WHERE org_id = '$A' ORDER BY id LIMIT 1")"
 I2="$(sql "$RUN-pg" "SELECT id FROM issues WHERE org_id = '$A' ORDER BY id DESC LIMIT 1")"
-C="$(sql "$RUN-pg" "SELECT id FROM resolution_claims WHERE org_id = '$A' AND closed_at IS NULL ORDER BY id LIMIT 1")"
-[[ -n "$A" && -n "$B" && -n "$U" && -n "$I1" && "$I1" != "$I2" && -n "$C" ]] || fail "sample seed shape"
+[[ -n "$A" && -n "$B" && -n "$U" && -n "$I1" && "$I1" != "$I2" ]] || fail "sample seed shape"
+# Claims are legacy rows now
+C="$(sql "$RUN-pg" "INSERT INTO resolution_claims (org_id, issue_id) VALUES ('$A', '$I1') RETURNING id" | head -1)"
+[[ -n "$C" ]] || fail "legacy claim row"
 E="$(sql "$RUN-pg" "INSERT INTO email_log (kind, address_hash, status) VALUES ('notification', 'drill', 'sent') RETURNING id" | head -1)"
 # Pending at T, then sent
 sql "$RUN-pg" "

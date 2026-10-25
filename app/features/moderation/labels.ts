@@ -15,7 +15,6 @@ export const ISSUE_ACTION_TEXT: Record<IssueAction, Text> = {
   escalate: m.manage_action_escalate,
   record_response: m.manage_action_record_response,
   mark_in_progress: m.manage_action_mark_in_progress,
-  claim_resolved: m.manage_action_claim_resolved,
   confirm_resolved: m.manage_action_confirm_resolved,
   reopen: m.manage_action_reopen,
   mark_not_competent: m.manage_action_mark_not_competent,
@@ -64,6 +63,7 @@ export const AUDIT_ACTION_TEXT: Record<AuditAction, Text> = {
   "issue.edit": m.audit_issue_edit,
   "evidence.decide": m.audit_evidence_decide,
   "evidence.download_original": m.audit_evidence_download_original,
+  // Legacy rows, complaints removed
   "complaint.submit": m.audit_complaint_submit,
   "complaint.decide": m.audit_complaint_decide,
   "complaint.appeal": m.audit_complaint_appeal,

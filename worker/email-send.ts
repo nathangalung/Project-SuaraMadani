@@ -6,10 +6,7 @@ import { type MemberRole, members, users } from "../db/schema/auth.ts"
 import { fixSurveys } from "../db/schema/claims.ts"
 import { demandFollows, demandItems, demands } from "../db/schema/demands.ts"
 import { issueReports, issues, resolutionClaims } from "../db/schema/issues.ts"
-import {
-  contentComplaints,
-  moderationDecisions,
-} from "../db/schema/moderation.ts"
+import { moderationDecisions } from "../db/schema/moderation.ts"
 import {
   emailLog,
   follows,
@@ -38,7 +35,6 @@ import {
   isReportTemplate,
   type MailSite,
   type RenderedMail,
-  renderComplaintMail,
   renderDeadlineMail,
   renderDemandMail,
   renderFollowerMail,
@@ -55,19 +51,17 @@ import {
   linkKeyring,
   signLink,
 } from "../server/signed-link.ts"
-import { appealDeadline } from "../shared/complaints.ts"
 import { jakartaIsoDate } from "../shared/format.ts"
-import { isDecisionReason, referralWait } from "../shared/moderation.ts"
+import { referralWait } from "../shared/moderation.ts"
 import {
-  type ComplaintTemplate,
   DEADLINE_TEMPLATE,
   type DemandTemplate,
   EMAIL_QUOTA,
-  isComplaintTemplate,
   isDemandTemplate,
   isReplyTemplate,
   isUndeliverable,
   jakartaDayStart,
+  LEGACY_CLAIM_TEMPLATE,
   type NotificationTemplate,
   nextSendMorning,
   type ReplyTemplate,
@@ -203,13 +197,10 @@ async function compose(
   if (input.replyId && isReplyTemplate(template)) {
     return composeReply(tx, { site, template, replyId: input.replyId })
   }
-  if (input.complaintId && isComplaintTemplate(template)) {
-    return composeComplaint(tx, {
-      site,
-      template,
-      complaintId: input.complaintId,
-    })
-  }
+  // Legacy rows, complaints removed
+  if (input.complaintId) return "unpublished"
+  // Legacy rows, claim step removed
+  if (template === LEGACY_CLAIM_TEMPLATE) return "unpublished"
   if (input.reportId && isReportTemplate(template)) {
     const [report] = await tx
       .select({
@@ -270,10 +261,7 @@ async function compose(
       report: { code: report.code, title: report.title },
       issue,
       trackUrl: `${origin}/lacak?t=${sign("lacak", input.reportId)}`,
-      decision:
-        decision?.text && isDecisionReason(decision.reason)
-          ? { reason: decision.reason, text: decision.text }
-          : null,
+      decision: decision?.text ? { text: decision.text } : null,
       forwarded:
         template === "report_forwarded"
           ? {
@@ -524,65 +512,6 @@ async function composeReply(
     },
     agency: row.agency,
     decision,
-  })
-}
-
-async function composeComplaint(
-  tx: Tx,
-  input: { site: MailSite; template: ComplaintTemplate; complaintId: string },
-): Promise<RenderedMail> {
-  const c = contentComplaints
-  const [row] = await tx
-    .select({
-      code: c.publicCode,
-      issueCode: issues.publicCode,
-      demandCode: demands.publicCode,
-      decision: c.decision,
-      reason: c.decisionReason,
-      text: c.decisionText,
-      decidedAt: c.decidedAt,
-      appealDecision: c.appealDecision,
-      appealReason: c.appealReason,
-      appealText: c.appealDecisionText,
-    })
-    .from(c)
-    .leftJoin(issues, and(eq(issues.orgId, c.orgId), eq(issues.id, c.issueId)))
-    .leftJoin(
-      demands,
-      and(eq(demands.orgId, c.orgId), eq(demands.id, c.demandId)),
-    )
-    .where(eq(c.id, input.complaintId))
-  if (!row) throw new Error("notified complaint not found")
-  const appeal = input.template === "complaint_appeal_decided"
-  const picked = appeal
-    ? {
-        decision: row.appealDecision,
-        reason: row.appealReason,
-        text: row.appealText,
-      }
-    : { decision: row.decision, reason: row.reason, text: row.text }
-  const decision =
-    input.template !== "complaint_received" &&
-    picked.decision &&
-    picked.reason &&
-    picked.text
-      ? { decision: picked.decision, reason: picked.reason, text: picked.text }
-      : null
-  return renderComplaintMail({
-    template: input.template,
-    site: input.site,
-    complaint: {
-      code: row.code,
-      subject: row.demandCode
-        ? { kind: "demand", code: row.demandCode }
-        : { kind: "issue", code: row.issueCode ?? "" },
-      url: `${input.site.origin}/aduan/${row.code}`,
-    },
-    decision,
-    appealUntil:
-      input.template === "complaint_decided" && row.decidedAt
-        ? appealDeadline(row.decidedAt)
-        : null,
   })
 }
 

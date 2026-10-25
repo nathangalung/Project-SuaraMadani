@@ -42,6 +42,7 @@ const FIELDS: DemandFields = {
   summary: "Perbaikan layanan publik dan jadwal yang terbuka.",
   target: "Pemerintah Provinsi Jawa Barat",
   raisedOn: "2026-07-30",
+  briefUrl: null,
 }
 
 /** Published tuntutan, Given step. */

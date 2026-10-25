@@ -4,7 +4,7 @@ import { DATASET_IDS, type DatasetInput, datasets } from "./datasets.ts"
 
 function snapshot(): DashboardSnapshot {
   return {
-    v: 6,
+    v: 8,
     firstReportAt: "2026-03-02",
     reports: {
       total: 64,
@@ -15,14 +15,7 @@ function snapshot(): DashboardSnapshot {
     },
     issues: { published: 26, mergedReports: 40, reportsPerIssue: 1.5 },
     verifyTime: { n: 40, medianHours: 20, p90Hours: null },
-    resolution: {
-      pending: 2,
-      confirmed: 5,
-      reopened: 3,
-      claimTotal: 10,
-      checked: 8,
-      confirmedShare: 0.625,
-    },
+    resolution: { done: 5, published: 26, share: 0.19 },
     trend: [
       { month: "2026-09", received: 11, verified: 8 },
       { month: "2026-10", received: 10, verified: 5 },
@@ -30,15 +23,11 @@ function snapshot(): DashboardSnapshot {
     trendTotal: 21,
     categories: { program: 20, bencana: 6, bansos: 0 },
     statuses: {
-      awaiting_response: 12,
+      verified: 4,
+      referred: 8,
       responded: 6,
       in_progress: 0,
-      claimed_resolved: 2,
-      confirmed_resolved: 5,
-      reopened: 3,
-      not_competent: 0,
-      not_followed_up: 0,
-      closed: 0,
+      done: 5,
     },
     verifiedProvinces: {
       "all|all": { "32": 22, "34": null },
@@ -58,30 +47,6 @@ function snapshot(): DashboardSnapshot {
       ],
       clearAgencies: 1,
       unreferred: 2,
-    },
-    reasons: {
-      rejected: {
-        standard_1: 0,
-        standard_2: 6,
-        standard_3: null,
-        standard_4: 0,
-        standard_5: 0,
-        standard_6: 0,
-        standard_7: 0,
-        standard_8: 0,
-        standard_9: 0,
-        standard_10: 0,
-        standard_11: 0,
-        standard_12: 0,
-        standard_13: 0,
-        out_of_scope: 5,
-      },
-      unverifiable: {
-        no_evidence: 7,
-        source_unreachable: 0,
-        conflicting_information: 0,
-        location_unclear: null,
-      },
     },
   }
 }
@@ -119,6 +84,7 @@ function input(): DatasetInput {
           code: "ISU-2026-10-0001",
           title: "Jalan berlubang",
           categoryId: "program",
+          advocacyStatus: "referred",
           govStatus: "awaiting_response",
           regencyName: "Kota Bandung",
           districtName: null,
@@ -164,23 +130,7 @@ describe("datasets", () => {
       "bencana",
       "bansos",
     ])
-    expect(all.status.rows[0]).toEqual({
-      status: "awaiting_response",
-      issues: 12,
-    })
-  })
-
-  test("suppressed cells stay null, never zero", () => {
-    expect(all.alasan.rows).toContainEqual({
-      outcome: "rejected",
-      reason: "standard_3",
-      reports: null,
-    })
-    expect(all.alasan.rows).toContainEqual({
-      outcome: "unverifiable",
-      reason: "location_unclear",
-      reports: null,
-    })
+    expect(all.status.rows[0]).toEqual({ status: "verified", issues: 4 })
   })
 
   test("totals /data shows, suppressed as stored", () => {
@@ -257,8 +207,8 @@ describe("datasets", () => {
       { bucket: "d91", issues: 0 },
     ])
     expect(all.penyelesaian.rows).toContainEqual({
-      metric: "confirmed_share",
-      value: 0.625,
+      metric: "share",
+      value: 0.19,
     })
   })
 

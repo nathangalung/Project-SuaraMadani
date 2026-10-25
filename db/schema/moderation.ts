@@ -68,9 +68,8 @@ export const moderationDecisions = pgTable(
       .references(() => organizations.id),
     reportId: uuid("report_id").notNull(),
     action: text("action").$type<DecisionAction>().notNull(),
-    reasonCode: text("reason_code")
-      .$type<DecisionReason | VerifyMethod>()
-      .notNull(),
+    // Null: admin wrote free text
+    reasonCode: text("reason_code").$type<DecisionReason | VerifyMethod>(),
     // Reporter guidance, redactable
     reasonText: text("reason_text"),
     // No FK: rows outlive users
@@ -97,7 +96,7 @@ export const moderationDecisions = pgTable(
     ),
     check(
       "moderation_decisions_reason_check",
-      sql`(${t.action} = 'verify' AND ${oneOf(t.reasonCode, VERIFY_METHODS)} AND ${t.reasonText} IS NULL) OR (${t.action} = 'reject' AND ${oneOf(t.reasonCode, REJECT_REASONS)} AND ${t.reasonText} IS NOT NULL) OR (${t.action} = 'mark_unverifiable' AND ${oneOf(t.reasonCode, UNVERIFIABLE_REASONS)} AND ${t.reasonText} IS NOT NULL)`,
+      sql`(${t.action} = 'verify' AND ${oneOf(t.reasonCode, VERIFY_METHODS)} AND ${t.reasonText} IS NULL) OR (${t.action} = 'reject' AND (${t.reasonCode} IS NULL OR ${oneOf(t.reasonCode, REJECT_REASONS)}) AND ${t.reasonText} IS NOT NULL) OR (${t.action} = 'mark_unverifiable' AND (${t.reasonCode} IS NULL OR ${oneOf(t.reasonCode, UNVERIFIABLE_REASONS)}) AND ${t.reasonText} IS NOT NULL)`,
     ),
     tenantPolicy(),
   ],

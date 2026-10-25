@@ -1,5 +1,4 @@
 import type { SubcategoryId } from "../../shared/categories.ts"
-import type { ComplaintPart, ComplaintReason } from "../../shared/complaints.ts"
 import type {
   RejectReason,
   UnverifiableReason,
@@ -1076,9 +1075,6 @@ export const RESPONSE_BODIES: readonly string[] = [
 export const ACTION_NOTES: {
   readonly [K in IssueAction]?: readonly string[]
 } = {
-  claim_resolved: [
-    "Instansi menyatakan perbaikan sudah selesai. Penyelesaian menunggu konfirmasi.",
-  ],
   confirm_resolved: [
     "Foto lokasi terbaru dari pelapor menunjukkan perbaikan sudah selesai.",
     "Dua pelapor mengonfirmasi bahwa layanan sudah berjalan normal kembali.",
@@ -1091,49 +1087,3 @@ export const ACTION_NOTES: {
     "Isu ini ditutup karena laporannya ternyata menyangkut lokasi di luar wilayah yang disebut.",
   ],
 }
-
-// Marked sample, private texts
-export const COMPLAINT_TEXTS: {
-  readonly [K in ComplaintReason]?: { part: ComplaintPart; text: string }
-} = {
-  personal_data: {
-    part: "title_summary",
-    text: "[Data sampel] Ringkasan isu menyebut sekolah dan kelas tertentu sehingga anak-anak di sana mudah dikenali.",
-  },
-  accusation: {
-    part: "responses",
-    text: "[Data sampel] Tanggapan yang dikutip seolah menyalahkan kepala unit tertentu, padahal masalahnya ada pada anggaran.",
-  },
-  false_information: {
-    part: "title_summary",
-    text: "[Data sampel] Judul isu menyebut masalah belum ditangani, padahal perbaikan sudah mulai minggu lalu.",
-  },
-  hate: {
-    part: "whole",
-    text: "[Data sampel] Isi isu ini menyudutkan satu kelompok warga berdasarkan asal daerahnya.",
-  },
-  political: {
-    part: "timeline",
-    text: "[Data sampel] Catatan di riwayat isu dipakai untuk mengampanyekan salah satu calon kepala daerah.",
-  },
-  child_safety: {
-    part: "evidence",
-    text: "[Data sampel] Salah satu foto bukti menampilkan wajah anak sekolah dengan jelas.",
-  },
-}
-
-export const COMPLAINT_STATEMENTS: {
-  readonly keep: string
-  readonly edit: string
-  readonly hide: string
-  readonly remove: string
-} = {
-  keep: "[Data sampel] Kami memeriksa judul, ringkasan, dan riwayat isu. Tidak ada bagian yang melanggar pedoman konten.",
-  edit: "[Data sampel] Kalimat yang membuat orang mudah dikenali kami hapus dari ringkasan. Bagian lain isu tetap tampil.",
-  hide: "[Data sampel] Setelah diperiksa ulang, isu ini kami sembunyikan sampai ringkasannya ditulis ulang tanpa bagian yang melanggar.",
-  remove:
-    "[Data sampel] Isi isu ini menyudutkan kelompok warga tertentu, jadi isu kami turunkan.",
-}
-
-export const APPEAL_TEXT =
-  "[Data sampel] Bagian yang saya adukan masih tampil di halaman isu. Mohon diperiksa ulang oleh admin lain."

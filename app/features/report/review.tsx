@@ -529,7 +529,6 @@ export function Review({
                   {m.review_consent_title()}
                 </h2>
               }
-              hint={<ConsentHint />}
               error={errorFor(CONSENT_GROUP_ID)}
               optionsClassName="grid gap-2.5"
             >
@@ -606,39 +605,6 @@ export function Review({
   )
 }
 
-// New tab keeps form state
-function PolicyLink({ href, label }: { href: string; label: string }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener"
-      className="font-semibold text-accent underline underline-offset-4 hover:no-underline"
-    >
-      {label} <span className="whitespace-nowrap">{m.link_new_tab()}</span>
-    </a>
-  )
-}
-
-const POLICY_LINKS = [
-  { href: "/privasi", label: m.privacy_link },
-  { href: "/pedoman", label: m.guidelines_link },
-] as const
-
-export function ConsentHint() {
-  return (
-    <>
-      {m.consent_hint()}
-      <span className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
-        <span>{m.consent_policies()}</span>
-        {POLICY_LINKS.map((link) => (
-          <PolicyLink key={link.href} href={link.href} label={link.label()} />
-        ))}
-      </span>
-    </>
-  )
-}
-
 type ConsentRowProps = {
   id: string
   name: string
@@ -682,9 +648,6 @@ function consentLabel(key: ConsentKey, operator: string): string {
       return m.consent_public_issue()
     case "aggregate_processing":
       return m.consent_aggregate({ operator })
-    case "forward_to_agency":
-      // PLAN §7: marker goes first
-      return `${m.field_optional()} ${m.consent_forward()}`
   }
 }
 

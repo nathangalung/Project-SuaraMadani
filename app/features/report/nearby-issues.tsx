@@ -38,10 +38,13 @@ export function NearbyList({
             <Link to={`/isu/${issue.code}`} className={LINK}>
               {issue.title}
             </Link>
-            <p className="font-ui text-ink-muted text-sm">
-              {issue.code} ·{" "}
-              {m.report_nearby_reports({ n: formatNumber(issue.reportCount) })}{" "}
-              ·{" "}
+            <p className="flex flex-wrap gap-x-4 font-ui text-ink-muted text-sm">
+              <span>{issue.code}</span>
+              <span>
+                {m.report_nearby_reports({
+                  n: formatNumber(issue.reportCount),
+                })}
+              </span>
               <Link to={`/isu/${issue.code}#ikuti`} className={LINK}>
                 {m.report_nearby_follow()}
               </Link>

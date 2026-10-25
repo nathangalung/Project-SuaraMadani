@@ -7,7 +7,6 @@ import {
   test,
 } from "bun:test"
 import { RouterContextProvider } from "react-router"
-import sharp from "sharp"
 import { migrate } from "../../../db/migrate.ts"
 import type { MemberRole } from "../../../db/schema/auth.ts"
 import {
@@ -233,17 +232,20 @@ describe("admin routes", () => {
     expect(page.intakePaused).toBe(true)
   })
 
-  test("a theme failing contrast is returned, not saved", async () => {
-    const result = await settingsAction(
-      routeArgs(
-        post("/kelola/pengaturan", {
-          intent: "theme",
-          brand: "#ffd400",
-        }),
-        context("a", admin(), "admin"),
-      ),
-    )
-    expect(result).toMatchObject({ error: "theme", invalid: [] })
+  test("theme and logo are no longer editable", async () => {
+    for (const intent of ["theme", "logo", "logo_remove"]) {
+      const refused = await settingsAction(
+        routeArgs(
+          post("/kelola/pengaturan", { intent, brand: "#ffd400" }),
+          context("a", admin(), "admin"),
+        ),
+      ).then(
+        () => 0,
+        (error: unknown) =>
+          (error as { init?: { status?: number } }).init?.status,
+      )
+      expect(refused).toBe(400)
+    }
     const { rows } = await su.query(
       "SELECT theme FROM organizations WHERE id = $1",
       [orgs.a],
@@ -732,12 +734,6 @@ describe("admin settings, /kelola/pengaturan", () => {
         context(org, admin(), "admin"),
       ),
     )
-  const logoForm = (bytes: Uint8Array<ArrayBuffer>) => {
-    const form = new FormData()
-    form.set("intent", "logo")
-    form.set("logo", new File([bytes], "logo.png", { type: "image/png" }))
-    return form
-  }
   const serve = (file: string) =>
     logoLoader(
       routeArgs(
@@ -754,81 +750,8 @@ describe("admin settings, /kelola/pengaturan", () => {
       ),
     )
 
-  test("Given a PNG logo, when an admin uploads it, then it is served as an immutable WebP", async () => {
-    const png = await sharp({
-      create: { width: 80, height: 20, channels: 3, background: "#123456" },
-    })
-      .png()
-      .toBuffer()
-    expect(await save(logoForm(png))).toEqual({ saved: "logo" })
-    const file = (await settings()).logoFile ?? ""
-    expect(file).toMatch(/^[0-9a-f]{16}\.webp$/)
-    const res = await serve(file)
-    expect(res.status).toBe(200)
-    expect(res.headers.get("Content-Type")).toBe("image/webp")
-    expect(res.headers.get("Cache-Control")).toBe(
-      "public, max-age=31536000, immutable",
-    )
-    expect(res.headers.get("Content-Security-Policy")).toBe(
-      "sandbox; default-src 'none'",
-    )
-    expect((await sharp(await res.arrayBuffer()).metadata()).format).toBe(
-      "webp",
-    )
-    expect(await save({ intent: "logo_remove" })).toEqual({
-      saved: "logo_removed",
-    })
-    expect(await status(() => serve(file))).toBe(404)
-    expect((await settings()).logoFile).toBeNull()
-  })
-
-  test("a missing, empty or non-raster logo is refused", async () => {
-    const form = new FormData()
-    form.set("intent", "logo")
-    expect(await save(form)).toEqual({ error: "logo" })
-    expect(await save(logoForm(new Uint8Array()))).toEqual({ error: "logo" })
-    const svg = new TextEncoder().encode("<svg onload='x()'/>")
-    expect(await save(logoForm(svg))).toEqual({ error: "logo" })
-    expect((await settings()).logoFile).toBeNull()
+  test("an unknown logo file is 404", async () => {
     expect(await status(() => serve("bukan-logo.png"))).toBe(404)
-  })
-
-  test("Given operator facts, when saved, then the settings page reads them back", async () => {
-    expect(
-      await save({
-        intent: "identity",
-        name: "KM Baru",
-        campusName: "Kampus Baru",
-        contactEmail: "kontak@kampus.ac.id",
-        alliance: "Aliansi Contoh",
-        legalNumber: "",
-        credit: "",
-        officers: "Ketua A\nSekjen B",
-      }),
-    ).toEqual({ saved: "identity" })
-    expect((await settings()).identity).toMatchObject({
-      name: "KM Baru",
-      campusName: "Kampus Baru",
-      contactEmail: "kontak@kampus.ac.id",
-      alliance: "Aliansi Contoh",
-      officers: ["Ketua A", "Sekjen B"],
-    })
-  })
-
-  test("invalid operator facts are returned with their values", async () => {
-    const fields = { intent: "identity", name: "", campusName: "Kampus" }
-    expect(await save(fields)).toEqual({
-      error: "identity",
-      fields: ["name"],
-      values: fields,
-    })
-  })
-
-  test("a theme passing contrast is saved", async () => {
-    expect(await save({ intent: "theme", brand: " #176BFF " })).toEqual({
-      saved: "theme",
-    })
-    expect((await settings()).theme).toEqual({ brand: "#176bff" })
   })
 
   test("an intake choice outside open or paused and a status link that is no URL are refused", async () => {
@@ -845,21 +768,12 @@ describe("admin settings, /kelola/pengaturan", () => {
     expect((await settings()).intakePaused).toBe(false)
   })
 
-  test("the gate saying admin without the row is 403 for every form, an unknown intent 400", async () => {
-    const png = await sharp({
-      create: { width: 8, height: 2, channels: 3, background: "#000000" },
-    })
-      .png()
-      .toBuffer()
-    const forms: (FormData | Record<string, string>)[] = [
-      logoForm(png),
-      { intent: "logo_remove" },
-      { intent: "identity", name: "KM", campusName: "Kampus" },
-      { intent: "theme", brand: "#176bff" },
-    ]
-    for (const body of forms) {
-      expect(await status(() => save(body, "b"))).toBe(403)
-    }
+  test("the gate saying admin without the row is 403, an unknown intent 400", async () => {
+    expect(
+      await status(() =>
+        save({ intent: "intake", intake: "paused", statusUrl: "" }, "b"),
+      ),
+    ).toBe(403)
     expect(await status(() => save({ intent: "colour" }))).toBe(400)
   })
 })

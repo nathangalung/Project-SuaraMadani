@@ -65,6 +65,7 @@ const FIELDS: DemandFields = {
   summary: "Jam layanan puskesmas diperpanjang hingga pukul sembilan malam.",
   target: "Dinas Kesehatan Kota Bandung",
   raisedOn: "2026-09-01",
+  briefUrl: null,
 }
 
 function session(): SessionContext {

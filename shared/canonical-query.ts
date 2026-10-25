@@ -1,10 +1,6 @@
 import { isCategoryId, isSubcategoryId } from "./categories.ts"
 import { isDemandCategory } from "./demands.ts"
-import {
-  FULFILMENT_STATUSES,
-  GOVERNMENT_STATUSES,
-  PUBLIC_STAGES,
-} from "./status.ts"
+import { FULFILMENT_STATUSES, PUBLIC_STAGES } from "./status.ts"
 
 // Returns canonical value or null.
 type ParamRule = {
@@ -29,8 +25,16 @@ const searchRule: ParamRule = {
   normalize: (value) =>
     value.trim().replace(/\s+/g, " ").slice(0, SEARCH_MAX_LENGTH).trim(),
 }
-const cursorRule: ParamRule = {
-  normalize: (value) => (/^[A-Za-z0-9_-]{1,200}$/.test(value) ? value : null),
+// Numbered pages, team 25 Oct
+const pageRule: ParamRule = {
+  normalize: (value) => (/^[1-9]\d{0,5}$/.test(value) ? value : null),
+  default: "1",
+}
+
+/** Canonical halaman as a number. */
+export function pageNumber(value: string | undefined): number {
+  const page = Number(value)
+  return Number.isInteger(page) && page > 0 ? page : 1
 }
 
 export const ISSUE_LIST_QUERY: QuerySpec = {
@@ -44,7 +48,7 @@ export const ISSUE_LIST_QUERY: QuerySpec = {
   },
   q: searchRule,
   urut: { normalize: oneOf(ISSUE_SORTS), default: "terbaru" },
-  kursor: cursorRule,
+  halaman: pageRule,
 }
 
 const DEMAND_SCOPE_PARAMS = ["nasional", "daerah"] as const
@@ -61,14 +65,14 @@ export const DEMAND_LIST_QUERY: QuerySpec = {
   status: { normalize: oneOf(FULFILMENT_STATUSES) },
   q: searchRule,
   urut: { normalize: oneOf(DEMAND_SORTS), default: "terbaru" },
-  kursor: cursorRule,
+  halaman: pageRule,
 }
 
 const DATA_VIEWS = ["peta", "tabel"] as const
 export type DashboardView = (typeof DATA_VIEWS)[number]
 
-// Laporan default, Tuntutan second
-const MAP_LAYERS = ["laporan", "tuntutan"] as const
+// Reports only, team 25 Oct
+const MAP_LAYERS = ["laporan"] as const
 
 // PLAN §5.8 allows these orders
 export const ISSUE_RANKINGS = ["laporan", "terlama"] as const
@@ -77,7 +81,7 @@ export type IssueRanking = (typeof ISSUE_RANKINGS)[number]
 // Map filters, table toggle
 export const DATA_QUERY: QuerySpec = {
   kategori: { normalize: (value) => (isCategoryId(value) ? value : null) },
-  status: { normalize: oneOf(GOVERNMENT_STATUSES) },
+  status: { normalize: oneOf(PUBLIC_STAGES) },
   lapisan: { normalize: oneOf(MAP_LAYERS), default: "laporan" },
   tampilan: { normalize: oneOf(DATA_VIEWS), default: "peta" },
   peringkat: { normalize: oneOf(ISSUE_RANKINGS), default: "laporan" },

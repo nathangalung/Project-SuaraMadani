@@ -118,7 +118,7 @@ async function seedIssue(publish = true) {
   if (publish) {
     await runPublish(
       { id: orgA, host: tenantA.host },
-      { issueId: merged.issueId, actorId: admin, notify: false },
+      { issueId: merged.issueId, actorId: admin },
       { purge: NO_PURGE },
     )
   }
@@ -422,10 +422,11 @@ describe("decideReply", () => {
       "reply_decided",
     ])
     const { rows: jobs } = await su.query(
-      "SELECT 1 FROM pgboss.job WHERE name = 'issue-notify' AND data->>'template' = 'issue_record_response' AND data->>'issueId' = $1",
+      "SELECT 1 FROM pgboss.job WHERE name = 'issue-notify' AND data->>'issueId' = $1",
       [issue.id],
     )
-    expect(jobs).toHaveLength(1)
+    // Follower emails removed 25 Oct
+    expect(jobs).toEqual([])
     // Decided once only
     expect(
       await decideReply(

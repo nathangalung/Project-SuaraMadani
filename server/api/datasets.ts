@@ -21,7 +21,6 @@ export const DATASET_IDS = [
   "kategori",
   "status",
   "penyelesaian",
-  "alasan",
   "tanggapan",
   "umur-tunggu",
   "lewat-tenggat",
@@ -192,23 +191,10 @@ export function datasets(input: DatasetInput): Record<DatasetId, Dataset> {
       })),
     },
     penyelesaian: metrics([
-      ["pending", s.resolution.pending],
-      ["confirmed", s.resolution.confirmed],
-      ["reopened", s.resolution.reopened],
-      ["claim_total", s.resolution.claimTotal],
-      ["checked", s.resolution.checked],
-      ["confirmed_share", s.resolution.confirmedShare],
+      ["done", s.resolution.done],
+      ["published", s.resolution.published],
+      ["share", s.resolution.share],
     ]),
-    alasan: {
-      columns: ["outcome", "reason", "reports"],
-      rows: (["rejected", "unverifiable"] as const).flatMap((outcome) =>
-        Object.entries(s.reasons[outcome]).map(([reason, reports]) => ({
-          outcome,
-          reason,
-          reports,
-        })),
-      ),
-    },
     tanggapan: metrics([
       ["days", s.response.days],
       ["due", s.response.due],

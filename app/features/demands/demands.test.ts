@@ -19,6 +19,7 @@ import {
   testUrl,
 } from "../../../db/testing.ts"
 import { cleanBriefPath } from "../../../server/files.server.ts"
+import { DEMAND_PAGE_SIZE } from "../../../shared/demands.ts"
 import { jakartaIsoDate } from "../../../shared/format.ts"
 import {
   demandOverview,
@@ -57,6 +58,7 @@ const REGIONAL: DemandFields = {
   summary: "Waktu pemulihan suplai air dan kewajiban tangki air bantuan.",
   target: "Pemerintah Kota Bandung",
   raisedOn: "2026-07-30",
+  briefUrl: null,
 }
 
 const NATIONAL: DemandFields = {
@@ -181,8 +183,35 @@ describe("listPublishedDemands", () => {
     expect(await listPublishedDemands(itb.id, { q: "ai" })).toEqual({
       kind: "short_query",
     })
-    expect(await listPublishedDemands(itb.id, { kursor: "x" })).toEqual({
-      kind: "bad_cursor",
+  })
+
+  test("numbered pages, counted under the filters", async () => {
+    const codes: string[] = []
+    for (let i = 0; i <= DEMAND_PAGE_SIZE; i++) codes.push(await make(NATIONAL))
+    await make(REGIONAL)
+    const page1 = await listPublishedDemands(itb.id, { lingkup: "nasional" })
+    if (page1.kind !== "results") throw new Error(page1.kind)
+    expect(page1.demands).toHaveLength(DEMAND_PAGE_SIZE)
+    const total = DEMAND_PAGE_SIZE + 1
+    expect(page1).toMatchObject({ page: 1, pageCount: 2, total })
+    const page2 = await listPublishedDemands(itb.id, {
+      lingkup: "nasional",
+      halaman: "2",
+    })
+    if (page2.kind !== "results") throw new Error(page2.kind)
+    expect(page2.demands.map((demand) => demand.code)).toEqual(
+      codes.slice(0, 1),
+    )
+    const daerah = await listPublishedDemands(itb.id, {
+      lingkup: "daerah",
+      halaman: "2",
+    })
+    expect(daerah).toEqual({
+      kind: "results",
+      demands: [],
+      page: 2,
+      pageCount: 1,
+      total: 1,
     })
   })
 
@@ -406,51 +435,5 @@ describe("getDemandPage", () => {
       scope: "national",
       provinceName: null,
     })
-  })
-})
-
-describe("listPublishedDemands paging", () => {
-  const cursor = (value: unknown) =>
-    Buffer.from(JSON.stringify(value)).toString("base64url")
-
-  test("Given more than a page, when the next cursor is followed, then the rest follows without overlap", async () => {
-    const codes: string[] = []
-    for (let i = 0; i < 21; i++) codes.push(await make(NATIONAL))
-    const first = await listPublishedDemands(itb.id, {})
-    if (first.kind !== "results") throw new Error(first.kind)
-    expect(first.page).toBe(1)
-    expect(first.demands).toHaveLength(20)
-    expect(first.nextCursor).not.toBeNull()
-    const second = await listPublishedDemands(itb.id, {
-      kursor: first.nextCursor ?? "",
-    })
-    if (second.kind !== "results") throw new Error(second.kind)
-    expect(second.page).toBe(2)
-    expect(second.nextCursor).toBeNull()
-    const seen = [...first.demands, ...second.demands].map((row) => row.code)
-    // Newest publish first
-    expect(seen).toEqual([...codes].reverse())
-  })
-
-  test("a tampered cursor is refused", async () => {
-    const key = "2026-10-01T03:00:00.000000Z"
-    const id = "0190a000-0000-7000-8000-000000000001"
-    for (const value of [
-      [1, key, id],
-      [51, key, id],
-      [2, "kemarin", id],
-      [2, "2026-13-45T99:99:99.000000Z", id],
-      [2, key, "bukan-uuid"],
-      [2, key],
-      { page: 2 },
-    ]) {
-      expect(
-        await listPublishedDemands(itb.id, { kursor: cursor(value) }),
-      ).toEqual({ kind: "bad_cursor" })
-    }
-    const fine = await listPublishedDemands(itb.id, {
-      kursor: cursor([2, key, id]),
-    })
-    expect(fine).toMatchObject({ kind: "results", page: 2, demands: [] })
   })
 })

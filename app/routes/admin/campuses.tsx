@@ -101,7 +101,7 @@ function CampusList({
             <div className="min-w-0">
               <p className="font-semibold">{campus.campusName}</p>
               <p className="text-ink-muted text-sm">
-                {campus.name} · {campus.campusCode}
+                {campus.name}, {campus.campusCode}
               </p>
             </div>
           </div>

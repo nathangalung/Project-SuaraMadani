@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import { repoFiles } from "./coverage-gate.ts"
 
 const STATUSES = ["pass", "gap", "na", "frontend", "decision"] as const
 type Status = (typeof STATUSES)[number]
@@ -134,5 +136,53 @@ describe("nfr-audit summary", () => {
       .map((row) => row.id.replace(/ .*/, ""))
       .filter((id) => !named.includes(id))
     expect(missing).toEqual([])
+  })
+})
+
+// path:N, path:N-M, more spans
+const CITE =
+  /([\w.\-/[\]$]+\.(?:ts|tsx|md|json|sh|sql|yaml|yml|conf|js|toml)):(\d+(?:-\d+)?(?:, [1-9]\d*(?:-\d+)?)*)/g
+
+const root = join(import.meta.dir, "..")
+const files = repoFiles(root)
+const lineCounts = new Map<string, number>()
+const lineCount = (file: string) => {
+  let count = lineCounts.get(file)
+  if (count === undefined) {
+    const body = readFileSync(join(root, file), "utf8")
+    count = body.split("\n").length - (body.endsWith("\n") ? 1 : 0)
+    lineCounts.set(file, count)
+  }
+  return count
+}
+
+/** Citations past EOF or missing. */
+const brokenCitations = (doc: string) =>
+  doc.split("\n").flatMap((line, at) =>
+    [...line.matchAll(CITE)].flatMap(([cite, path = "", spans = ""]) => {
+      // Dependency sources, not tracked
+      if (path.startsWith("node_modules/")) return []
+      const last = Math.max(...(spans.match(/\d+/g) ?? []).map(Number))
+      const found = files.filter(
+        (file) =>
+          file === path || file.endsWith(`/${path}`) || file === `docs/${path}`,
+      )
+      return found.some((file) => last <= lineCount(file))
+        ? []
+        : [`${at + 1}: ${cite}`]
+    }),
+  )
+
+describe("nfr-audit citations", () => {
+  test("a citation past the end or of a missing file is caught", () => {
+    expect(
+      brokenCitations(
+        "ok server/log.ts:1, 2-3\nend server/log.ts:99999\ngone app/x/gone.ts:1",
+      ),
+    ).toEqual(["2: server/log.ts:99999", "3: app/x/gone.ts:1"])
+  })
+
+  test("every code citation names a line in the tree", () => {
+    expect(brokenCitations(text)).toEqual([])
   })
 })

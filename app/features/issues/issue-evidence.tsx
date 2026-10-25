@@ -63,7 +63,7 @@ export function IssueEvidence({ items }: { items: EvidenceItem[] }) {
               )}
               <figcaption className="font-ui text-ink-soft text-sm">
                 {caption(item, n)}
-                {item.redacted ? ` · ${m.issue_evidence_redacted()}` : null}
+                {item.redacted ? `, ${m.issue_evidence_redacted()}` : null}
               </figcaption>
             </figure>
           </li>

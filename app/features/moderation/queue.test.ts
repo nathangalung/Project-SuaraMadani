@@ -20,11 +20,9 @@ import {
   testUrl,
 } from "../../../db/testing.ts"
 import type { ReportStatus } from "../../../shared/status.ts"
-import { forwardReport } from "../report/forward.server.ts"
 import { runMerge } from "./merge.server.ts"
 import {
   closeImpact,
-  forwardCopyCode,
   getManagedIssue,
   getReviewReport,
   listMergeTargets,
@@ -75,7 +73,8 @@ afterAll(async () => {
 describe("listQueue", () => {
   test("lists open reports of this tenant, oldest first", async () => {
     const first = await seedReport("submitted")
-    const second = await seedReport("verified")
+    const second = await seedReport("unverifiable")
+    await seedReport("verified")
     await seedReport("rejected")
     await seedReport("submitted", orgB)
     const rows = await listQueue(orgA, "admin")
@@ -141,17 +140,23 @@ describe("getReviewReport", () => {
     const found = await getReviewReport(orgA, "admin", report.code)
     expect(found?.issue?.code).toBe(merged.code)
     const near = { regencyCode: "32.73", title: "Sekolah rusak di Dago" }
+    // Drafts are never targets
+    expect(await listMergeTargets(orgA, "admin", near)).toEqual([])
+    await su.query(
+      "UPDATE issues SET published_at = now() WHERE public_code = $1",
+      [merged.code],
+    )
     const targets = await listMergeTargets(orgA, "admin", near)
     expect(targets.map((t) => t.code)).toEqual([merged.code])
     expect(await listMergeTargets(orgB, "admin", near)).toEqual([])
     // Removed issues stay down
     await su.query(
-      "UPDATE issues SET taken_down_at = now(), takedown_reason = 'standard_8' WHERE public_code = $1",
+      "UPDATE issues SET taken_down_at = now(), takedown_reason = 'standard_8', published_at = NULL WHERE public_code = $1",
       [merged.code],
     )
     expect(await listMergeTargets(orgA, "admin", near)).toEqual([])
     await su.query(
-      "UPDATE issues SET taken_down_at = NULL, takedown_reason = NULL WHERE public_code = $1",
+      "UPDATE issues SET taken_down_at = NULL, takedown_reason = NULL, published_at = now() WHERE public_code = $1",
       [merged.code],
     )
     // Terminal issues take no reports
@@ -167,14 +172,13 @@ describe("getReviewReport", () => {
     const issue = await getManagedIssue(orgA, "admin", merged.code)
     expect(issue).toMatchObject({
       code: merged.code,
-      publishedAt: null,
       reportCount: 1,
       reports: [{ code: report.code, title: "Sekolah rusak di Dago" }],
     })
     expect(await getManagedIssue(orgB, "admin", merged.code)).toBeNull()
   })
 
-  test("Given a rejected report, when read for review, then the standard and text are shown", async () => {
+  test("Given a rejected report, when read for review, then only the admin's text is shown", async () => {
     const report = await seedReport("in_review")
     const text = "Laporan menyebut nama pegawai. Kirim ulang tanpa nama."
     const result = await withTenant(
@@ -197,44 +201,13 @@ describe("getReviewReport", () => {
     )
     expect(result.ok).toBe(true)
     const found = await getReviewReport(orgA, "admin", report.code)
-    expect(found?.decision).toEqual({
-      reason: "standard_4",
-      text,
-      decidedAt: expect.any(Date),
-    })
+    // Free text, no standard
+    expect(found?.decision).toEqual({ text, decidedAt: expect.any(Date) })
   })
 
   test("another tenant's report is not found", async () => {
     const report = await seedReport("in_review")
     expect(await getReviewReport(orgB, "admin", report.code)).toBeNull()
-  })
-})
-
-describe("forwarded reports", () => {
-  test("Given a report forwarded to another campus, when either side reads it, then each names the other and the copy is found", async () => {
-    const report = await seedReport("in_review")
-    const forwarded = await forwardReport({
-      source: { id: orgA },
-      reportId: report.id,
-      targetOrgId: orgB,
-      actorId: reporter,
-      notify: false,
-    })
-    if (!forwarded.ok) throw new Error(forwarded.reason)
-    const original = await getReviewReport(orgA, "admin", report.code)
-    expect(original).toMatchObject({
-      status: "forwarded",
-      forwardedFrom: null,
-      forwardedTo: { id: orgB, name: "ugm" },
-    })
-    const copy = await getReviewReport(orgB, "admin", forwarded.code)
-    expect(copy).toMatchObject({ forwardedFrom: "itb", forwardedTo: null })
-    expect(await forwardCopyCode(orgB, report.id)).toBe(forwarded.code)
-  })
-
-  test("Given a report never forwarded, when its copy is looked up, then none", async () => {
-    const report = await seedReport("in_review")
-    expect(await forwardCopyCode(orgB, report.id)).toBeNull()
   })
 })
 
@@ -311,9 +284,9 @@ describe("listMergeTargets", () => {
     await su.query(
       `INSERT INTO issues (org_id, year, number, public_code, title, summary,
          category_id, subcategory_id, province_code, regency_code,
-         gov_status, advocacy_status, report_count, last_activity_at)
+         gov_status, advocacy_status, report_count, last_activity_at, published_at)
        VALUES ($1, 2026, $2, $3, $4, 'Ringkasan.', 'program', 'program.pendidikan',
-         '32', $5, 'awaiting_response', 'monitoring', 1, now() - make_interval(days => $6))`,
+         '32', $5, 'awaiting_response', 'monitoring', 1, now() - make_interval(days => $6), now())`,
       [
         orgA,
         n,

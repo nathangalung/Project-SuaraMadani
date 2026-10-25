@@ -1,8 +1,7 @@
-import { MailCheck, ShieldAlert, ShieldCheck, UserRound } from "lucide-react"
+import { MailCheck, UserRound } from "lucide-react"
 import type { CSSProperties } from "react"
 import { Form } from "react-router"
 import { useStagger } from "~/components/layout/use-reveal"
-import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { Checkbox, TextInput } from "~/components/ui/field"
 import { Note } from "~/components/ui/note"
@@ -129,22 +128,9 @@ function MemberRow({
               {m.team_joined({ date: formatDate(member.joinedAt) })}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {member.twoFactor ? (
-              <Badge tone="success">
-                <ShieldCheck aria-hidden="true" className="size-3.5" />
-                {m.team_totp_on()}
-              </Badge>
-            ) : (
-              <Badge tone="danger">
-                <ShieldAlert aria-hidden="true" className="size-3.5" />
-                {m.team_totp_off()}
-              </Badge>
-            )}
-          </div>
         </div>
       </div>
-      <div className="mt-3 max-w-xl">
+      <div className="mt-3">
         {self ? (
           <p className="text-ink-muted text-sm">{m.team_self_note()}</p>
         ) : (
@@ -192,7 +178,6 @@ export function MemberList({
       <h2 id="anggota-tim" className={H2}>
         {m.team_members_title()}
       </h2>
-      <p className="mt-2 max-w-3xl text-ink-muted">{m.team_members_lead()}</p>
       <ul ref={list} className="mt-4 border-ink border-t-2">
         {members.map((member, i) => (
           <MemberRow

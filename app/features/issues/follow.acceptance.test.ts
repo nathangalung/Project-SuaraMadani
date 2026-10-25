@@ -20,12 +20,17 @@ import {
 } from "../../../e2e/app-harness.ts"
 import {
   issueAction,
+  issueRow,
   postForm,
-  publishIssue,
   referFields,
   reportToIssue,
   submitReport,
 } from "../../../e2e/staff-flows.ts"
+import {
+  linkExpiry,
+  linkKeyring,
+  signLink,
+} from "../../../server/signed-link.ts"
 import { jakartaIsoDate } from "../../../shared/format.ts"
 
 const HOST = "accfol.localhost"
@@ -58,7 +63,6 @@ async function published(): Promise<{ issue: string; reporter: string }> {
   const owner = await signedIn(HOST, person("pelapor"))
   const { code } = await submitReport(app, HOST, owner.cookie)
   const issue = await reportToIssue(app, su, HOST, admin.cookie, code)
-  await publishIssue(app, su, HOST, admin.cookie, issue)
   await mailbox().deliver(su, orgId)
   return { issue, reporter: await emailOf(owner.userId) }
 }
@@ -89,7 +93,7 @@ afterAll(async () => {
 })
 
 describe("following issues", () => {
-  test("[AC-FOLLOW-01] Given a published issue, when a visitor follows it, then signing in comes first, each update is mailed once with an unfollow link, opening the link changes nothing and confirming it stops the mail", async () => {
+  test("[AC-FOLLOW-01] Given a published issue, when a visitor follows it, then signing in comes first, the issue shows under Yang Anda Ikuti on /lacak, its updates mail no follower, and an older emailed unfollow link changes nothing until confirmed", async () => {
     const { issue, reporter } = await published()
     const anonymous = await postForm(app, `${ORIGIN}/isu/${issue}`, "", {
       intent: "follow",
@@ -103,13 +107,18 @@ describe("following issues", () => {
       app,
       `${ORIGIN}/isu/${issue}`,
       follower.cookie,
-      {
-        intent: "follow",
-      },
+      { intent: "follow" },
     )
     expect(follow.status).toBe(303)
+    const track = await app.request(`${ORIGIN}/lacak`, {
+      headers: { cookie: follower.cookie },
+    })
+    expect(track.status).toBe(200)
+    const listed = await track.text()
+    expect(listed).toContain("Yang Anda Ikuti")
+    expect(listed).toContain(issue)
     const today = jakartaIsoDate(new Date())
-    await issueAction(
+    const referred = await issueAction(
       app,
       su,
       HOST,
@@ -117,23 +126,37 @@ describe("following issues", () => {
       issue,
       referFields(today, today),
     )
+    expect(referred.status).toBe(303)
     const box = mailbox()
     await box.deliver(su, orgId)
     const address = await emailOf(follower.userId)
-    const mails = box.sent.filter((m) => m.to === address)
-    expect(mails).toHaveLength(1)
-    const token = /\/berhenti\?t=([A-Za-z0-9._-]+)/.exec(
-      mails[0]?.text ?? "",
-    )?.[1]
-    if (!token) throw new Error("no unfollow link")
+    // Follower emails removed 25 Oct
+    expect(box.sent.filter((m) => m.to === address)).toEqual([])
+    expect(box.sent.filter((m) => m.to === reporter)).toEqual([])
+    const { rows: fanOut } = await su.query(
+      "SELECT 1 FROM pgboss.job WHERE name = 'issue-notify' AND data->>'orgId' = $1",
+      [orgId],
+    )
+    expect(fanOut).toEqual([])
+    const { id: issueId } = await issueRow(su, HOST, issue)
+    const token = signLink(linkKeyring(), {
+      purpose: "berhenti",
+      orgId,
+      subjectId: issueId,
+      userId: follower.userId,
+      expiresAt: linkExpiry(new Date()),
+    })
+    const following = async () =>
+      (
+        await su.query("SELECT 1 FROM follows WHERE user_id = $1", [
+          follower.userId,
+        ])
+      ).rowCount
     const page = await app.request(`${ORIGIN}/isu/${issue}/berhenti?t=${token}`)
     expect(page.status).toBe(200)
     expect(page.headers.get("Cache-Control")).toBe("private, no-store")
     expect(page.headers.get("Referrer-Policy")).toBe("no-referrer")
-    const still = await su.query("SELECT 1 FROM follows WHERE user_id = $1", [
-      follower.userId,
-    ])
-    expect(still.rowCount).toBe(1)
+    expect(await following()).toBe(1)
     const tampered = await postForm(
       app,
       `${ORIGIN}/isu/${issue}/berhenti`,
@@ -141,13 +164,7 @@ describe("following issues", () => {
       { t: `${token}x` },
     )
     expect(tampered.status).toBe(200)
-    expect(
-      (
-        await su.query("SELECT 1 FROM follows WHERE user_id = $1", [
-          follower.userId,
-        ])
-      ).rowCount,
-    ).toBe(1)
+    expect(await following()).toBe(1)
     const confirmed = await postForm(
       app,
       `${ORIGIN}/isu/${issue}/berhenti`,
@@ -158,25 +175,7 @@ describe("following issues", () => {
     expect(await confirmed.text()).toContain(
       "Anda sudah berhenti mengikuti isu",
     )
-    expect(
-      (
-        await su.query("SELECT 1 FROM follows WHERE user_id = $1", [
-          follower.userId,
-        ])
-      ).rowCount,
-    ).toBe(0)
-    const change = await issueAction(app, su, HOST, admin.cookie, issue, {
-      intent: "mark_in_progress",
-      note: "",
-    })
-    expect(change.status).toBe(303)
-    const after = mailbox()
-    await after.deliver(su, orgId)
-    // Reporter still follows, control
-    const told = after.sent.filter((m) => m.to === reporter)
-    expect(told).toHaveLength(1)
-    expect(told[0]?.subject).toContain(issue)
-    expect(after.sent.filter((m) => m.to === address)).toEqual([])
+    expect(await following()).toBe(0)
   })
 
   test("[AC-FOLLOW-02] Given published issues in two regencies, when the issue list is filtered by one regency or searched by a regency name, then only that regency's published issues show", async () => {
@@ -188,7 +187,6 @@ describe("following issues", () => {
       "UPDATE issues SET regency_code = '32.04' WHERE public_code = $1",
       [there],
     )
-    await publishIssue(app, su, HOST, admin.cookie, there)
     const city = await (await app.request(`${ORIGIN}/isu?wilayah=32.73`)).text()
     expect(city).toContain(here)
     expect(city).not.toContain(there)

@@ -160,23 +160,23 @@ describe("public pages", () => {
     expect(res.headers.get("Cache-Control")).toBe(PUBLIC_CACHE)
   })
 
-  test("[AC-PUBLIC-04] Given the issue list, when a two-character search or a page past 50 is asked for, then the page asks for a longer search or a narrower filter", async () => {
+  test("[AC-PUBLIC-04] Given the issue list, when a two-character search, a bad page number, a page past the end or an old cursor link is asked for, then it asks for a longer search or redirects to a real page", async () => {
     const short = await app.request(`${ORIGIN}/isu.data?q=ab`)
     expect(short.status).toBe(200)
     const list = await loaderWith<{ result: { kind: string } }>(short, "result")
     expect(list.result.kind).toBe("short_query")
-    const cursor = Buffer.from(
-      JSON.stringify([
-        51,
-        "terbaru",
-        "2026-10-01T00:00:00.000000Z",
-        "01a15f4a-4b28-7836-a0ab-33ceed2ae16a",
-      ]),
-    ).toString("base64url")
-    const capped = await app.request(`${ORIGIN}/isu?kursor=${cursor}`)
-    expect(capped.status).toBe(200)
-    // PLAN 6.1 quotes this text
-    expect(await capped.text()).toContain("Persempit pencarian Anda")
+    for (const bad of ["abc", "0", "-1", "1", "1.5"]) {
+      const res = await app.request(`${ORIGIN}/isu?halaman=${bad}`)
+      expect(res.status).toBe(301)
+      expect(res.headers.get("Location")).toBe("/isu")
+    }
+    const past = await app.request(`${ORIGIN}/isu?halaman=99`)
+    expect(past.status).toBe(302)
+    expect(past.headers.get("Location")).toBe("/isu")
+    // Cursors and page cap removed
+    const old = await app.request(`${ORIGIN}/isu?kursor=abc`)
+    expect(old.status).toBe(301)
+    expect(old.headers.get("Location")).toBe("/isu")
   })
 
   test("[AC-PUBLIC-05] Given any HTML page, when it is served, then it carries a hash-based CSP, nosniff, a referrer policy, a permissions policy, HSTS and no-transform", async () => {

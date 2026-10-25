@@ -35,9 +35,7 @@ export default function ManageDemands({ loaderData }: Route.ComponentProps) {
           <h1 className="font-bold font-heading text-3xl [font-synthesis-weight:none]">
             {title}
           </h1>
-          <p className="mt-2 max-w-2xl text-ink-muted">
-            {m.manage_demands_lead()}
-          </p>
+          <p className="mt-2 text-ink-muted">{m.manage_demands_lead()}</p>
         </div>
         <ButtonLink to="/kelola/tuntutan/baru">
           <Plus aria-hidden="true" className="size-4" />
@@ -83,7 +81,7 @@ export default function ManageDemands({ loaderData }: Route.ComponentProps) {
                           total: row.items,
                         }),
                         formatDate(row.lastActivityAt),
-                      ].join(" · ")}
+                      ].join(", ")}
                     </PhoneMeta>
                   </Td>
                   <Td wide className="align-middle text-sm">

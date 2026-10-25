@@ -33,23 +33,11 @@ export function Badge({
   return (
     <span
       className={cn(
-        // Wrapped lines stay apart
-        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 font-semibold text-sm leading-tight",
+        // One line, never splits
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 font-semibold text-sm leading-tight",
         tones[tone],
         className,
       )}
-    >
-      {children}
-    </span>
-  )
-}
-
-// Numbered square, mockup Nomor
-export function StepNumber({ children }: { children: ReactNode }) {
-  return (
-    <span
-      aria-hidden="true"
-      className="grid size-10 shrink-0 place-items-center bg-brand font-bold text-lg text-on-accent"
     >
       {children}
     </span>

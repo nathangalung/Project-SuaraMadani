@@ -71,11 +71,7 @@ describe("report layout", () => {
 })
 
 describe("success page", () => {
-  function render(
-    state: unknown,
-    signedIn = false,
-    verifyHours: number | null = null,
-  ) {
+  function render(state: unknown, signedIn = false) {
     const Stub = createRoutesStub([
       {
         path: "/lapor/sukses/:code",
@@ -87,7 +83,6 @@ describe("success page", () => {
                 tenant: "KM ITB",
                 campus: "Institut Teknologi Bandung",
                 signedIn,
-                verifyHours,
               },
             } as unknown as SuccessProps)}
           />
@@ -131,8 +126,8 @@ describe("success page", () => {
     expect(bookmark).not.toContain(`>${m.report_status_submitted()}<`)
   })
 
-  test("usual check time only when measured", () => {
-    expect(render(null, false, 30)).toContain("Biasanya selesai dalam 30 jam")
+  test("no usual check time promise", () => {
+    // Removed 25 Oct
     expect(render(null)).not.toContain("Biasanya")
   })
 
@@ -148,6 +143,13 @@ describe("success page", () => {
     const list = html.slice(html.indexOf("<ol"), html.indexOf("</ol>"))
     expect(list.match(/<li/g)?.length).toBe(3)
     expect(list).toContain(m.success_next_body())
+    expect(list).toContain(m.success_next_merge_body())
+    // Numbered in round circles
+    expect(
+      list.match(
+        /<span aria-hidden="true" class="[^"]*rounded-full[^"]*">\d<\/span>/g,
+      )?.length,
+    ).toBe(3)
     // Title above body, top aligned
     expect(list.match(/<li class="flex items-start gap-4"/g)?.length).toBe(3)
     const titles = [
@@ -156,7 +158,7 @@ describe("success page", () => {
       m.success_next_follow(),
     ]
     for (const title of titles) {
-      expect(list).toContain(`<p class="font-semibold">${title}</p>`)
+      expect(list).toContain(`<p class="font-semibold text-lg">${title}</p>`)
     }
     expect(list.indexOf(m.success_next_check())).toBeLessThan(
       list.indexOf(m.success_next_body()),

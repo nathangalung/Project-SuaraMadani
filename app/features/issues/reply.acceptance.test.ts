@@ -24,7 +24,6 @@ import {
 import {
   issueAction,
   issueRow,
-  publishIssue,
   referFields,
   reportToIssue,
   submitReport,
@@ -68,7 +67,6 @@ async function referredIssue(host = HOST, staff = () => admin) {
   const owner = await signedIn(host, person("pelapor"))
   const { code: report } = await submitReport(app, host, owner.cookie)
   const code = await reportToIssue(app, su, host, staff().cookie, report)
-  await publishIssue(app, su, host, staff().cookie, code)
   const today = jakartaIsoDate(new Date())
   await issueAction(
     app,
@@ -214,7 +212,7 @@ describe("agency right of reply", () => {
     )
   })
 
-  test("[AC-REPLY-03] Given a pending reply, when an admin accepts it, then it becomes the agency response with a source, the government axis says Ditanggapi, followers and the sender are emailed and it is audited", async () => {
+  test("[AC-REPLY-03] Given a pending reply, when an admin accepts it, then it becomes the agency response with a source, the government axis says Ditanggapi, the sender is emailed while followers are not, and it is audited", async () => {
     const { code, owner } = await referredIssue()
     const officer = await signedIn(HOST, person("terima"))
     await send(code, officer.cookie, { sourceUrl: "" })
@@ -238,10 +236,11 @@ describe("agency right of reply", () => {
     ])
     const box = mailbox()
     await box.deliver(su, orgA)
-    for (const userId of [owner.userId, officer.userId]) {
-      const address = await emailOf(userId)
-      expect(box.sent.filter((m) => m.to === address)).toHaveLength(1)
-    }
+    const sender = await emailOf(officer.userId)
+    expect(box.sent.filter((m) => m.to === sender)).toHaveLength(1)
+    // Follower emails removed 25 Oct
+    const reporter = await emailOf(owner.userId)
+    expect(box.sent.filter((m) => m.to === reporter)).toEqual([])
     const audit = await su.query(
       "SELECT 1 FROM audit_log WHERE action = 'reply.accept' AND actor_id = $1",
       [admin.userId],

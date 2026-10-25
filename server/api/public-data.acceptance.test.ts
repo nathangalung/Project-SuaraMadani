@@ -77,7 +77,7 @@ function personal(value: unknown, path = "$"): string[] {
 
 function snapshot(): DashboardSnapshot {
   const data: DashboardSnapshot = {
-    v: 6,
+    v: 8,
     firstReportAt: "2026-03-02",
     reports: {
       total: 64,
@@ -88,27 +88,16 @@ function snapshot(): DashboardSnapshot {
     },
     issues: { published: 26, mergedReports: 40, reportsPerIssue: 1.5 },
     verifyTime: { n: 40, medianHours: 20, p90Hours: 70 },
-    resolution: {
-      pending: 2,
-      confirmed: 5,
-      reopened: 3,
-      claimTotal: 10,
-      checked: 8,
-      confirmedShare: 0.625,
-    },
+    resolution: { done: 5, published: 26, share: 0.19 },
     trend: [{ month: "2026-10", received: 10, verified: 5 }],
     trendTotal: 10,
     categories: { program: 20, bencana: 6, bansos: 0 },
     statuses: {
-      awaiting_response: 12,
+      verified: 4,
+      referred: 8,
       responded: 6,
       in_progress: 0,
-      claimed_resolved: 2,
-      confirmed_resolved: 5,
-      reopened: 3,
-      not_competent: 0,
-      not_followed_up: 0,
-      closed: 0,
+      done: 5,
     },
     // Worker already hid 1-4
     verifiedProvinces: { "all|all": { "32": 22, "34": null } },
@@ -123,30 +112,6 @@ function snapshot(): DashboardSnapshot {
       overdue: [{ agency: "BPBD Kota Bandung", overdue: 1, referred: 2 }],
       clearAgencies: 1,
       unreferred: 2,
-    },
-    reasons: {
-      rejected: {
-        standard_1: 0,
-        standard_2: 6,
-        standard_3: null,
-        standard_4: 0,
-        standard_5: 0,
-        standard_6: 0,
-        standard_7: 0,
-        standard_8: 0,
-        standard_9: 0,
-        standard_10: 0,
-        standard_11: 0,
-        standard_12: 0,
-        standard_13: 0,
-        out_of_scope: 5,
-      },
-      unverifiable: {
-        no_evidence: 7,
-        source_unreachable: 0,
-        conflicting_information: 0,
-        location_unclear: null,
-      },
     },
   }
   for (const category of CATEGORY_FILTERS) {
@@ -168,6 +133,7 @@ const FIELDS: DemandFields = {
   summary: "Waktu pemulihan suplai air dan tangki air bantuan.",
   target: "Pemerintah Provinsi Jawa Barat",
   raisedOn: "2026-07-30",
+  briefUrl: null,
 }
 
 /** Counted and young raters. */
@@ -437,7 +403,7 @@ describe("public data API", () => {
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.meta.license).toBe("CC-BY-4.0")
-    expect(body.meta.datasets).toHaveLength(14)
+    expect(body.meta.datasets).toHaveLength(13)
     const tren = body.meta.datasets.find(
       (one: { id: string }) => one.id === "tren",
     )

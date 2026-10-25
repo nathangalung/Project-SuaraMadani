@@ -366,12 +366,18 @@ describe("step 7 consent", () => {
     })
   })
 
-  test("optional forwarding box is recorded when checked", () => {
+  test("a legacy forwarding box is dropped", () => {
+    // Agency consent removed 25 Oct
     const parsed = consentStep.parse({
       ...consent,
       consents: { ...consent.consents, forward_to_agency: true },
     })
-    expect(parsed.consents).toContain("forward_to_agency")
+    expect(parsed.consents).toEqual([
+      "age_18_plus",
+      "accurate",
+      "public_issue",
+      "aggregate_processing",
+    ])
   })
 
   test("every required box is required", () => {

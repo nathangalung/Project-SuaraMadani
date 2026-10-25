@@ -22,6 +22,6 @@ export function RankLine({
 }) {
   const text = rankText(rank)
   return text ? (
-    <p className={cn("font-semibold font-ui text-sm", className)}>{text}</p>
+    <p className={cn("font-semibold text-xl", className)}>{text}</p>
   ) : null
 }

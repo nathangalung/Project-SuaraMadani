@@ -15,6 +15,7 @@ import {
   superuserPool,
   testUrl,
 } from "../../../db/testing.ts"
+import { CAPTCHA_PASS, stubTurnstile } from "../../../e2e/app-harness.ts"
 import { RANKING_MIN_RANKERS } from "../../../shared/demands.ts"
 import type { SessionContext, TenantContext } from "../../context.ts"
 import {
@@ -52,6 +53,7 @@ const FIELDS: DemandFields = {
   summary: "Kuota dan kriteria bantuan biaya kuliah dibuka per kampus.",
   target: "Kementerian Pendidikan Tinggi",
   raisedOn: "2026-09-01",
+  briefUrl: null,
 }
 
 const KEY = Buffer.alloc(32, 7)
@@ -163,6 +165,17 @@ function rank(
   })
 }
 
+/** Full list, these codes first. */
+async function all(...first: string[]): Promise<string[]> {
+  const { rows } = await su.query<{ code: string }>(
+    `SELECT public_code AS code FROM demands
+     WHERE org_id = $1 AND state = 'published' ORDER BY public_code`,
+    [itb.id],
+  )
+  const rest = rows.map((row) => row.code).filter((c) => !first.includes(c))
+  return [...first, ...rest]
+}
+
 /** n old accounts, same list. */
 async function crowd(n: number, order: string[]) {
   for (let i = 0; i < n; i++) {
@@ -206,14 +219,21 @@ describe("rankDemands", () => {
     })
   })
 
-  test("an empty or doubled order is a field error", async () => {
+  test("an empty, gapped or doubled order is a field error", async () => {
     const a = await make()
     const b = await make()
     const user = await citizen(30)
     expect(await rank(user, [])).toEqual({
       status: 400,
-      body: { errors: ["empty"] },
+      body: { errors: ["missing"] },
     })
+    // Blank place, or past N
+    for (const value of ["", "3"]) {
+      expect(await rank(user, [a], { [`rank-${b}`]: value })).toEqual({
+        status: 400,
+        body: { errors: ["missing"] },
+      })
+    }
     const twice = form([a])
     twice.set(`rank-${b}`, "1")
     const result = await rankDemands({
@@ -248,17 +268,42 @@ describe("rankDemands", () => {
     expect(result).toEqual({ status: 404, body: { error: "not_found" } })
   })
 
+  test("every published tuntutan must be placed", async () => {
+    const a = await make()
+    const b = await make()
+    const user = await citizen(30)
+    await rank(user, [a, b])
+    // Partial list keeps old one
+    expect(await rank(user, [b])).toEqual({
+      status: 404,
+      body: { error: "not_found" },
+    })
+    expect((await ownPosition(itb.id, b, user)).position).toBe(2)
+    // New ones need places
+    const c = await make()
+    expect((await rank(user, [b, a])).status).toBe(404)
+    const page = await rankingPage(itb.id, user)
+    expect(
+      page.choices.map((choice) => [choice.code, choice.position]),
+    ).toEqual([
+      [a, 1],
+      [b, 2],
+      [c, null],
+    ])
+  })
+
   test("saving replaces the list; withdraw clears it", async () => {
     const a = await make()
     const b = await make()
     const user = await citizen(30)
     await rank(user, [a, b])
     expect((await ownPosition(itb.id, b, user)).position).toBe(2)
-    await rank(user, [b])
-    expect((await ownPosition(itb.id, a, user)).position).toBeNull()
+    await rank(user, [b, a])
+    expect((await ownPosition(itb.id, a, user)).position).toBe(2)
     expect((await ownPosition(itb.id, b, user)).position).toBe(1)
     const page = await rankingPage(itb.id, user)
     expect(page.saved).toBe(true)
+    expect(page.choices.map((choice) => choice.code)).toEqual([b, a])
     await rank(user, [], { intent: "withdraw" })
     expect((await ownPosition(itb.id, b, user)).saved).toBe(false)
   })
@@ -275,11 +320,11 @@ describe("citizen ranking on public pages", () => {
     expect(page?.ranking.shown).toBe(false)
     expect(page?.rank.place).toBeNull()
     expect(await importantDemands(itb.id, 3)).toEqual([])
-    await crowd(1, [a])
+    await crowd(1, [a, b])
     page = await getDemandPage(itb.id, b)
     expect(page?.ranking.rankers).toBe(RANKING_MIN_RANKERS)
-    // b 45 points, a 41
-    expect(page?.rank).toEqual({ place: 1, rankers: RANKING_MIN_RANKERS - 1 })
+    // b 19 points, a 11
+    expect(page?.rank).toEqual({ place: 1, rankers: RANKING_MIN_RANKERS })
     expect((await importantDemands(itb.id, 3)).map((d) => d.code)).toEqual([
       b,
       a,
@@ -287,6 +332,26 @@ describe("citizen ranking on public pages", () => {
     const sorted = await listPublishedDemands(itb.id, { urut: "peringkat" })
     if (sorted.kind !== "results") throw new Error(sorted.kind)
     expect(sorted.demands.map((d) => d.code)).toEqual([b, a])
+  })
+
+  test("each list scores against its own length", async () => {
+    const a = await make()
+    const b = await make()
+    const c = await make()
+    await crowd(5, [b, a, c])
+    // Old top-five lists, partial
+    for (let i = 0; i < 5; i++) {
+      await su.query(
+        `INSERT INTO demand_rankings (org_id, user_id, demand_id, position)
+         SELECT org_id, $1, id, 1 FROM demands WHERE public_code = $2`,
+        [await citizen(30), c],
+      )
+    }
+    // Points: b15 c10 a10
+    const sorted = await listPublishedDemands(itb.id, { urut: "peringkat" })
+    if (sorted.kind !== "results") throw new Error(sorted.kind)
+    expect(sorted.demands.map((d) => d.code)).toEqual([b, c, a])
+    expect(sorted.demands.map((d) => d.rank.place)).toEqual([1, 2, 3])
   })
 
   test("a closed tuntutan leaves the ranking", async () => {
@@ -323,31 +388,65 @@ describe("ranking safeguards", () => {
     expect((await ownPosition(itb.id, a, user)).saved).toBe(false)
   })
 
-  test("twenty accounts per address prefix per tuntutan", async () => {
+  test("twenty accounts per address prefix, whatever their order", async () => {
     const a = await make()
     const b = await make()
     const users: string[] = []
     for (let i = 0; i < 20; i++) {
       const user = await citizen(30)
       users.push(user)
-      const saved = await rank(user, [a], {}, pass, "10.66.0.9")
+      const order = i % 2 === 0 ? [a, b] : [b, a]
+      const saved = await rank(user, order, {}, pass, "10.66.0.9")
       expect(saved.status).toBe(200)
     }
     const extra = await citizen(30)
-    await rank(extra, [b], {}, pass, "10.70.0.1")
-    expect(await rank(extra, [b, a], {}, pass, "10.66.0.9")).toEqual({
-      status: 429,
-      body: { error: "prefix_cap" },
-    })
+    expect((await rank(extra, [b, a], {}, pass, "10.70.0.1")).status).toBe(200)
+    for (const order of [
+      [a, b],
+      [b, a],
+    ]) {
+      expect(await rank(extra, order, {}, pass, "10.66.0.9")).toEqual({
+        status: 429,
+        body: { error: "prefix_cap" },
+      })
+    }
     // Old list stays whole
     expect((await ownPosition(itb.id, b, extra)).position).toBe(1)
-    expect((await ownPosition(itb.id, a, extra)).position).toBeNull()
-    // Other tuntutan stay open
-    expect((await rank(extra, [b], {}, pass, "10.66.0.9")).status).toBe(200)
-    expect((await rank(extra, [b, a], {}, pass, "10.67.0.9")).status).toBe(200)
+    expect((await ownPosition(itb.id, a, extra)).position).toBe(2)
+    // A later tuntutan reopens nothing
+    const c = await make()
+    expect((await rank(extra, [c, a, b], {}, pass, "10.66.0.9")).status).toBe(
+      429,
+    )
+    expect((await rank(extra, [c, a, b], {}, pass, "10.67.0.9")).status).toBe(
+      200,
+    )
     // Own resave is not counted
     const first = users[0] as string
-    expect((await rank(first, [a, b], {}, pass, "10.66.0.9")).status).toBe(200)
+    expect((await rank(first, [c, b, a], {}, pass, "10.66.0.9")).status).toBe(
+      200,
+    )
+  })
+
+  test("two accounts racing for the last prefix place", async () => {
+    const a = await make()
+    for (let i = 0; i < 19; i++) {
+      expect(
+        (await rank(await citizen(30), [a], {}, pass, "10.55.0.1")).status,
+      ).toBe(200)
+    }
+    const racers: string[] = []
+    for (let i = 0; i < 6; i++) racers.push(await citizen(30))
+    const results = await Promise.all(
+      racers.map((user) => rank(user, [a], {}, pass, "10.55.0.1")),
+    )
+    expect(results.map((r) => r.status).toSorted()).toEqual([
+      200, 429, 429, 429, 429, 429,
+    ])
+    const { rows } = await su.query<{ n: number }>(
+      "SELECT count(*)::int AS n FROM demand_rankings WHERE client_hash IS NOT NULL",
+    )
+    expect(rows[0]?.n).toBe(20)
   })
 
   test("an unknown intent or submission id is refused", async () => {
@@ -366,10 +465,10 @@ describe("ranking safeguards", () => {
     expect((await ownPosition(itb.id, a, user)).saved).toBe(false)
   })
 
-  test("a body over 8 KB is refused unread", async () => {
+  test("a body past the form cap is refused unread", async () => {
     const request = new Request("http://itb.localhost/tuntutan/peringkat", {
       method: "POST",
-      headers: { "content-length": String(8 * 1024 + 1) },
+      headers: { "content-length": String(64 * 1024 + 1) },
       body: "x",
     })
     expect(
@@ -381,17 +480,128 @@ describe("ranking safeguards", () => {
     ).toEqual({ status: 413 })
   })
 
+  test("a full list of 350 tuntutan saves", async () => {
+    await su.query(
+      `INSERT INTO demands (org_id, year, number, public_code, scope, category,
+         title, body, summary, target, raised_on, state, published_at)
+       SELECT $1, 2026, n, 'TUN-ITB-26-' || lpad(n::text, 6, '0'), 'national',
+         'pendidikan', 'Tuntutan ' || n, 'Isi tuntutan nomor ' || n,
+         'Ringkasan ' || n, 'Kementerian', '2026-09-01', 'published', now()
+       FROM generate_series(100001, 100350) AS n`,
+      [itb.id],
+    )
+    const order = await all()
+    expect(order).toHaveLength(350)
+    const body = new URLSearchParams({
+      intent: "rank",
+      submissionId: crypto.randomUUID(),
+      turnstileToken: CAPTCHA_PASS,
+    })
+    for (const [index, code] of order.toReversed().entries()) {
+      body.append(`rank-${code}`, String(index + 1))
+    }
+    const bytes = new TextEncoder().encode(body.toString())
+    // Over the old cap
+    expect(bytes.byteLength).toBeGreaterThan(8 * 1024)
+    const user = await citizen(30)
+    const restore = stubTurnstile()
+    try {
+      const result = await rankRequest({
+        request: new Request("http://itb.localhost/tuntutan/peringkat", {
+          method: "POST",
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+            "content-length": String(bytes.byteLength),
+          },
+          body: bytes,
+        }),
+        tenant: tenantOf(itb),
+        session: session(user),
+      })
+      expect(result).toEqual({ status: 200, body: { saved: "ranked" } })
+    } finally {
+      restore()
+    }
+    const last = order[0] as string
+    expect((await ownPosition(itb.id, last, user)).position).toBe(350)
+  })
+
   test("a refused list keeps the saved one", async () => {
     const a = await make()
     const b = await make()
     const user = await citizen(30)
-    await rank(user, [a])
+    await rank(user, [a, b])
     await act(itb, b, "close")
+    // Closed since the page loaded
     expect(await rank(user, [b, a])).toEqual({
       status: 404,
       body: { error: "not_found" },
     })
     expect((await ownPosition(itb.id, a, user)).position).toBe(1)
+    // Published since the page loaded
+    const c = await make()
+    expect(await rank(user, [a])).toEqual({
+      status: 404,
+      body: { error: "not_found" },
+    })
+    expect((await rank(user, [c, a])).status).toBe(200)
+    expect((await ownPosition(itb.id, c, user)).position).toBe(1)
+  })
+
+  test("another campus's tuntutan cannot be ranked here", async () => {
+    const a = await make()
+    const other = await make({ tenant: ugm })
+    const user = await citizen(30)
+    expect((await rank(user, [a])).status).toBe(200)
+    for (const order of [[a, other], [other]]) {
+      expect(await rank(user, order)).toEqual({
+        status: 404,
+        body: { error: "not_found" },
+      })
+    }
+    expect((await ownPosition(itb.id, a, user)).position).toBe(1)
+    const { rows } = await su.query(
+      "SELECT 1 FROM demand_rankings WHERE org_id = $1",
+      [ugm.id],
+    )
+    expect(rows).toEqual([])
+  })
+
+  test("hostile codes and places are refused, the list kept", async () => {
+    const a = await make()
+    const user = await citizen(30)
+    expect((await rank(user, [a])).status).toBe(200)
+    const hostile = [
+      { [`rank-${a}`]: "1", "rank-'; DROP TABLE demands;--": "2" },
+      { [`rank-${a}`]: "1", "rank-": "2" },
+      { [`rank-${a}`]: "1", "rank-TUN-ITB-26-0001\u0000": "2" },
+    ]
+    for (const fields of hostile) {
+      expect((await rank(user, [], fields)).status).toBe(404)
+    }
+    // Not ASCII digits
+    for (const place of ["\u0661", "0", "-1", "1.5", "99999"]) {
+      expect(await rank(user, [], { [`rank-${a}`]: place })).toEqual({
+        status: 400,
+        body: { errors: ["missing"] },
+      })
+    }
+    expect((await ownPosition(itb.id, a, user)).position).toBe(1)
+  })
+
+  test("with nothing published a list is refused, withdraw still clears", async () => {
+    const a = await make()
+    const user = await citizen(30)
+    expect((await rank(user, [a])).status).toBe(200)
+    await act(itb, a, "close")
+    expect(await rank(user, [])).toEqual({
+      status: 400,
+      body: { errors: ["missing"] },
+    })
+    const page = await rankingPage(itb.id, user)
+    expect(page).toMatchObject({ choices: [], saved: true })
+    expect((await rank(user, [], { intent: "withdraw" })).status).toBe(200)
+    expect((await rankingPage(itb.id, user)).saved).toBe(false)
   })
 
   test("a double submit of the same list succeeds", async () => {
@@ -407,7 +617,7 @@ describe("ranking safeguards", () => {
       body: { saved: "ranked" },
     })
     const b = await make()
-    expect((await rank(user, [b], {}, replay)).status).toBe(403)
+    expect((await rank(user, await all(b), {}, replay)).status).toBe(403)
   })
 
   test("concurrent saves keep one whole list", async () => {
@@ -416,8 +626,8 @@ describe("ranking safeguards", () => {
     const c = await make()
     const user = await citizen(30)
     const results = await Promise.all([
-      rank(user, [a, b], {}, pass, "10.30.0.1"),
-      rank(user, [c], {}, pass, "10.31.0.1"),
+      rank(user, [a, b, c], {}, pass, "10.30.0.1"),
+      rank(user, [c, a, b], {}, pass, "10.31.0.1"),
       rank(user, [b, c, a], {}, pass, "10.30.0.1"),
     ])
     expect(results.map((r) => r.status)).toEqual([200, 200, 200])
@@ -428,7 +638,11 @@ describe("ranking safeguards", () => {
       [user],
     )
     const saved = rows.map((row) => row.code)
-    expect([[a, b], [c], [b, c, a]]).toContainEqual(saved)
+    expect([
+      [a, b, c],
+      [c, a, b],
+      [b, c, a],
+    ]).toContainEqual(saved)
   })
 
   test("the admin flag needs over 30% from one prefix", async () => {
@@ -436,7 +650,7 @@ describe("ranking safeguards", () => {
       const a = await make()
       for (let i = 0; i < 10; i++) {
         const ip = i < shared ? "10.80.0.1" : `10.81.${shared}.${i}`
-        const saved = await rank(await citizen(30), [a], {}, pass, ip)
+        const saved = await rank(await citizen(30), await all(a), {}, pass, ip)
         expect(saved.status).toBe(200)
       }
       return (await getManagedDemand(itb.id, a))?.prefixAnomaly

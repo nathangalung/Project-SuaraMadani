@@ -27,6 +27,7 @@ import { issues } from "../schema/issues.ts"
 import { withTenant } from "../tenant.server.ts"
 import {
   type PlannedDemand,
+  SAMPLE_BRIEF_URL,
   SAMPLE_DEMANDS,
   SAMPLE_MARK,
 } from "./sample-demands-content.ts"
@@ -205,7 +206,6 @@ async function addBriefs(
       code,
       briefId: stored.id,
       actorId: org.actorId,
-      notify: false,
     })
     if (!published.ok) throw new Error(`brief publish: ${published.reason}`)
   }
@@ -229,6 +229,7 @@ async function seedDemand(
       summary: plan.summary,
       target: plan.target,
       raisedOn: jakartaIsoDate(daysAgo(deps.now, plan.raisedDaysAgo)),
+      briefUrl: plan.briefLinks?.demand ? SAMPLE_BRIEF_URL : null,
     },
     items: plan.items,
     actorId: org.actorId,
@@ -237,6 +238,18 @@ async function seedDemand(
   if (!created.ok) throw new Error(`create: ${created.reason}`)
   const { code } = created
   await linkIssues(tenant, org, code, plan)
+  for (const index of plan.briefLinks?.items ?? []) {
+    const item = (await getManagedDemand(org.id, code))?.items[index]
+    if (!item) throw new Error(`brief link item ${index} missing`)
+    const linked = await editItem(tenant, {
+      code,
+      itemId: item.id,
+      version: item.version,
+      briefUrl: SAMPLE_BRIEF_URL,
+      actorId: org.actorId,
+    })
+    if (!linked.ok) throw new Error(`brief link: ${linked.reason}`)
+  }
   if (plan.publishDaysAgo === null) return
   const draft = await getManagedDemand(org.id, code)
   const published = await changeDemandState(tenant, {
@@ -245,7 +258,6 @@ async function seedDemand(
     version: draft?.version ?? 0,
     note: null,
     actorId: org.actorId,
-    notify: false,
     now: daysAgo(deps.now, plan.publishDaysAgo),
   })
   if (!published.ok) throw new Error(`publish: ${published.reason}`)
@@ -264,7 +276,6 @@ async function seedDemand(
       sourceText: update.source,
       sourceUrl: null,
       actorId: org.actorId,
-      notify: false,
     })
     if (!done.ok) throw new Error(`update ${code}: ${done.reason}`)
   }
@@ -276,7 +287,6 @@ async function seedDemand(
       version: open?.version ?? 0,
       note: plan.close.note,
       actorId: org.actorId,
-      notify: false,
       now: daysAgo(deps.now, plan.close.daysAgo),
     })
     if (!closed.ok) throw new Error(`close: ${closed.reason}`)
@@ -404,7 +414,6 @@ async function seedRankings(org: Org, deps: DemandSeedDeps): Promise<void> {
             weight: (open.length - j) * 3 + ((i * 7 + j * 5) % 11),
           }))
           .toSorted((a, b) => b.weight - a.weight)
-          .slice(0, Math.min(5, open.length))
           .map(({ demand }, index) => ({
             orgId: org.id,
             userId: person.id,

@@ -176,7 +176,7 @@ async function seedIssue(reporterCount = 2): Promise<Issue> {
   if (!merged.ok) throw new Error(merged.reason)
   await runPublish(
     { id: orgA, host: tenantA.host },
-    { issueId: merged.issueId, actorId: admin, notify: false },
+    { issueId: merged.issueId, actorId: admin },
     { purge: NO_PURGE },
   )
   const issue = await refresh({
@@ -203,11 +203,27 @@ async function seedIssue(reporterCount = 2): Promise<Issue> {
   return refresh(issue)
 }
 
-async function claimed(reporterCount = 2): Promise<Issue> {
-  const issue = await seedIssue(reporterCount)
-  const result = await act(issue, { action: "claim_resolved" })
-  if (!result.ok) throw new Error(result.reason)
+/** Old round, claim step removed. */
+async function legacyClaim(issue: Issue): Promise<Issue> {
+  const { rows } = await su.query<{ id: string }>(
+    "INSERT INTO resolution_claims (org_id, issue_id, claimed_by) VALUES ($1, $2, $3) RETURNING id",
+    [orgA, issue.id, admin],
+  )
+  await su.query(
+    "UPDATE issues SET gov_status = 'claimed_resolved', version = version + 1 WHERE id = $1",
+    [issue.id],
+  )
+  await su.query(
+    `INSERT INTO issue_events (org_id, issue_id, action, advocacy_status, gov_status, claim_id)
+     SELECT org_id, id, 'claim_resolved', advocacy_status, gov_status, $2
+     FROM issues WHERE id = $1`,
+    [issue.id, rows[0]?.id],
+  )
   return refresh(issue)
+}
+
+async function claimed(reporterCount = 2): Promise<Issue> {
+  return legacyClaim(await seedIssue(reporterCount))
 }
 
 async function openClaim(issueId: string): Promise<string> {
@@ -337,41 +353,28 @@ afterAll(async () => {
 })
 
 describe("claim lifecycle", () => {
-  test("a claim opens a round and schedules the survey", async () => {
-    const issue = await claimed()
-    const { rows } = await su.query(
-      "SELECT claimed_by, closed_at, outcome, basis FROM resolution_claims WHERE issue_id = $1",
-      [issue.id],
-    )
-    expect(rows).toEqual([
-      { claimed_by: admin, closed_at: null, outcome: null, basis: null },
-    ])
-    const claimId = await openClaim(issue.id)
-    const { rows: events } = await su.query(
-      "SELECT claim_id FROM issue_events WHERE issue_id = $1 AND action = 'claim_resolved'",
-      [issue.id],
-    )
-    expect(events).toEqual([{ claim_id: claimId }])
-    const { rows: jobs } = await su.query<{ start_after: Date; data: object }>(
-      "SELECT start_after, data FROM pgboss.job WHERE name = 'survey-send'",
-    )
-    expect(jobs.map((job) => job.data)).toEqual([{ orgId: orgA, claimId }])
-    const due = Date.now() + CLAIM_RULES.surveyDelayDays * DAY
-    const at = jobs[0]?.start_after.getTime() ?? 0
-    expect(Math.abs(at - due)).toBeLessThan(60_000)
-  })
-
-  test("the sample seed schedules no survey", async () => {
+  test("Tandai selesai without a claim round writes none", async () => {
     const issue = await seedIssue()
-    const result = await act(issue, {
-      action: "claim_resolved",
-      notify: false,
+    const confirmed = await act(issue, {
+      action: "confirm_resolved",
+      note: "Jalan sudah diaspal ulang.",
     })
-    expect(result.ok).toBe(true)
+    expect(confirmed.ok).toBe(true)
+    expect((await refresh(issue)).state.government).toBe("confirmed_resolved")
     const { rows } = await su.query(
-      "SELECT 1 FROM pgboss.job WHERE name = 'survey-send'",
+      "SELECT 1 FROM resolution_claims WHERE issue_id = $1",
+      [issue.id],
     )
     expect(rows).toHaveLength(0)
+    const { rows: events } = await su.query(
+      "SELECT claim_id FROM issue_events WHERE issue_id = $1 AND action = 'confirm_resolved'",
+      [issue.id],
+    )
+    expect(events).toEqual([{ claim_id: null }])
+    const { rows: jobs } = await su.query(
+      "SELECT 1 FROM pgboss.job WHERE name = 'survey-send'",
+    )
+    expect(jobs).toHaveLength(0)
   })
 
   test("an admin confirm stores its proof, a reopen starts over", async () => {
@@ -380,7 +383,7 @@ describe("claim lifecycle", () => {
     expect(
       (await act(issue, { action: "reopen", note: "Masih rusak." })).ok,
     ).toBe(true)
-    expect((await act(issue, { action: "claim_resolved" })).ok).toBe(true)
+    await legacyClaim(issue)
     const second = await openClaim(issue.id)
     expect(second).not.toBe(first)
     const confirmed = await act(issue, {
@@ -497,11 +500,12 @@ describe("Sudah beres? survey", () => {
       [issue.id],
     )
     expect(answers).toEqual([{ n: 2 }])
+    // Followers get no email
     const { rows: jobs } = await su.query(
-      "SELECT data->>'template' AS template FROM pgboss.job WHERE name = 'issue-notify' AND data->>'issueId' = $1 AND data->>'template' = 'issue_confirm_resolved'",
+      "SELECT 1 FROM pgboss.job WHERE name = 'issue-notify' AND data->>'issueId' = $1",
       [issue.id],
     )
-    expect(jobs).toHaveLength(1)
+    expect(jobs).toHaveLength(0)
   })
 
   test("one not fixed answer reopens", async () => {
@@ -604,7 +608,7 @@ describe("Sudah beres? survey", () => {
     const first = await invite(issue)
     const one = issue.reporters[0] ?? ""
     await act(issue, { action: "reopen", note: "Masih rusak." })
-    await act(issue, { action: "claim_resolved" })
+    await legacyClaim(issue)
     await invite(issue)
     expect(await answer(issue, "fixed", { token: token(first, one) })).toEqual({
       status: 409,
@@ -636,7 +640,7 @@ describe("citizen ratings", () => {
       status: 409,
       body: { error: "closed" },
     })
-    await act(issue, { action: "claim_resolved" })
+    await legacyClaim(issue)
     expect(await rate(issue, warga)).toEqual({
       status: 201,
       body: { saved: "rated" },
@@ -784,7 +788,7 @@ describe("citizen ratings", () => {
       status: 409,
       body: { error: "closed" },
     })
-    await act(issue, { action: "claim_resolved" })
+    await legacyClaim(issue)
     expect((await rate(issue, warga, "2")).status).toBe(201)
     const { rows } = await su.query(
       "SELECT count(*)::int AS n FROM ratings WHERE user_id = $1",

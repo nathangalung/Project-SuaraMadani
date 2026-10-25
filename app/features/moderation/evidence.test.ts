@@ -313,7 +313,7 @@ describe("decideEvidence", () => {
     expect(await publishJobs(early)).toBe(0)
     await runPublish(
       { id: orgA, host: "itb.localhost" },
-      { issueId: merged.issueId, actorId: moderator, notify: false },
+      { issueId: merged.issueId, actorId: moderator },
       {
         purge: {
           purgeUrls: async () => ({ skipped: true }),

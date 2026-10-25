@@ -5,7 +5,6 @@ import { m } from "~/paraglide/messages.js"
 import { CONSENT_TEXT_VERSION } from "../../../shared/report-fields.ts"
 import { type Draft, memory } from "./draft"
 import {
-  ConsentHint,
   ConsentRow,
   failureError,
   Review,
@@ -111,23 +110,18 @@ describe("Review consent form", () => {
     expect(html).toMatch(/<legend[^>]*><h2[^>]*>Persetujuan<\/h2><\/legend>/)
   })
 
-  test("optional marker comes first", () => {
-    expect(html).toContain(`${m.field_optional()} ${m.consent_forward()}`)
+  test("only the required boxes, no agency forwarding", () => {
+    expect(html).not.toContain("forward_to_agency")
+    expect(html).not.toContain("diteruskan ke instansi")
+    expect(html).not.toContain(m.field_optional())
   })
 
-  test("policies open in a new tab, boxes unchanged", () => {
-    const hint = renderToStaticMarkup(<ConsentHint />)
-    for (const [href, label] of [
-      ["/privasi", "Kebijakan privasi"],
-      ["/pedoman", "Pedoman konten"],
-    ]) {
-      expect(hint).toContain(
-        `href="${href}" target="_blank" rel="noopener" class="font-semibold text-accent underline underline-offset-4 hover:no-underline">${label} <span class="whitespace-nowrap">(tab baru)</span></a>`,
-      )
-    }
-    // Link outside every label
+  test("no consent hint or policy links, boxes unchanged", () => {
+    // Hint removed 25 Oct
+    expect(html).not.toContain("Empat pernyataan pertama wajib")
+    expect(html).not.toContain("Baca dulu")
+    expect(html).not.toContain('href="/privasi" target="_blank"')
     expect(html).not.toMatch(/<label[^>]*>(?:(?!<\/label>).)*<a /)
-    expect(html).toContain('href="/privasi"')
     expect(CONSENT_TEXT_VERSION).toBe("2026-10-13")
   })
 

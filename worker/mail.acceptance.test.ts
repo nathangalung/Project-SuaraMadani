@@ -22,7 +22,6 @@ import {
 } from "../e2e/app-harness.ts"
 import {
   issueAction,
-  publishIssue,
   referFields,
   reportToIssue,
   review,
@@ -125,7 +124,10 @@ describe("notification mail", () => {
     expect(box.sent.filter((m) => m.text.includes(code))).toHaveLength(1)
     expect((await notification(code))?.status).toBe("sent")
     const before = new Date()
-    await review(app, su, HOST, admin.cookie, code, { intent: "start_review" })
+    await review(app, su, HOST, admin.cookie, code, {
+      intent: "mark_unverifiable",
+      reasonText: "Lokasi kejadian belum bisa kami pastikan dari laporan.",
+    })
     const full = mailbox()
     await full.deliver(su, orgId)
     expect(full.sent.filter((m) => m.text.includes(code))).toEqual([])
@@ -187,7 +189,6 @@ describe("notification mail", () => {
     const reporter = await signedIn(HOST, person("tenggat"))
     const { code: report } = await submitReport(app, HOST, reporter.cookie)
     const issue = await reportToIssue(app, su, HOST, admin.cookie, report)
-    await publishIssue(app, su, HOST, admin.cookie, issue)
     const day = (offset: number) =>
       jakartaIsoDate(new Date(Date.now() + offset * 86_400_000))
     await issueAction(

@@ -78,7 +78,7 @@ function CategoryChips({ query }: { query: IssueListQuery }) {
                 to={issuesHref({
                   ...query,
                   kategori: chip.id,
-                  kursor: undefined,
+                  halaman: undefined,
                 })}
                 aria-current={selected ? "true" : undefined}
                 className={cn(
@@ -311,7 +311,11 @@ export function IssueFilters({
             </span>
           </span>
           <Link
-            to={issuesHref({ ...query, wilayah: undefined, kursor: undefined })}
+            to={issuesHref({
+              ...query,
+              wilayah: undefined,
+              halaman: undefined,
+            })}
             className="font-semibold text-accent underline underline-offset-4 hover:no-underline"
           >
             {m.issues_region_clear()}

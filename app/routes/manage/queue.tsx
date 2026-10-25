@@ -40,7 +40,16 @@ export default function Queue({ loaderData }: Route.ComponentProps) {
         current={loaderData.status ?? ""}
       />
       <div className="mt-6">
-        <QueueTable rows={loaderData.rows} />
+        <QueueTable
+          rows={loaderData.rows}
+          caption={
+            loaderData.status
+              ? m.manage_queue_caption_status({
+                  status: REPORT_STATUS_TEXT[loaderData.status](),
+                })
+              : m.manage_queue_caption()
+          }
+        />
       </div>
     </div>
   )

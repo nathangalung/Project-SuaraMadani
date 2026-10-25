@@ -88,17 +88,33 @@ async function json(res: APIResponse): Promise<Record<string, unknown>> {
   return (await res.json()) as Record<string, unknown>
 }
 
-async function issueCodes(
+type ListedIssue = { code: string; title: string; publishedAt: string }
+
+/** Every page, following next. */
+async function listIssues(
   request: APIRequestContext,
   host: string,
-): Promise<string[]> {
-  const res = await request.get("/api/v1/isu", {
-    headers: via(host, clientIp()),
-  })
-  expect(res.status()).toBe(200)
-  const body = (await res.json()) as { issues: { code: string }[] }
-  return body.issues.map((issue) => issue.code)
+): Promise<ListedIssue[]> {
+  const listed: ListedIssue[] = []
+  let path: string | null = "/api/v1/isu"
+  while (path) {
+    const res = await request.get(path, { headers: via(host, clientIp()) })
+    expect(res.status(), path).toBe(200)
+    const body = (await res.json()) as {
+      issues: ListedIssue[]
+      next: string | null
+    }
+    listed.push(...body.issues)
+    path = body.next
+      ? `${new URL(body.next).pathname}${new URL(body.next).search}`
+      : null
+  }
+  return listed
 }
+
+// Codes repeat across campuses
+const identity = (issue: ListedIssue) =>
+  `${issue.code}|${issue.title}|${issue.publishedAt}`
 
 test.describe("public data API", () => {
   test("a data user reads the issue list as JSON with the CC BY 4.0 licence in the body and the Link header", async ({
@@ -217,7 +233,7 @@ test.describe("public data API", () => {
     }
   })
 
-  test("counts from one to four are hidden in the region and reason tables, never shown", async ({
+  test("counts from one to four are hidden in the region tables, never shown", async ({
     request,
   }) => {
     const headers = via(TENANT, clientIp())
@@ -228,7 +244,6 @@ test.describe("public data API", () => {
     const counted = {
       wilayah: "verified_reports",
       "wilayah-total": "verified_reports",
-      alasan: "reports",
     }
     for (const [id, column] of Object.entries(counted)) {
       const values = (tables[id] ?? []).map((row) => row[column])
@@ -253,7 +268,7 @@ test.describe("public data API", () => {
     expect(last.filter((cell) => /^[1-4]$/.test(cell))).toEqual([])
   })
 
-  test("an unpublished issue, a draft tuntutan and another campus's issue answer 404, a removed issue 410", async ({
+  test("an unpublished issue, a draft tuntutan and an unknown code answer 404, another campus's issue is never served, a removed issue 410", async ({
     request,
   }) => {
     const headers = via(TENANT, clientIp())
@@ -268,13 +283,23 @@ test.describe("public data API", () => {
     await notFound(`/api/v1/isu/${fixture.unpublishedIssue}`)
     await notFound(`/api/v1/tuntutan/${fixture.draftDemand}`)
 
-    const [foreign] = await issueCodes(request, OTHER)
-    expect(foreign).toBeDefined()
-    const own = await request.get(`/api/v1/isu/${foreign}`, {
-      headers: via(OTHER, clientIp()),
-    })
-    expect(own.status()).toBe(200)
-    await notFound(`/api/v1/isu/${foreign}`)
+    // Same code, never their issue
+    const theirs = await listIssues(request, OTHER)
+    expect(theirs.length).toBeGreaterThan(0)
+    for (const foreign of theirs) {
+      const own = await request.get(`/api/v1/isu/${foreign.code}`, {
+        headers: via(OTHER, clientIp()),
+      })
+      expect(own.status()).toBe(200)
+      const here = await request.get(`/api/v1/isu/${foreign.code}`, {
+        headers: via(TENANT, clientIp()),
+      })
+      if (here.status() === 404) continue
+      expect(here.status(), foreign.code).toBe(200)
+      const { issue } = (await here.json()) as { issue: ListedIssue }
+      expect(identity(issue)).not.toBe(identity(foreign))
+    }
+    await notFound("/api/v1/isu/ISU-2020-01-9999")
 
     expect(fixture.takenDownIssue).not.toBeNull()
     const gone = await request.get(`/api/v1/isu/${fixture.takenDownIssue}`, {
@@ -290,7 +315,7 @@ test.describe("public data API", () => {
     request,
   }) => {
     const headers = via(TENANT, clientIp())
-    const [issue] = await issueCodes(request, TENANT)
+    const issue = (await listIssues(request, TENANT))[0]?.code
     const demands = await json(
       await request.get("/api/v1/tuntutan", { headers }),
     )
@@ -579,11 +604,11 @@ test("each campus host serves only its own data, the apex and unknown hosts serv
   expect((await meta(TENANT)).source).toBe(`${ORIGIN}/data`)
   expect((await meta(OTHER)).source).toBe(`https://${OTHER}/data`)
 
-  const mine = await issueCodes(request, TENANT)
-  const theirs = await issueCodes(request, OTHER)
+  const mine = (await listIssues(request, TENANT)).map(identity)
+  const theirs = (await listIssues(request, OTHER)).map(identity)
   expect(mine.length).toBeGreaterThan(0)
   expect(theirs.length).toBeGreaterThan(0)
-  expect(mine.filter((code) => theirs.includes(code))).toEqual([])
+  expect(mine.filter((one) => theirs.includes(one))).toEqual([])
 
   for (const host of [APEX, `tidak-ada.${APEX}`]) {
     const res = await request.get("/api/v1", { headers: via(host, clientIp()) })

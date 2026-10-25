@@ -13,14 +13,18 @@ import {
 } from "react-router"
 import { brandImages } from "~/components/layout/brand-assets"
 import { Footer } from "~/components/layout/footer"
-import { Header, hasPageSignIn, isAuthShell } from "~/components/layout/header"
+import {
+  Header,
+  hasPageSignIn,
+  isAuthShell,
+  isManageShell,
+} from "~/components/layout/header"
 import { IntakeBanner } from "~/components/layout/intake-banner"
 import { useRouteFocus } from "~/components/layout/route-focus"
 import { ownsDescription, SiteMeta } from "~/components/layout/site-meta"
 import {
   footerNav,
   mainNav,
-  manageNav,
   nationalNav,
   policyNav,
 } from "~/components/layout/site-nav"
@@ -113,6 +117,9 @@ export function Layout({ children }: { children: ReactNode }) {
   const matches = useMatches()
   const pageDescribed = matches.some((match) => ownsDescription(match.handle))
   const authShell = matches.some((match) => isAuthShell(match.handle))
+  // Errors keep the site frame
+  const manageShell =
+    !useRouteError() && matches.some((match) => isManageShell(match.handle))
   const pageSignIn = matches.some((match) => hasPageSignIn(match.handle))
   const { pathname } = useLocation()
   const brand = data?.logoSrc
@@ -134,8 +141,6 @@ export function Layout({ children }: { children: ReactNode }) {
   const showPause = data?.intakePaused === true && !stepPage
   // Apex: tables only, no JS
   const national = data?.national === true
-  // Admins see Kelola only
-  const staff = data?.user?.manage === true
   useRouteFocus()
   return (
     <html lang="id">
@@ -166,44 +171,47 @@ export function Layout({ children }: { children: ReactNode }) {
         <SkipLink />
         {/* Footer stays at the bottom */}
         <div className="flex min-h-svh flex-col">
-          <Header
-            siteName={SITE_NAME}
-            nav={national ? nationalNav() : staff ? manageNav() : mainNav()}
-            user={data?.user ?? null}
-            {...brand}
-            draftHref={national ? undefined : draftHref}
-            onSignOut={() => clearDraft(browserStorage())}
-            showSignIn={!pageSignIn && !national}
-            variant={authShell ? "auth" : "site"}
-            staff={staff}
-          />
-          {showPause ? (
-            <IntakeBanner statusHref={data?.identity.statusHref} />
-          ) : null}
-          {/* Auth pages centre one card */}
-          <main
-            id="konten"
-            tabIndex={-1}
-            className={`flex-1 outline-none ${authShell ? "flex flex-col" : ""}`}
-          >
-            {children}
-          </main>
-          {data ? (
-            <Footer
-              siteName={SITE_NAME}
-              {...data.identity}
-              note={national ? m.national_footer_note() : undefined}
-              links={
-                national ? nationalNav().slice(1) : staff ? [] : footerNav()
-              }
-              policyLinks={policyNav()}
-              logoSrc={brand.logoSrc}
-              logoSrcSet={brand.logoSrcSet}
-              emblemSrc={brand.emblemSrc}
-              emblemSrcSet={brand.emblemSrcSet}
-              year={data.year}
-            />
-          ) : null}
+          {manageShell ? (
+            children
+          ) : (
+            <>
+              <Header
+                siteName={SITE_NAME}
+                nav={national ? nationalNav() : mainNav()}
+                user={data?.user ?? null}
+                {...brand}
+                draftHref={national ? undefined : draftHref}
+                onSignOut={() => clearDraft(browserStorage())}
+                showSignIn={!pageSignIn && !national}
+                variant={authShell ? "auth" : "site"}
+              />
+              {showPause ? (
+                <IntakeBanner statusHref={data?.identity.statusHref} />
+              ) : null}
+              {/* Auth pages centre one card */}
+              <main
+                id="konten"
+                tabIndex={-1}
+                className={`flex-1 outline-none ${authShell ? "flex flex-col" : ""}`}
+              >
+                {children}
+              </main>
+              {data ? (
+                <Footer
+                  siteName={SITE_NAME}
+                  {...data.identity}
+                  note={national ? m.national_footer_note() : undefined}
+                  links={national ? nationalNav().slice(1) : footerNav()}
+                  policyLinks={policyNav()}
+                  logoSrc={brand.logoSrc}
+                  logoSrcSet={brand.logoSrcSet}
+                  emblemSrc={brand.emblemSrc}
+                  emblemSrcSet={brand.emblemSrcSet}
+                  year={data.year}
+                />
+              ) : null}
+            </>
+          )}
         </div>
         {national ? null : (
           <>

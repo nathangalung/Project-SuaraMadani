@@ -1,18 +1,16 @@
-import { ChevronRight } from "lucide-react"
-import type { CSSProperties } from "react"
 import { Link } from "react-router"
-import { useStagger } from "~/components/layout/use-reveal"
-import { Card } from "~/components/ui/card"
 import { cn } from "~/components/ui/cn"
+import { Table, Td, Th } from "~/components/ui/table"
 import { m } from "~/paraglide/messages.js"
 import {
   ISSUE_RANKINGS,
   type IssueRanking,
 } from "../../../shared/canonical-query.ts"
-import { REFRESH_MINUTES } from "../../../shared/dashboard.ts"
+import { isCategoryId } from "../../../shared/categories.ts"
 import { formatNumber } from "../../../shared/format.ts"
-import { CategoryBadge, GovernmentBadge } from "../issues/issue-status"
+import { StageMark } from "../issues/issue-status"
 import type { RankedIssue } from "../issues/issues.server"
+import { CATEGORY_SHORT_TEXT } from "../report/category-labels"
 import type { MapView } from "./dashboard.server"
 import { dataHref, paramsOf } from "./region-map"
 import { SectionLink } from "./section-link"
@@ -27,7 +25,7 @@ const NOTE_TEXT: Record<IssueRanking, () => string> = {
   terlama: m.data_ranking_terlama_note,
 }
 
-function metric(ranking: IssueRanking, issue: RankedIssue) {
+function _metric(ranking: IssueRanking, issue: RankedIssue) {
   return ranking === "terlama"
     ? { value: issue.days, unit: m.data_ranking_unit_days() }
     : { value: issue.reportCount, unit: m.data_unit_reports() }
@@ -39,7 +37,13 @@ function placeOf(issue: RankedIssue): string {
     : issue.regencyName
 }
 
-// Mockup IssueRanking, URL tabs
+const TAB =
+  "block flex-1 whitespace-nowrap rounded-full px-4 py-2 text-center font-semibold transition-colors duration-(--dur-hover) motion-reduce:transition-none"
+
+const LINK =
+  "font-semibold text-accent underline underline-offset-4 hover:no-underline"
+
+// Pill tabs, ruled table
 export function RankedIssues({
   map,
   issues,
@@ -47,27 +51,23 @@ export function RankedIssues({
   map: MapView
   issues: RankedIssue[]
 }) {
-  const list = useStagger<HTMLOListElement>()
   const active = map.ranking
   const params = paramsOf(map)
   return (
-    <Card className="overflow-hidden">
-      <nav
-        aria-label={m.data_ranking_label()}
-        className="border-ink border-b-2 bg-surface"
-      >
-        <ul className="flex overflow-x-auto">
+    <div className="flex flex-col gap-6">
+      <nav aria-label={m.data_ranking_label()}>
+        <ul className="flex w-full gap-1 overflow-x-auto rounded-full bg-surface-raised p-1">
           {ISSUE_RANKINGS.map((id) => (
-            <li key={id} className="shrink-0">
+            <li key={id} className="flex flex-1">
               <SectionLink
                 section="peringkat-isu"
                 to={dataHref({ ...params, peringkat: id })}
                 aria-current={id === active ? "true" : undefined}
                 className={cn(
-                  "block whitespace-nowrap px-4 py-3.5 text-sm transition-colors",
+                  TAB,
                   id === active
-                    ? "bg-brand font-semibold text-on-accent"
-                    : "text-ink hover:bg-ink/5",
+                    ? "bg-brand text-on-accent"
+                    : "text-ink hover:bg-brand-soft",
                 )}
               >
                 {TAB_TEXT[id]()}
@@ -76,77 +76,66 @@ export function RankedIssues({
           ))}
         </ul>
       </nav>
-      <div className="p-4 sm:p-6">
-        <p className="pb-3 text-ink-soft text-sm">{NOTE_TEXT[active]()}</p>
-        {issues.length === 0 ? (
-          <p className="py-6 text-ink-soft text-sm">{m.data_ranking_empty()}</p>
-        ) : (
-          <ol ref={list} className="flex flex-col">
-            {issues.map((issue, index) => {
-              const { value, unit } = metric(active, issue)
-              return (
-                <li
-                  key={issue.code}
-                  style={{ "--i": index } as CSSProperties}
-                  className="border-ink/10 border-t first:border-0"
-                >
-                  <Link
-                    to={`/isu/${issue.code}`}
-                    className="group grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 py-3.5 transition-colors hover:bg-surface sm:gap-4"
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="grid size-10 place-items-center rounded-full bg-brand font-bold text-lg text-on-accent tabular-nums"
-                    >
-                      {index + 1}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block font-semibold leading-snug decoration-2 decoration-brand underline-offset-4 group-hover:underline">
-                        {issue.title}
-                      </span>
-                      <span className="mt-1.5 flex flex-wrap items-center gap-1.5 text-ink-soft text-xs">
-                        <CategoryBadge categoryId={issue.categoryId} />
-                        <GovernmentBadge status={issue.govStatus} />
-                        <span>{placeOf(issue)}</span>
-                      </span>
-                    </span>
-                    <span className="flex items-center gap-1 text-right">
-                      <span>
-                        <span className="block font-bold text-lg tabular-nums leading-tight">
-                          {formatNumber(value)}
-                        </span>
-                        <span className="block max-w-20 text-ink-soft text-xs leading-tight sm:max-w-none">
-                          {unit}
-                        </span>
-                      </span>
-                      <ChevronRight
-                        aria-hidden="true"
-                        className="hidden size-4 text-ink-muted transition-transform group-hover:translate-x-0.5 sm:block"
-                      />
-                    </span>
+      <p className="text-ink-soft">{NOTE_TEXT[active]()}</p>
+      {issues.length === 0 ? (
+        <p className="text-ink-soft">{m.data_ranking_empty()}</p>
+      ) : (
+        <Table caption={TAB_TEXT[active]()} captionHidden>
+          <thead>
+            <tr>
+              <Th numeric>{m.data_ranking_col_number()}</Th>
+              <Th>{m.data_ranking_col_issue()}</Th>
+              <Th wide>{m.data_ranking_col_category()}</Th>
+              <Th>{m.data_ranking_col_stage()}</Th>
+              <Th numeric>
+                {active === "terlama"
+                  ? m.data_ranking_col_days()
+                  : m.data_ranking_col_reports()}
+              </Th>
+            </tr>
+          </thead>
+          <tbody>
+            {issues.map((issue, index) => (
+              <tr key={issue.code}>
+                <Td numeric className="text-ink-muted">
+                  {index + 1}
+                </Td>
+                <Td>
+                  <Link to={`/isu/${issue.code}`} className={LINK}>
+                    {issue.title}
                   </Link>
-                </li>
-              )
-            })}
-          </ol>
-        )}
-        {active === "laporan" && issues.length > 0 && (
-          <p className="mt-4">
-            <Link
-              to="/isu?urut=laporan"
-              className="font-semibold text-accent text-sm underline underline-offset-4 hover:no-underline"
-            >
-              {m.data_ranking_all()}
-            </Link>
-          </p>
-        )}
-      </div>
-      <p className="border-line-subtle border-t px-4 py-3 text-ink-muted text-xs sm:px-6">
-        {m.data_ranking_meta({ n: formatNumber(issues.length) })}
-        <span className="mt-1 block">
-          {m.data_ranking_source({ minutes: REFRESH_MINUTES })}
-        </span>
-      </p>
-    </Card>
+                  <span className="mt-1 block text-ink-muted text-sm">
+                    {placeOf(issue)}
+                  </span>
+                </Td>
+                <Td wide className="text-sm">
+                  {isCategoryId(issue.categoryId)
+                    ? CATEGORY_SHORT_TEXT[issue.categoryId]()
+                    : null}
+                </Td>
+                <Td className="whitespace-nowrap">
+                  <StageMark
+                    advocacy={issue.advocacyStatus}
+                    government={issue.govStatus}
+                  />
+                </Td>
+                <Td numeric>
+                  {formatNumber(
+                    active === "terlama" ? issue.days : issue.reportCount,
+                  )}
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+      {active === "laporan" && issues.length > 0 && (
+        <p>
+          <Link to="/isu?urut=laporan" className={LINK}>
+            {m.data_ranking_all()}
+          </Link>
+        </p>
+      )}
+    </div>
   )
 }

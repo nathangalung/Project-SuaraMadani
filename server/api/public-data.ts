@@ -140,11 +140,10 @@ function absolute(c: Context<Env>, url: string): string {
 
 const DATASET_TITLES: Record<DatasetId, () => string> = {
   ringkasan: m.data_key_title,
-  tren: m.data_trend_title,
+  tren: m.api_dataset_trend,
   kategori: m.data_category_title,
   status: m.data_status_title,
-  penyelesaian: m.data_resolution_title,
-  alasan: m.api_dataset_reasons,
+  penyelesaian: m.api_dataset_resolution,
   tanggapan: m.data_response_title,
   "umur-tunggu": m.api_dataset_waiting,
   "lewat-tenggat": m.api_dataset_overdue,
@@ -182,14 +181,15 @@ function readData(orgId: string): Promise<DashboardData | null> {
 }
 
 /** Canonical order, no 301. */
+/** Next numbered page, or null. */
 function nextUrl(
   c: Context<Env>,
   path: string,
   query: Record<string, string | undefined>,
-  cursor: string | null,
+  result: { page: number; pageCount: number },
 ): string | null {
-  if (!cursor) return null
-  const entries = Object.entries({ ...query, kursor: cursor })
+  if (result.page >= result.pageCount) return null
+  const entries = Object.entries({ ...query, halaman: String(result.page + 1) })
     .filter((entry): entry is [string, string] => Boolean(entry[1]))
     .sort(([a], [b]) => (a < b ? -1 : 1))
   return `${originOf(c)}${API_BASE}${path}?${new URLSearchParams(entries)}`
@@ -281,7 +281,7 @@ export function publicDataApi(options: ApiOptions): Hono<Env> {
         url: `${originOf(c)}/isu/${issue.code}`,
         api: `${originOf(c)}${API_BASE}/isu/${issue.code}`,
       })),
-      next: nextUrl(c, "/isu", query, result.nextCursor),
+      next: nextUrl(c, "/isu", query, result),
     })
   })
 
@@ -374,7 +374,7 @@ export function publicDataApi(options: ApiOptions): Hono<Env> {
         url: `${originOf(c)}/tuntutan/${demand.code}`,
         api: `${originOf(c)}${API_BASE}/tuntutan/${demand.code}`,
       })),
-      next: nextUrl(c, "/tuntutan", query, result.nextCursor),
+      next: nextUrl(c, "/tuntutan", query, result),
     })
   })
 
@@ -400,6 +400,7 @@ export function publicDataApi(options: ApiOptions): Hono<Env> {
         regencyName: page.regencyName,
         target: page.target,
         raisedOn: page.raisedOn,
+        briefUrl: page.briefUrl,
         state: page.state,
         publishedAt: page.publishedAt,
         closedAt: page.closedAt,
@@ -413,6 +414,7 @@ export function publicDataApi(options: ApiOptions): Hono<Env> {
           response: item.response,
           fulfilment: item.fulfilment,
           briefSummary: item.briefSummary,
+          briefUrl: item.briefUrl,
           brief: item.brief
             ? {
                 byteSize: item.brief.byteSize,

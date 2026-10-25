@@ -3,9 +3,12 @@
 export const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+// Controls except tab and newlines
+const CONTROL = /[^\P{Cc}\t\n\r]/gu
+
 export function text(form: FormData, key: string): string {
   const value = form.get(key)
-  return typeof value === "string" ? value.trim() : ""
+  return typeof value === "string" ? value.replace(CONTROL, "").trim() : ""
 }
 
 export function oneOf<T extends string>(

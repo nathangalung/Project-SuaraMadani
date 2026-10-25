@@ -18,7 +18,7 @@ function referralText(referral: IssueReferral): string {
       ? m.issue_referral_line(values)
       : m.issue_escalation_line(values)
   return referral.ticket
-    ? `${line} · ${m.issue_ticket({ ticket: referral.ticket })}`
+    ? `${line}, ${m.issue_ticket({ ticket: referral.ticket })}`
     : line
 }
 
@@ -49,10 +49,10 @@ export function ReferralLines({
       {referral?.deadlineOn ? (
         <p className="pl-[1.375rem]">
           {m.issue_deadline({ date: formatIsoDate(referral.deadlineOn) })}
-          {wait ? ` · ${m.issue_wait_days({ days: wait.days })}` : null}
+          {wait ? `, ${m.issue_wait_days({ days: wait.days })}` : null}
           {wait?.overdue ? (
             <strong className="font-semibold">
-              {" · "}
+              {", "}
               {m.issue_wait_overdue()}
             </strong>
           ) : null}
@@ -85,7 +85,7 @@ export function ResponseList({ responses }: { responses: IssueResponse[] }) {
               {formatIsoDate(response.respondedOn)}
             </time>
           </p>
-          <p className="mt-3 max-w-3xl whitespace-pre-line text-ink leading-relaxed">
+          <p className="mt-3 whitespace-pre-line text-ink leading-relaxed">
             {response.body}
           </p>
           <p className="mt-3 font-ui text-sm">

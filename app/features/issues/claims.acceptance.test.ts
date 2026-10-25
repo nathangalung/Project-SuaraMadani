@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { sendJob } from "../../../db/jobs.server.ts"
 import { migrate } from "../../../db/migrate.ts"
+import { withTenant } from "../../../db/tenant.server.ts"
 import {
   insertOrg,
   insertRegions,
@@ -26,8 +28,6 @@ import {
 import {
   issueAction,
   issueRow,
-  postForm,
-  publishIssue,
   reportToIssue,
   review,
   submitReport,
@@ -76,40 +76,47 @@ async function issueWith(count: number): Promise<{
   if (!first) throw new Error("one reporter needed")
   const { code: report } = await submitReport(app, HOST, first.cookie)
   const code = await reportToIssue(app, su, HOST, admin.cookie, report)
-  await publishIssue(app, su, HOST, admin.cookie, code)
   const { id } = await issueRow(su, HOST, code)
   for (const other of reporters.slice(1)) {
     const extra = await submitReport(app, HOST, other.cookie)
     await review(app, su, HOST, admin.cookie, extra.code, {
-      intent: "start_review",
-    })
-    await review(app, su, HOST, admin.cookie, extra.code, {
       intent: "verify",
       method: "document",
+      target: "existing",
+      issueId: id,
     })
-    await postForm(
-      app,
-      `${ORIGIN}/kelola/laporan/${extra.code}`,
-      admin.cookie,
-      { intent: "merge", target: "existing", issueId: id },
-    )
   }
   return { code, reporters }
 }
 
+/** Old open round, step removed. */
 async function claim(code: string) {
-  const res = await issueAction(app, su, HOST, admin.cookie, code, {
-    intent: "claim_resolved",
-    note: "",
-  })
-  if (res.status !== 303) throw new Error(`claim ${res.status}`)
+  const { id: issueId } = await issueRow(su, HOST, code)
   const { rows } = await su.query<{ id: string }>(
-    `SELECT c.id FROM resolution_claims c JOIN issues i ON i.id = c.issue_id
-     WHERE i.public_code = $1 AND c.closed_at IS NULL`,
-    [code],
+    "INSERT INTO resolution_claims (org_id, issue_id, claimed_by) VALUES ($1, $2, $3) RETURNING id",
+    [orgId, issueId, admin.userId],
   )
   const id = rows[0]?.id
   if (!id) throw new Error("no open round")
+  await su.query(
+    "UPDATE issues SET gov_status = 'claimed_resolved', version = version + 1 WHERE id = $1",
+    [issueId],
+  )
+  await su.query(
+    `INSERT INTO issue_events (org_id, issue_id, action, advocacy_status, gov_status, claim_id)
+     SELECT org_id, id, 'claim_resolved', advocacy_status, gov_status, $2
+     FROM issues WHERE id = $1`,
+    [issueId, id],
+  )
+  // Its survey job, queued then
+  await withTenant(orgId, (tx) =>
+    sendJob(
+      tx,
+      "survey-send",
+      { orgId, claimId: id },
+      { startAfter: new Date(Date.now() + 28 * 86_400_000) },
+    ),
+  )
   return id
 }
 
@@ -216,37 +223,23 @@ afterAll(async () => {
 })
 
 describe("resolution claims and ratings", () => {
-  test("[AC-CLAIM-01] Given a published issue, when an admin marks it claimed resolved, then a claim round opens, a survey is scheduled 28 days later and followers are emailed", async () => {
-    const { code, reporters } = await issueWith(1)
-    await mailbox().deliver(su, orgId)
-    const before = Date.now()
-    const claimId = await claim(code)
-    const { rows } = await su.query<{
-      claimed_by: string
-      closed_at: Date | null
-    }>("SELECT claimed_by, closed_at FROM resolution_claims WHERE id = $1", [
-      claimId,
-    ])
-    expect(rows[0]).toEqual({ claimed_by: admin.userId, closed_at: null })
-    const jobs = await queued<{ orgId: string; claimId: string }>(
-      su,
-      "survey-send",
-      orgId,
+  test("[AC-CLAIM-01] Given a published issue, when an admin posts the removed claim_resolved action, then it is refused, no claim round opens and no survey is scheduled", async () => {
+    const { code } = await issueWith(1)
+    const { id } = await issueRow(su, HOST, code)
+    const res = await issueAction(app, su, HOST, admin.cookie, code, {
+      intent: "claim_resolved",
+      note: "",
+    })
+    expect(res.status).toBe(400)
+    expect((await issueRow(su, HOST, code)).gov_status).toBe(
+      "awaiting_response",
     )
-    const job = jobs.find((one) => one.data.claimId === claimId)
-    const days = ((job?.startAfter.getTime() ?? 0) - before) / 86_400_000
-    expect(days).toBeGreaterThan(27.99)
-    expect(days).toBeLessThan(28.01)
-    const section = await claimSection(orgId, code)
-    expect(section?.current?.claimId).toBe(claimId)
-    const reporter = reporters[0]
-    if (!reporter) throw new Error("no reporter")
-    const box = mailbox()
-    await box.deliver(su, orgId)
-    const address = await emailOf(reporter.userId)
-    const mine = box.sent.filter((m) => m.to === address)
-    expect(mine).toHaveLength(1)
-    expect(mine[0]?.text).toContain(code)
+    const rounds = await su.query(
+      "SELECT 1 FROM resolution_claims WHERE issue_id = $1",
+      [id],
+    )
+    expect(rounds.rowCount).toBe(0)
+    expect(await queued(su, "survey-send", orgId)).toEqual([])
   })
 
   test("[AC-CLAIM-02] Given an open claim round, when people rate it, then a rating needs an account, Turnstile and a 1-5 score, is stored once per account and never changed, and a closed round refuses ratings", async () => {
@@ -415,7 +408,7 @@ describe("survey Sudah beres?", () => {
     expect(target).toMatchObject({ status: "open", code, answer: null })
   })
 
-  test("[AC-SURVEY-02] Given an invited reporter, when they answer belum beres, then the issue reopens at once on the survey's basis and followers are told", async () => {
+  test("[AC-SURVEY-02] Given an invited reporter, when they answer belum beres, then the issue reopens at once on the survey's basis and the other reporter gets no follower mail", async () => {
     const { code, reporters } = await issueWith(2)
     const claimId = await claim(code)
     await sendSurvey(claimId)
@@ -439,9 +432,8 @@ describe("survey Sudah beres?", () => {
     const second = reporters[1]
     if (!second) throw new Error("no reporter")
     const address = await emailOf(second.userId)
-    const told = box.sent.filter((m) => m.to === address)
-    expect(told).toHaveLength(1)
-    expect(told[0]?.text).toContain(code)
+    // Follower emails removed 25 Oct
+    expect(box.sent.filter((m) => m.to === address)).toEqual([])
     const audit = await su.query<{ reason_code: string }>(
       "SELECT reason_code FROM audit_log WHERE action = 'claim.survey_answer' AND actor_id = $1",
       [first.userId],

@@ -91,8 +91,8 @@ describe("linkedReport", () => {
 
 describe("listOwnReports", () => {
   test("shows only this user's reports at this campus", async () => {
-    const { reports: rows, capped } = await listOwnReports(orgA, userA)
-    expect(capped).toBe(false)
+    const { reports: rows, pageCount } = await listOwnReports(orgA, userA)
+    expect(pageCount).toBe(1)
     expect(rows.map((r) => r.title)).toEqual(["Laporan milik A"])
     expect(rows[0]?.status).toBe("submitted")
     expect(rows[0]?.evidence).toEqual(["ready", "awaiting_upload"])
@@ -101,7 +101,8 @@ describe("listOwnReports", () => {
   test("empty for a user without reports", async () => {
     expect(await listOwnReports(orgB, userB)).toEqual({
       reports: [],
-      capped: false,
+      page: 1,
+      pageCount: 1,
     })
   })
 
@@ -137,20 +138,29 @@ describe("listOwnReports", () => {
     expect(plain?.merged).toBeNull()
   })
 
-  test("stops at fifty and says so", async () => {
+  test("three per page, newest first", async () => {
     const user = await insertUser(su, "lacak.banyak@contoh.id")
     await withTenant(orgA, (tx) =>
-      tx
-        .insert(reports)
-        .values(
-          Array.from({ length: 51 }, (_, i) =>
-            reportValues(orgA, user, { title: `Laporan ke-${i}` }),
-          ),
+      tx.insert(reports).values(
+        Array.from({ length: 7 }, (_, i) =>
+          reportValues(orgA, user, {
+            title: `Laporan ke-${i}`,
+            createdAt: new Date(Date.UTC(2026, 9, 1 + i)),
+          }),
         ),
+      ),
     )
-    const { reports: list, capped } = await listOwnReports(orgA, user)
-    expect(list).toHaveLength(50)
-    expect(capped).toBe(true)
+    const first = await listOwnReports(orgA, user)
+    expect(first.pageCount).toBe(3)
+    expect(first.reports.map((r) => r.title)).toEqual([
+      "Laporan ke-6",
+      "Laporan ke-5",
+      "Laporan ke-4",
+    ])
+    const last = await listOwnReports(orgA, user, 3)
+    expect(last.reports.map((r) => r.title)).toEqual(["Laporan ke-0"])
+    const past = await listOwnReports(orgA, user, 4)
+    expect(past.reports).toEqual([])
   })
 })
 
@@ -182,40 +192,32 @@ describe("reportCodeExists", () => {
 })
 
 describe("decisions and forwards", () => {
-  test("a rejected report shows its latest reason to the reporter", async () => {
+  test("a decided report shows its latest text to the reporter", async () => {
     const id = await addReport(orgA, userA, "Laporan yang ditolak")
     await su.query("UPDATE reports SET status = 'rejected' WHERE id = $1", [id])
+    // Free text, no code
     await su.query(
       `INSERT INTO moderation_decisions (org_id, report_id, action, reason_code, reason_text)
-       VALUES ($1, $2, 'reject', 'standard_2', 'Sudah ada laporan yang sama.')`,
+       VALUES ($1, $2, 'reject', NULL, 'Sudah ada laporan yang sama.')`,
       [orgA, id],
     )
     const found = await linkedReport(orgA, id, userA)
-    expect(found?.decision).toEqual({
-      reason: "standard_2",
-      text: "Sudah ada laporan yang sama.",
-    })
-  })
-
-  test("a forwarded report names the receiving campus", async () => {
-    const id = await addReport(orgA, userA, "Laporan yang diteruskan")
-    await su.query(
-      "UPDATE reports SET status = 'forwarded', forwarded_to_org_id = $2 WHERE id = $1",
-      [id, orgB],
-    )
-    const found = await linkedReport(orgA, id, userA)
-    expect(found?.forwardedTo).toEqual({
-      campus: "trb",
-      url: "http://trb.localhost/lacak",
-    })
-    expect(found?.decision).toBeNull()
+    expect(found?.decision).toEqual({ text: "Sudah ada laporan yang sama." })
   })
 })
 
+/** Every page, three per page. */
+async function ownReport(title: string) {
+  for (let page = 1; ; page++) {
+    const found = await listOwnReports(orgA, userA, page)
+    const hit = found.reports.find((r) => r.title === title)
+    if (hit || page >= found.pageCount) return hit
+  }
+}
+
 describe("pending uploads", () => {
   test("lists files still awaiting upload inside the window", async () => {
-    const { reports: own } = await listOwnReports(orgA, userA)
-    const mine = own.find((r) => r.title === "Laporan milik A")
+    const mine = await ownReport("Laporan milik A")
     expect(mine?.pendingUploads).toEqual([
       {
         id: expect.any(String),
@@ -230,14 +232,13 @@ describe("pending uploads", () => {
     )
   })
 
-  test("a forwarded report asks for nothing here", async () => {
+  test("a legacy forwarded report asks for nothing here", async () => {
     await su.query(
       "UPDATE reports SET status = 'forwarded', forwarded_to_org_id = $2 WHERE id = $1",
       [mineId, orgB],
     )
     try {
-      const { reports: own } = await listOwnReports(orgA, userA)
-      const mine = own.find((r) => r.title === "Laporan milik A")
+      const mine = await ownReport("Laporan milik A")
       expect(mine?.pendingUploads).toEqual([])
       expect(mine?.uploadUntil).toBeNull()
     } finally {
@@ -254,8 +255,7 @@ describe("pending uploads", () => {
       [mineId],
     )
     try {
-      const { reports: own } = await listOwnReports(orgA, userA)
-      const mine = own.find((r) => r.title === "Laporan milik A")
+      const mine = await ownReport("Laporan milik A")
       expect(mine?.pendingUploads).toEqual([])
       expect(mine?.uploadUntil).toBeNull()
     } finally {

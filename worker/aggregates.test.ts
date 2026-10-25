@@ -130,7 +130,7 @@ beforeAll(async () => {
     await insertIssue(orgA, {
       category: "bencana",
       province: "34",
-      gov: "claimed_resolved",
+      gov: "in_progress",
     })
   }
   await insertIssue(orgA, {
@@ -190,17 +190,22 @@ describe("aggregate refresh as sb_app", () => {
   test("issue cells are exact, zero kept", async () => {
     const a = await snapshotOf(orgA)
     expect(a.categories).toEqual({ program: 6, bencana: 3, bansos: 0 })
-    expect(a.statuses.awaiting_response).toBe(6)
-    expect(a.statuses.claimed_resolved).toBe(3)
-    expect(a.statuses.confirmed_resolved).toBe(0)
-    expect(a.resolution.confirmedShare).toBeNull()
+    // Public stages, like Jelajah
+    expect(a.statuses).toEqual({
+      verified: 6,
+      referred: 0,
+      responded: 0,
+      in_progress: 3,
+      done: 0,
+    })
+    expect(a.resolution).toEqual({ done: 0, published: 9, share: 0 })
   })
 
   test("map cells count verified reports, 1–4 hidden", async () => {
     const a = await snapshotOf(orgA)
     // Unverified merged reports excluded
     expect(a.verifiedProvinces["all|all"]).toEqual({ "32": 10, "34": null })
-    expect(a.verifiedProvinces["program|awaiting_response"]).toEqual({
+    expect(a.verifiedProvinces["program|verified"]).toEqual({
       "32": 10,
     })
     expect(a.verifiedProvinceTotals["all|all"]).toBe(13)
@@ -398,30 +403,24 @@ describe("refresh faults", () => {
 })
 
 describe("summarizeIssues", () => {
-  test("resolution share needs 5 claims", () => {
+  test("done share needs enough published issues", () => {
     const groups = (gov: GovernmentStatus, n: number) => ({
       category_id: "program",
+      advocacy_status: "referred" as const,
       gov_status: gov,
       province_code: "32",
       n,
       verified: n,
     })
     const few = summarizeIssues([groups("confirmed_resolved", 4)])
-    expect(few.resolution.confirmedShare).toBeNull()
+    expect(few.resolution.share).toBeNull()
     const enough = summarizeIssues([
       groups("confirmed_resolved", 6),
-      groups("claimed_resolved", 2),
+      groups("in_progress", 2),
     ])
     // Issue counts are public, exact
-    expect(enough.resolution).toEqual({
-      pending: 2,
-      confirmed: 6,
-      reopened: 0,
-      claimTotal: 8,
-      checked: 6,
-      confirmedShare: 1,
-    })
-    expect(enough.verifiedProvinces["program|confirmed_resolved"]).toEqual({
+    expect(enough.resolution).toEqual({ done: 6, published: 8, share: 6 / 8 })
+    expect(enough.verifiedProvinces["program|done"]).toEqual({
       "32": 6,
     })
   })
@@ -431,22 +430,39 @@ describe("summarizeIssues", () => {
       summarizeIssues([
         {
           category_id: "program",
+          advocacy_status: "referred",
           gov_status: "claimed_resolved",
           province_code: "32",
           n: 2,
           verified: 7,
         },
+        {
+          category_id: "program",
+          advocacy_status: "monitoring",
+          gov_status: "awaiting_response",
+          province_code: "32",
+          n: 1,
+          verified: 0,
+        },
       ])
-    expect(statuses.claimed_resolved).toBe(2)
-    expect(categories.program).toBe(2)
+    // Legacy claim counts as in_progress
+    expect(statuses).toEqual({
+      verified: 1,
+      referred: 0,
+      responded: 0,
+      in_progress: 2,
+      done: 0,
+    })
+    expect(categories.program).toBe(3)
     // Report cells, not issue counts
     expect(verifiedProvinces["all|all"]).toEqual({ "32": 7 })
     expect(verifiedProvinceTotals["all|all"]).toBe(7)
   })
 
-  test("reopened claims lower the confirmed share", () => {
+  test("every published issue counts toward the share", () => {
     const group = (gov: GovernmentStatus, n: number) => ({
       category_id: "program",
+      advocacy_status: "referred" as const,
       gov_status: gov,
       province_code: "32",
       n,
@@ -454,17 +470,11 @@ describe("summarizeIssues", () => {
     })
     const { resolution } = summarizeIssues([
       group("confirmed_resolved", 6),
-      group("reopened", 3),
-      group("claimed_resolved", 2),
+      group("awaiting_response", 3),
+      group("closed", 1),
     ])
-    expect(resolution).toEqual({
-      pending: 2,
-      confirmed: 6,
-      reopened: 3,
-      claimTotal: 11,
-      checked: 9,
-      confirmedShare: 6 / 9,
-    })
+    // Closed is done, public stage
+    expect(resolution).toEqual({ done: 7, published: 10, share: 0.7 })
   })
 })
 

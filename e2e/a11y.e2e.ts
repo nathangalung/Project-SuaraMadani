@@ -52,13 +52,8 @@ test("an issue page has no serious axe violation", async ({ page }) => {
   expect(await serious(page)).toEqual([])
 })
 
-test("a tuntutan and its complaint form have no serious axe violation", async ({
-  page,
-}) => {
+test("a tuntutan page has no serious axe violation", async ({ page }) => {
   await openFirst(page, "/tuntutan", "/tuntutan/TUN-")
-  expect(await serious(page)).toEqual([])
-  const response = await page.goto(`${new URL(page.url()).pathname}/laporkan`)
-  expect(response?.status()).toBe(200)
   expect(await serious(page)).toEqual([])
 })
 
@@ -68,7 +63,6 @@ test.describe("staff", () => {
     "/kelola",
     "/kelola/antrean",
     "/kelola/isu",
-    "/kelola/aduan",
     "/kelola/audit",
     "/kelola/anggota",
     "/kelola/pengaturan",

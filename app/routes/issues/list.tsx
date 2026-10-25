@@ -5,6 +5,7 @@ import { SECTION_TITLE } from "~/components/layout/section-heading"
 import { ButtonLink } from "~/components/ui/button"
 import { Container } from "~/components/ui/container"
 import { Note } from "~/components/ui/note"
+import { Pagination } from "~/components/ui/pagination"
 import { ExploreTabs } from "~/features/demands/explore-tabs"
 import { IssueCard } from "~/features/issues/issue-card"
 import { IssueFilters, issuesHref } from "~/features/issues/issue-filters"
@@ -37,9 +38,9 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   if (result.kind === "busy") {
     throw data(null, { status: 503, headers: { "Retry-After": "5" } })
   }
-  if (result.kind === "bad_cursor") {
-    const { kursor: _drop, ...rest } = query
-    throw redirect(issuesHref(rest), 301)
+  // Data-dependent, so 302
+  if (result.kind === "results" && result.page > result.pageCount) {
+    throw redirect(issuesHref({ ...query, halaman: String(result.pageCount) }))
   }
   return { query, result, region, regions }
 }
@@ -114,32 +115,14 @@ export default function IssueList({ loaderData }: Route.ComponentProps) {
                     ))}
                   </ul>
                 )}
-                {result.capped ? (
-                  <Note className="mt-8">{m.issues_page_cap()}</Note>
-                ) : null}
-                {result.page > 1 || result.nextCursor ? (
-                  <nav
-                    aria-label={m.issues_pagination_label()}
-                    className="mt-10 flex flex-wrap gap-6"
-                  >
-                    {result.page > 1 ? (
-                      <Link
-                        to={issuesHref({ ...query, kursor: undefined })}
-                        className={LINK}
-                      >
-                        {m.issues_first()}
-                      </Link>
-                    ) : null}
-                    {result.nextCursor ? (
-                      <Link
-                        to={issuesHref({ ...query, kursor: result.nextCursor })}
-                        className={LINK}
-                      >
-                        {m.issues_next()}
-                      </Link>
-                    ) : null}
-                  </nav>
-                ) : null}
+                <Pagination
+                  page={result.page}
+                  pageCount={result.pageCount}
+                  href={(page) =>
+                    issuesHref({ ...query, halaman: String(page) })
+                  }
+                  className="mt-10"
+                />
                 {result.issues.length > 0 ? (
                   <p className="mt-16 text-ink-soft">
                     {m.issues_closing()}{" "}
@@ -154,11 +137,7 @@ export default function IssueList({ loaderData }: Route.ComponentProps) {
                 <h2 id="issues-results" className="sr-only">
                   {m.issues_results_title()}
                 </h2>
-                <Note>
-                  {result.kind === "short_query"
-                    ? m.issues_short_query()
-                    : m.issues_page_cap()}
-                </Note>
+                <Note>{m.issues_short_query()}</Note>
               </>
             )}
           </section>

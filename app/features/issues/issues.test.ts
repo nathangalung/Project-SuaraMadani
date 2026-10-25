@@ -21,8 +21,6 @@ import {
   testUrl,
 } from "../../../db/testing.ts"
 import {
-  decodeCursor,
-  encodeCursor,
   getIssuePage,
   getPublishedIssue,
   ISSUE_PAGE_SIZE,
@@ -119,7 +117,7 @@ describe("listPublishedIssues", () => {
     const result = await listPublishedIssues(orgA, {})
     if (result.kind !== "results") throw new Error(result.kind)
     expect(result.issues.map((i) => i.code)).toEqual([third, first])
-    expect(result.nextCursor).toBeNull()
+    expect(result).toMatchObject({ page: 1, pageCount: 1, total: 2 })
   })
 
   test("another tenant sees none", async () => {
@@ -218,68 +216,42 @@ describe("listPublishedIssues", () => {
     ).toEqual({ kind: "busy" })
   })
 
-  test("keyset pages hold every issue once", async () => {
+  test("numbered pages hold every issue once", async () => {
     const total = ISSUE_PAGE_SIZE + 5
     for (let i = 0; i < total; i++) await seedIssue()
     const page1 = await listPublishedIssues(orgA, { urut: "aktivitas" })
     if (page1.kind !== "results") throw new Error(page1.kind)
     expect(page1.issues).toHaveLength(ISSUE_PAGE_SIZE)
-    expect(page1.page).toBe(1)
-    expect(page1.nextCursor).not.toBeNull()
+    expect(page1).toMatchObject({ page: 1, pageCount: 2, total })
     const page2 = await listPublishedIssues(orgA, {
       urut: "aktivitas",
-      kursor: page1.nextCursor ?? "",
+      halaman: "2",
     })
     if (page2.kind !== "results") throw new Error(page2.kind)
-    expect(page2.page).toBe(2)
+    expect(page2).toMatchObject({ page: 2, pageCount: 2, total })
     expect(page2.issues).toHaveLength(5)
-    expect(page2.nextCursor).toBeNull()
     const all = [...page1.issues, ...page2.issues].map((i) => i.code)
     expect(new Set(all).size).toBe(total)
   })
 
-  test("a cursor past page 50 runs no query", async () => {
-    const cursor = encodeCursor({
-      page: 51,
-      sort: "laporan",
-      key: "1",
-      id: crypto.randomUUID(),
-    })
-    expect(
-      await listPublishedIssues(orgA, { urut: "laporan", kursor: cursor }),
-    ).toEqual({ kind: "page_cap" })
-  })
-
-  test("a malformed cursor is reported", async () => {
-    expect(await listPublishedIssues(orgA, { kursor: "abc" })).toEqual({
-      kind: "bad_cursor",
-    })
-  })
-
-  test("a cursor from another sort is reported", async () => {
+  test("the count follows the filters", async () => {
     for (let i = 0; i <= ISSUE_PAGE_SIZE; i++) await seedIssue()
-    const page1 = await listPublishedIssues(orgA, { urut: "laporan" })
-    if (page1.kind !== "results") throw new Error(page1.kind)
-    const kursor = page1.nextCursor ?? ""
-    expect(await listPublishedIssues(orgA, { kursor })).toEqual({
-      kind: "bad_cursor",
-    })
-    const page2 = await listPublishedIssues(orgA, { urut: "laporan", kursor })
-    expect(page2.kind).toBe("results")
+    await seedIssue({ categoryId: "bencana", subcategoryId: "bencana.banjir" })
+    const all = await listPublishedIssues(orgA, {})
+    expect(all).toMatchObject({ pageCount: 2, total: ISSUE_PAGE_SIZE + 2 })
+    const flood = await listPublishedIssues(orgA, { kategori: "bencana" })
+    expect(flood).toMatchObject({ pageCount: 1, total: 1 })
+    expect(await listPublishedIssues(orgB, {})).toMatchObject({ total: 0 })
   })
 
-  test.each([
-    ["terbaru", "5", crypto.randomUUID()],
-    ["terbaru", "2026-02-30T00:00:00.000000Z", crypto.randomUUID()],
-    ["aktivitas", "2026-10-01 07:03:00+07", crypto.randomUUID()],
-    ["terbaru", "2026-10-01T00:03:00.000000Z", "-".repeat(36)],
-    ["laporan", "abc", crypto.randomUUID()],
-    ["laporan", "99999999999", crypto.randomUUID()],
-  ] as const)("a forged %s cursor %p is reported", async (sort, key, id) => {
-    const kursor = encodeCursor({ page: 2, sort, key, id })
-    const query = sort === "terbaru" ? { kursor } : { urut: sort, kursor }
-    expect(await listPublishedIssues(orgA, query)).toEqual({
-      kind: "bad_cursor",
+  test("a page past the end reads no rows", async () => {
+    await seedIssue()
+    expect(await listPublishedIssues(orgA, { halaman: "3" })).toEqual({
+      kind: "results",
+      issues: [],
+      page: 3,
+      pageCount: 1,
+      total: 1,
     })
   })
 
@@ -308,27 +280,6 @@ describe("listPublishedIssues", () => {
   })
 })
 
-describe("cursor", () => {
-  test("round-trips", () => {
-    const cursor = {
-      page: 3,
-      sort: "terbaru",
-      key: "2026-10-01T00:03:00.000000Z",
-      id: crypto.randomUUID(),
-    } as const
-    const encoded = encodeCursor(cursor)
-    expect(encoded).toMatch(/^[A-Za-z0-9_-]{1,200}$/)
-    expect(decodeCursor(encoded)).toEqual(cursor)
-  })
-
-  test("a cursor without its sort is rejected", () => {
-    const old = Buffer.from(
-      JSON.stringify([2, "5", crypto.randomUUID()]),
-    ).toString("base64url")
-    expect(decodeCursor(old)).toBeNull()
-  })
-})
-
 describe("listLatestIssues", () => {
   const at = (minute: number) => new Date(Date.UTC(2026, 9, 2, 0, minute))
 
@@ -351,7 +302,7 @@ describe("listLatestIssues", () => {
       title: "Jalan berlubang di Dago",
       regencyName: "Kota Bandung",
       districtName: null,
-      reportCount: 1,
+      advocacyStatus: "monitoring",
       govStatus: "awaiting_response",
     })
   })

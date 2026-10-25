@@ -27,7 +27,6 @@ import {
   type DemandCategory,
   type DemandScope,
   RANKING_ACCOUNT_DAYS,
-  RANKING_SIZE,
 } from "../../../shared/demands.ts"
 import type { SessionContext, TenantContext } from "../../context.ts"
 import { text, UUID } from "../moderation/form-values.ts"
@@ -38,13 +37,22 @@ const COUNTED = sql`${users.createdAt} <= now() - ${RANKING_ACCOUNT_DAYS}::int *
 
 /** Published Borda, one statement. */
 export async function readCitizenRanking(tx: Tx): Promise<CitizenRanking> {
+  // Own N, old lists too
+  const lists = tx
+    .select({
+      userId: demandRankings.userId,
+      size: sql<number>`count(*)::int`.as("size"),
+    })
+    .from(demandRankings)
+    .groupBy(demandRankings.userId)
+    .as("lists")
   const rows = await tx
     .select({
       // Grand total row
       isTotal: sql<boolean>`grouping(${demands.id}) = 1`,
       demandId: demands.id,
       raisedOn: demands.raisedOn,
-      points: sql<number>`coalesce(sum(${RANKING_SIZE + 1} - ${demandRankings.position}), 0)::int`,
+      points: sql<number>`coalesce(sum(${lists.size} + 1 - ${demandRankings.position}), 0)::int`,
       rankers: sql<number>`count(DISTINCT ${demandRankings.userId})::int`,
     })
     .from(demands)
@@ -55,6 +63,7 @@ export async function readCitizenRanking(tx: Tx): Promise<CitizenRanking> {
         eq(demandRankings.demandId, demands.id),
       ),
     )
+    .innerJoin(lists, eq(lists.userId, demandRankings.userId))
     .innerJoin(users, eq(users.id, demandRankings.userId))
     .where(and(eq(demands.state, "published"), COUNTED))
     .groupBy(sql`GROUPING SETS ((${demands.id}, ${demands.raisedOn}), ())`)
@@ -174,11 +183,24 @@ export function rankingPage(
           .from(users)
           .where(eq(users.id, userId))
       : []
-    return {
-      choices: rows.map(({ id, ...row }) => ({
+    // Own order first, then title
+    const choices = rows
+      .map(({ id, ...row }) => ({
         ...row,
         position: positions.get(id) ?? null,
-      })),
+      }))
+      .toSorted(
+        (a, b) =>
+          (a.position ?? Number.MAX_SAFE_INTEGER) -
+          (b.position ?? Number.MAX_SAFE_INTEGER),
+      )
+      // Close gaps from closed ones
+      .map((choice, index) => ({
+        ...choice,
+        position: choice.position === null ? null : index + 1,
+      }))
+    return {
+      choices,
       saved: own.length > 0,
       counted: account?.counted ?? false,
     }
@@ -265,15 +287,12 @@ async function writeRanking(
   const rows = await tx
     .select({ id: demands.id, code: demands.publicCode })
     .from(demands)
-    .where(
-      and(
-        inArray(demands.publicCode, [...codes]),
-        eq(demands.state, "published"),
-      ),
-    )
+    .where(eq(demands.state, "published"))
   const ids = new Map(rows.map((row) => [row.code, row.id]))
-  // Every pick must be open
-  if (ids.size !== codes.length) return "not_found"
+  // Exactly the published set
+  if (ids.size !== codes.length || codes.some((code) => !ids.has(code))) {
+    return "not_found"
+  }
   // Serialises one prefix per campus
   await tx.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${`${orgId}|${clientHash}`}, 5))`,
@@ -388,8 +407,8 @@ export async function rankDemands(input: {
   return { status: 200, body: { saved: "ranked" } }
 }
 
-// Form fields only
-const MAX_BODY_BYTES = 8 * 1024
+// About 1,800 longest codes
+const MAX_BODY_BYTES = 64 * 1024
 
 /** Route action wiring, real Turnstile. */
 export async function rankRequest(input: {

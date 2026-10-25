@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  parseBriefUrl,
   parseDemandFields,
   parseItemLines,
   parseItemUpdate,
@@ -25,7 +26,83 @@ const VALID = {
   raisedOn: "2026-09-01",
 }
 
+describe("parseBriefUrl", () => {
+  test("empty is null, a web link is kept", () => {
+    expect(parseBriefUrl("")).toBeNull()
+    expect(parseBriefUrl("   ")).toBeNull()
+    expect(parseBriefUrl(" https://docs.google.com/document/d/abc/view ")).toBe(
+      "https://docs.google.com/document/d/abc/view",
+    )
+    expect(parseBriefUrl("http://contoh.id/brief")).toBe(
+      "http://contoh.id/brief",
+    )
+  })
+
+  test("other schemes, junk and long links fail", () => {
+    for (const bad of [
+      "javascript:alert(1)",
+      "ftp://contoh.id/brief.pdf",
+      "docs.google.com/document/d/abc",
+      "https://user:pass@contoh.id/brief",
+      `https://contoh.id/${"a".repeat(490)}`,
+    ]) {
+      expect(parseBriefUrl(bad)).toBe(false)
+    }
+    expect(parseBriefUrl(`https://contoh.id/${"a".repeat(470)}`)).toBeString()
+  })
+
+  test("hostile schemes and control characters never pass", () => {
+    for (const bad of [
+      "data:text/html,<script>alert(1)</script>",
+      "JavaScript:alert(1)",
+      " \tjavascript:alert(1)",
+      "java\nscript:alert(1)",
+      "vbscript:msgbox(1)",
+      "file:///etc/passwd",
+      "//contoh.id/brief",
+      "https://",
+    ]) {
+      expect(parseBriefUrl(bad)).toBe(false)
+    }
+    // Parser drops tabs and newlines
+    expect(parseBriefUrl("https://contoh.id/a\tb\nc")).toBe(
+      "https://contoh.id/abc",
+    )
+  })
+
+  test("500 characters is the cap, counted after encoding", () => {
+    const base = "https://contoh.id/"
+    const at = `${base}${"a".repeat(500 - base.length)}`
+    expect(parseBriefUrl(at)).toBe(at)
+    expect(parseBriefUrl(`${at}a`)).toBe(false)
+    // One letter, six encoded characters
+    const fits = `${base}${"a".repeat(500 - base.length - 6)}ü`
+    expect(parseBriefUrl(fits)).toHaveLength(500)
+    const over = `${base}${"a".repeat(500 - base.length - 5)}ü`
+    expect(over.length).toBeLessThan(500)
+    expect(parseBriefUrl(over)).toBe(false)
+    expect(parseBriefUrl("https://kampus.contoh.id/kajian-ü")).toBe(
+      "https://kampus.contoh.id/kajian-%C3%BC",
+    )
+  })
+})
+
 describe("parseDemandFields", () => {
+  test("the brief link is optional and checked", () => {
+    expect(
+      parseDemandFields(
+        form({ ...VALID, briefUrl: "https://docs.google.com/d/x" }),
+        TODAY,
+      ),
+    ).toMatchObject({
+      ok: true,
+      fields: { briefUrl: "https://docs.google.com/d/x" },
+    })
+    expect(
+      parseDemandFields(form({ ...VALID, briefUrl: "bukan tautan" }), TODAY),
+    ).toEqual({ ok: false, errors: ["brief_url"] })
+  })
+
   test("a category from the list is required", () => {
     for (const category of ["", "olahraga", "bansos"]) {
       expect(
@@ -37,7 +114,7 @@ describe("parseDemandFields", () => {
   test("a regional demand keeps its region", () => {
     expect(parseDemandFields(form(VALID), TODAY)).toEqual({
       ok: true,
-      fields: { ...VALID, scope: "regional" },
+      fields: { ...VALID, scope: "regional", briefUrl: null },
     })
   })
 

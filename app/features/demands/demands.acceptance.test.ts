@@ -39,7 +39,7 @@ import {
 import {
   postForm,
   publishIssue,
-  reportToIssue,
+  reportToDraftIssue,
   submitReport,
 } from "../../../e2e/staff-flows.ts"
 import { defaultFilesDir } from "../../../server/files.server.ts"
@@ -208,6 +208,17 @@ function rankList(
     },
     body,
   })
+}
+
+/** Every published code, these first. */
+async function fullList(...first: string[]): Promise<string[]> {
+  const { rows } = await su.query<{ code: string }>(
+    `SELECT public_code AS code FROM demands
+     WHERE org_id = $1 AND state = 'published' ORDER BY public_code`,
+    [orgId],
+  )
+  const rest = rows.map((row) => row.code).filter((c) => !first.includes(c))
+  return [...first, ...rest]
 }
 
 async function listOf(userId: string): Promise<string[]> {
@@ -417,7 +428,7 @@ describe("tuntutan editor", () => {
     expect(rowCount).toBe(0)
   })
 
-  test("[AC-DEMAND-05] Given a follower of a tuntutan, when it gets a sourced update and is closed, then the follower receives one email per event", async () => {
+  test("[AC-DEMAND-05] Given a follower of a tuntutan, when it gets a sourced update and is closed, then the follower gets no email and no follower job is queued", async () => {
     const code = await published()
     // Worker ran the publish fan-out
     await mailbox().deliver(su, orgId)
@@ -445,9 +456,13 @@ describe("tuntutan editor", () => {
     ).rows[0]?.email
     const box = mailbox()
     await box.deliver(su, orgId)
-    const mails = box.sent.filter((m) => m.to === address)
-    expect(mails).toHaveLength(2)
-    for (const mail of mails) expect(mail.text).toContain(code)
+    // Follower emails removed 25 Oct
+    expect(box.sent.filter((m) => m.to === address)).toEqual([])
+    const fanOut = await su.query(
+      "SELECT 1 FROM pgboss.job WHERE name = 'demand-notify' AND data->>'orgId' = $1",
+      [orgId],
+    )
+    expect(fanOut.rowCount).toBe(0)
   })
 })
 
@@ -457,16 +472,19 @@ describe("citizen ranking", () => {
     await su.query("DELETE FROM demand_rankings")
   })
 
-  test("[AC-DEMAND-06] Given published, closed, draft and hidden tuntutan, when people save, change and withdraw a top-five list, then only signed-in, Turnstile-checked lists of published tuntutan are kept, one whole list per account", async () => {
+  test("[AC-DEMAND-06] Given published, closed, draft and hidden tuntutan, when people save, reorder and withdraw a full ranking, then only signed-in, Turnstile-checked lists holding exactly the published tuntutan are kept, one whole list per account", async () => {
     const first = await published()
     const second = await published()
     const page = await app.request(`${ORIGIN}/tuntutan/peringkat`)
     expect(page.headers.get("Cache-Control")).toBe("private, no-store")
-    expect((await rankList("", [first])).status).toBe(401)
+    expect((await rankList("", await fullList(first))).status).toBe(401)
     const ranker = await signedIn(HOST, person("peringkat"))
     expect(
-      (await rankList(ranker.cookie, [first], { turnstileToken: "robot" }))
-        .status,
+      (
+        await rankList(ranker.cookie, await fullList(first), {
+          turnstileToken: "robot",
+        })
+      ).status,
     ).toBe(403)
     expect((await rankList(ranker.cookie, [])).status).toBe(400)
     const doubled = await postForm(
@@ -483,10 +501,15 @@ describe("citizen ranking", () => {
     )
     expect(doubled.status).toBe(400)
     expect(await listOf(ranker.userId)).toEqual([])
-    expect((await rankList(ranker.cookie, [second, first])).status).toBe(303)
-    expect(await listOf(ranker.userId)).toEqual([second, first])
-    expect((await rankList(ranker.cookie, [first])).status).toBe(303)
-    expect(await listOf(ranker.userId)).toEqual([first])
+    const saved = await fullList(second, first)
+    expect((await rankList(ranker.cookie, saved)).status).toBe(303)
+    expect(await listOf(ranker.userId)).toEqual(saved)
+    const reordered = await fullList(first, second)
+    expect((await rankList(ranker.cookie, reordered)).status).toBe(303)
+    expect(await listOf(ranker.userId)).toEqual(reordered)
+    // Every published tuntutan placed
+    expect((await rankList(ranker.cookie, [first])).status).toBe(404)
+    expect(await listOf(ranker.userId)).toEqual(reordered)
     const withdraw = await postForm(
       app,
       `${ORIGIN}/tuntutan/peringkat`,
@@ -495,7 +518,7 @@ describe("citizen ranking", () => {
     )
     expect(withdraw.status).toBe(303)
     expect(await listOf(ranker.userId)).toEqual([])
-    expect((await rankList(ranker.cookie, [second])).status).toBe(303)
+    expect((await rankList(ranker.cookie, saved)).status).toBe(303)
     const closed = await published()
     await changeState(
       closed,
@@ -511,12 +534,17 @@ describe("citizen ranking", () => {
       [hidden],
     )
     for (const off of [closed, draft, hidden]) {
-      expect((await rankList(ranker.cookie, [first, off])).status).toBe(404)
-      expect(await listOf(ranker.userId)).toEqual([second])
+      expect((await rankList(ranker.cookie, [...saved, off])).status).toBe(404)
+      expect(await listOf(ranker.userId)).toEqual(saved)
     }
+    // Published after the page loaded
+    const late = await published()
+    expect((await rankList(ranker.cookie, saved)).status).toBe(404)
+    expect(await listOf(ranker.userId)).toEqual(saved)
+    expect((await rankList(ranker.cookie, [late, ...saved])).status).toBe(303)
   })
 
-  test("[AC-DEMAND-07] Given lists from a new and an older account, when the tuntutan page and the admin editor are read, then young accounts wait seven days, the place shows from ten counted rankers and no ranker is named", async () => {
+  test("[AC-DEMAND-07] Given lists from a new and an older account, when the tuntutan page, its JSON and the admin editor are read, then young accounts wait seven days, the place shows from ten counted rankers and no ranker is named", async () => {
     const code = await published()
     const { id } = await demandRow(code)
     const old = await insertUser(su, "peringkat.lama@contoh.id")
@@ -533,48 +561,63 @@ describe("citizen ranking", () => {
         [orgId, id, userId],
       )
     }
-    const html = await (await app.request(`${ORIGIN}/tuntutan/${code}`)).text()
-    expect(html).toContain(
-      "Peringkat tampil setelah minimal 10 warga menyusun peringkatnya. Saat ini 1 warga.",
-    )
+    const read = async () => ({
+      html: await (await app.request(`${ORIGIN}/tuntutan/${code}`)).text(),
+      json: await (
+        await app.request(`${ORIGIN}/api/v1/tuntutan/${code}`)
+      ).json(),
+    })
+    const before = await read()
+    expect(before.json.demand.ranking).toMatchObject({
+      rankers: 1,
+      shown: false,
+    })
+    expect(before.json.demand.rank).toEqual({ place: null, rankers: 1 })
+    expect(before.html).not.toContain("menurut warga, dipilih")
     for (const hidden of [
       "Rina Lama",
       "Budi Baru",
       "peringkat.lama@contoh.id",
+      "peringkat.baru@contoh.id",
     ]) {
-      expect(html).not.toContain(hidden)
+      expect(before.html + JSON.stringify(before.json)).not.toContain(hidden)
     }
     const demand = await editorDemand<{ pendingRankers: number }>(code)
     expect(demand.pendingRankers).toBe(1)
     await countedLists(code, 9)
-    const shown = await (await app.request(`${ORIGIN}/tuntutan/${code}`)).text()
-    expect(shown).toContain("Peringkat 1 dari 1 tuntutan yang dipilih warga.")
+    const after = await read()
+    expect(after.json.demand.rank).toEqual({ place: 1, rankers: 10 })
+    expect(after.html).toContain("Peringkat 1 menurut warga, dipilih 10 warga")
   })
 
-  test("[AC-DEMAND-08] Given twenty accounts whose lists hold a tuntutan from one address prefix, when a twenty-first account saves one from it, then the server answers 429 and keeps its old list while another prefix, or a list without that tuntutan, is served", async () => {
-    const code = await published()
-    const other = await published()
+  test("[AC-DEMAND-08] Given twenty accounts whose lists were saved from one address prefix, when a twenty-first account saves a list from it in any order, then the server answers 429 and keeps its old list, while another prefix and the twenty's own resaves are served", async () => {
+    await published()
+    await published()
+    const twenty: string[] = []
     for (let i = 0; i < 20; i++) {
       const one = await signedIn(HOST, person(`prefiks${i}`))
-      expect((await rankList(one.cookie, [code], {}, "10.66.0.9")).status).toBe(
+      twenty.push(one.cookie)
+      const order = (await fullList()).toReversed()
+      expect((await rankList(one.cookie, order, {}, "10.66.0.9")).status).toBe(
         303,
       )
     }
     const extra = await signedIn(HOST, person("keduapuluhsatu"))
-    expect(
-      (await rankList(extra.cookie, [other], {}, "10.68.0.9")).status,
-    ).toBe(303)
-    const capped = await rankList(extra.cookie, [other, code], {}, "10.66.0.9")
-    expect(capped.status).toBe(429)
-    expect(await listOf(extra.userId)).toEqual([other])
-    expect((await rankList(extra.cookie, [code], {}, "10.66.0.9")).status).toBe(
-      429,
+    const own = await fullList()
+    expect((await rankList(extra.cookie, own, {}, "10.68.0.9")).status).toBe(
+      303,
     )
+    for (const order of [own, own.toReversed()]) {
+      expect(
+        (await rankList(extra.cookie, order, {}, "10.66.0.9")).status,
+      ).toBe(429)
+    }
+    expect(await listOf(extra.userId)).toEqual(own)
     expect(
-      (await rankList(extra.cookie, [code, other], {}, "10.67.0.9")).status,
+      (await rankList(extra.cookie, own.toReversed(), {}, "10.67.0.9")).status,
     ).toBe(303)
     expect(
-      (await rankList(extra.cookie, [other], {}, "10.66.0.9")).status,
+      (await rankList(twenty[0] as string, own, {}, "10.66.0.9")).status,
     ).toBe(303)
   })
 
@@ -584,7 +627,8 @@ describe("citizen ranking", () => {
       for (let i = 0; i < 10; i++) {
         const one = await signedIn(HOST, person(`anomali${shared}x${i}`))
         const ip = i < shared ? "10.80.0.1" : `10.81.${shared}.${i}`
-        expect((await rankList(one.cookie, [code], {}, ip)).status).toBe(303)
+        const order = await fullList(code)
+        expect((await rankList(one.cookie, order, {}, ip)).status).toBe(303)
       }
       return (await editorDemand<{ prefixAnomaly: boolean }>(code))
         .prefixAnomaly
@@ -598,7 +642,9 @@ describe("citizen ranking", () => {
     await countedLists(code, 9)
     const account = person("tutupperingkat")
     const ranker = await signedIn(HOST, account)
-    expect((await rankList(ranker.cookie, [code])).status).toBe(303)
+    expect((await rankList(ranker.cookie, await fullList(code))).status).toBe(
+      303,
+    )
     await su.query(
       "UPDATE users SET created_at = now() - interval '30 days' WHERE id = $1",
       [ranker.userId],
@@ -618,6 +664,7 @@ describe("citizen ranking", () => {
     const after = await json()
     expect(after.demand.ranking).toMatchObject({ rankers: 9, shown: false })
     expect(after.demand.rank).toEqual({ place: null, rankers: 9 })
+    expect(await listOf(ranker.userId)).toEqual([])
     const text = JSON.stringify([before, after])
     for (const hidden of [account.email, account.name, ranker.userId]) {
       expect(text).not.toContain(hidden)
@@ -725,7 +772,7 @@ describe("tuntutan editor tools", () => {
     ])
     const owner = await signedIn(HOST, person("pelapor"))
     const { code: report } = await submitReport(app, HOST, owner.cookie)
-    const issue = await reportToIssue(app, su, HOST, admin.cookie, report)
+    const issue = await reportToDraftIssue(app, su, HOST, admin.cookie, report)
     const hidden = await edit(code, { intent: "link_issue", issueCode: issue })
     expect(hidden.data.errors).toEqual(["issue_code"])
     await publishIssue(app, su, HOST, admin.cookie, issue)

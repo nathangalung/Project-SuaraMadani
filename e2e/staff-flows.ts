@@ -121,7 +121,22 @@ export async function review(
   })
 }
 
-/** Verified, merged, new issue. */
+const NEW_ISSUE: Fields = {
+  target: "new",
+  title: "Lampu jalan padam di Coblong",
+  summary: "Lampu jalan di jalan utama Coblong padam sejak dua minggu.",
+}
+
+function issueCodeOf(res: Response, step: string): string {
+  const location = res.headers.get("location") ?? ""
+  const issue = /\/kelola\/isu\/([^/#?]+)/.exec(location)?.[1]
+  if (res.status !== 303 || !issue) {
+    throw new Error(`${step} ${res.status} ${location}`)
+  }
+  return issue
+}
+
+/** Verify into a published issue. */
 export async function reportToIssue(
   app: FullApp,
   su: Pool,
@@ -129,31 +144,39 @@ export async function reportToIssue(
   staff: string,
   code: string,
 ): Promise<string> {
-  const steps: Fields[] = [
-    { intent: "start_review" },
-    { intent: "verify", method: "site_photo" },
-  ]
-  for (const fields of steps) {
-    const res = await review(app, su, host, staff, code, fields)
-    if (res.status !== 303) throw new Error(`${fields.intent} ${res.status}`)
-  }
-  const merged = await postForm(
+  const res = await review(app, su, host, staff, code, {
+    intent: "verify",
+    method: "site_photo",
+    ...NEW_ISSUE,
+    checklist: CHECKLIST,
+  })
+  return issueCodeOf(res, "verify")
+}
+
+/** Legacy verified report, draft issue. */
+export async function reportToDraftIssue(
+  app: FullApp,
+  su: Pool,
+  host: string,
+  staff: string,
+  code: string,
+): Promise<string> {
+  // Only old rows sit verified
+  await su.query(
+    `UPDATE reports r SET status = 'verified' FROM organizations o
+     WHERE o.id = r.org_id AND o.host = $1 AND r.public_code = $2`,
+    [host, code],
+  )
+  const res = await postForm(
     app,
     `http://${host}/kelola/laporan/${code}`,
     staff,
     {
       intent: "merge",
-      target: "new",
-      title: "Lampu jalan padam di Coblong",
-      summary: "Lampu jalan di jalan utama Coblong padam sejak dua minggu.",
+      ...NEW_ISSUE,
     },
   )
-  const location = merged.headers.get("location") ?? ""
-  const issue = /\/kelola\/isu\/([^/#?]+)/.exec(location)?.[1]
-  if (merged.status !== 303 || !issue) {
-    throw new Error(`merge ${merged.status} ${location}`)
-  }
-  return issue
+  return issueCodeOf(res, "merge")
 }
 
 export const CHECKLIST = [

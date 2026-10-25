@@ -43,7 +43,6 @@ describe("cachePolicy", () => {
       "/tuntutan/TUN-ITB-26-0001/berhenti",
       "/tuntutan/TUN-ITB-26-0001/nilai",
       "/kelola/tuntutan",
-      "/aduan/ADU-ITB-26-7K3QX",
       "/undangan/0199c2b0-1d2e-7000-8000-000000000001",
       "/kelola",
       "/kelola/anggota",
@@ -77,8 +76,6 @@ describe("cachePolicy", () => {
 
   test("lookalike paths stay public", () => {
     expect(cachePolicy({ ...base, path: "/laporan-tahunan" })).toBe("public")
-    expect(cachePolicy({ ...base, path: "/isu/laporkan-x" })).toBe("public")
-    expect(cachePolicy({ ...base, path: "/aduanku" })).toBe("public")
     expect(cachePolicy({ ...base, path: "/tuntutan" })).toBe("public")
     expect(cachePolicy({ ...base, path: "/tuntutan/TUN-ITB-26-0001" })).toBe(
       "public",

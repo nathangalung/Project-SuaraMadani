@@ -1,4 +1,4 @@
-import { ChevronLeft, Flag, Lock } from "lucide-react"
+import { ChevronLeft } from "lucide-react"
 import { lazy, Suspense } from "react"
 import { data, isRouteErrorResponse, Link, redirect } from "react-router"
 import { SECTION_TITLE } from "~/components/layout/section-heading"
@@ -33,12 +33,9 @@ import { issueHistory, Timeline } from "~/features/issues/timeline"
 import { useSiteTitle } from "~/features/report/page-title"
 import { labelOf, SUBCATEGORY_TEXT } from "~/features/report/public-labels"
 import { m } from "~/paraglide/messages.js"
-import type {
-  StandardReason,
-  TakedownReason,
-} from "../../../shared/complaints.ts"
+import type { TakedownReason } from "../../../shared/complaints.ts"
 import { formatDate } from "../../../shared/format.ts"
-import { referralWait, standardAnchor } from "../../../shared/moderation.ts"
+import { referralWait } from "../../../shared/moderation.ts"
 import { sessionContext, tenantContext } from "../../context.ts"
 import type { Route } from "./+types/detail"
 
@@ -112,13 +109,6 @@ const LINK =
 // Space only, no rules
 const H2 = SECTION_TITLE
 
-const ANCHORS = [
-  { id: "tanggapan", label: m.issue_response_title },
-  { id: "status", label: m.issue_stage_title },
-  { id: "riwayat", label: m.issue_history_title },
-  { id: "bukti", label: m.issue_evidence_title },
-] as const
-
 /** Tuntutan that cite this issue. */
 function PartOfDemands({ demands }: { demands: LatestDemand[] }) {
   if (demands.length === 0) return null
@@ -158,14 +148,11 @@ function PartOfDemands({ demands }: { demands: LatestDemand[] }) {
 // PLAN §6.1 order, no JS
 export default function IssueDetail({ loaderData }: Route.ComponentProps) {
   const { issue, siteName, url, image, follow, evidence } = loaderData
-  const anchors = ANCHORS.filter(
-    (anchor) => anchor.id !== "bukti" || evidence.length > 0,
-  )
   const { responses } = issue.record
   const subcategory = labelOf(SUBCATEGORY_TEXT, issue.subcategoryId)
   return (
     <>
-      <title>{`${issue.title} · ${siteName}`}</title>
+      <title>{`${issue.title} - ${siteName}`}</title>
       <meta name="description" content={issue.summary.slice(0, 200)} />
       <link rel="canonical" href={url} />
       <meta property="og:type" content="article" />
@@ -192,19 +179,19 @@ export default function IssueDetail({ loaderData }: Route.ComponentProps) {
             <ChevronLeft aria-hidden="true" className="size-4" />
             {m.nav_issues()}
           </Link>
-          <p className="mt-8 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[0.95rem] text-ink-soft">
+          <p className="mt-8 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[0.95rem] text-ink-soft">
             <CategoryMark categoryId={issue.categoryId} />
-            {subcategory ? <span>· {subcategory}</span> : null}
-            <span className="tabular-nums">· {issue.code}</span>
+            {subcategory ? <span>{subcategory}</span> : null}
+            <span className="tabular-nums">{issue.code}</span>
           </p>
           <h1
             id="issue-title"
-            className="mt-3 max-w-4xl font-bold font-heading text-[clamp(2rem,4.4vw,3rem)] text-ink leading-[1.1] [font-synthesis-weight:none]"
+            className="mt-3 font-bold font-heading text-[clamp(2rem,4.4vw,3rem)] text-ink leading-[1.1] [font-synthesis-weight:none]"
           >
             {issue.title}
           </h1>
           <h2 className="sr-only">{m.issue_facts_title()}</h2>
-          <dl className="mt-8 grid max-w-4xl grid-cols-2 gap-x-8 gap-y-6 lg:grid-cols-4">
+          <dl className="mt-8 grid grid-cols-2 gap-x-8 gap-y-6 lg:grid-cols-4">
             <Fact term={m.issue_stage_label()}>
               <StageMark
                 advocacy={issue.advocacyStatus}
@@ -223,44 +210,22 @@ export default function IssueDetail({ loaderData }: Route.ComponentProps) {
               <span>{formatDate(issue.publishedAt)}</span>
             </Fact>
           </dl>
-          <div className="mt-6 max-w-3xl">
+          <div className="mt-6">
             <ReferralLines
               referral={loaderData.referral}
               escalation={loaderData.escalation}
               wait={loaderData.wait}
             />
           </div>
-          <p className="mt-4 max-w-3xl font-ui text-ink-muted text-sm">
+          <p className="mt-4 font-ui text-ink-muted text-sm">
             {m.issue_advocacy_note()}
           </p>
-          <p className="mt-8 max-w-3xl whitespace-pre-line text-ink text-lg leading-relaxed">
+          <p className="mt-8 whitespace-pre-line text-ink text-lg leading-relaxed">
             {issue.summary}
           </p>
-          {issue.redactedAt && issue.redactionReason ? (
-            <RedactedLine
-              at={issue.redactedAt}
-              reason={issue.redactionReason}
-            />
-          ) : null}
+          {issue.redactedAt ? <RedactedLine at={issue.redactedAt} /> : null}
         </Container>
       </section>
-
-      <nav aria-labelledby="issue-on-page" className="bg-page">
-        <Container className="pt-2">
-          <h2 id="issue-on-page" className="text-ink-muted text-sm">
-            {m.issue_on_this_page()}
-          </h2>
-          <ul className="mt-1 flex flex-wrap gap-x-6 gap-y-1">
-            {anchors.map((anchor) => (
-              <li key={anchor.id}>
-                <a href={`#${anchor.id}`} className={LINK}>
-                  {anchor.label()}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </Container>
-      </nav>
 
       <div className="bg-page">
         <Container className="grid gap-12 py-12 pb-24 lg:grid-cols-[1fr_22rem]">
@@ -319,15 +284,6 @@ export default function IssueDetail({ loaderData }: Route.ComponentProps) {
           </div>
           <aside className="space-y-10">
             <PartOfDemands demands={loaderData.demands} />
-            <p className="flex items-start gap-2 text-ink-soft text-sm leading-relaxed">
-              <Lock aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-              <span>
-                {m.issue_privacy_note()}{" "}
-                <Link to="/privasi" className={LINK}>
-                  {m.privacy_link()}
-                </Link>
-              </span>
-            </p>
             <section aria-labelledby="same-problem">
               <h2 id="same-problem" className="font-bold text-lg">
                 {m.issue_same_problem_title()}
@@ -340,15 +296,6 @@ export default function IssueDetail({ loaderData }: Route.ComponentProps) {
               </ButtonLink>
             </section>
             <FollowCard code={issue.code} state={follow} />
-            <p className="flex items-start gap-2 text-ink-soft text-sm">
-              <Flag aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-              <span>
-                {m.issue_complaint_note()}{" "}
-                <Link to={`/isu/${issue.code}/laporkan`} className={LINK}>
-                  {m.issue_complaint_link()}
-                </Link>
-              </span>
-            </p>
           </aside>
         </Container>
       </div>
@@ -357,17 +304,10 @@ export default function IssueDetail({ loaderData }: Route.ComponentProps) {
 }
 
 // PLAN §5.10 revision marker
-function RedactedLine({ at, reason }: { at: Date; reason: StandardReason }) {
+function RedactedLine({ at }: { at: Date }) {
   return (
     <p className="mt-3 font-ui text-ink-muted text-sm">
-      {m.issue_redacted()} ·{" "}
-      <Link
-        to={`/pedoman#${standardAnchor(reason)}`}
-        className="underline underline-offset-4 hover:no-underline"
-      >
-        {m.issue_redacted_standard({ n: reason.slice("standard_".length) })}
-      </Link>{" "}
-      · <time dateTime={at.toISOString()}>{formatDate(at)}</time>
+      {m.issue_redacted_on({ date: formatDate(at) })}
     </p>
   )
 }
@@ -384,7 +324,7 @@ function goneReason(reason: TakedownReason, date: string) {
   if (reason === "komdigi_order") {
     return {
       body: m.issue_taken_down_komdigi_order({ date }),
-      href: "/pedoman#perintah",
+      href: "/pedoman",
       link: m.guidelines_link(),
     }
   }
@@ -396,11 +336,8 @@ function goneReason(reason: TakedownReason, date: string) {
     }
   }
   return {
-    body: m.issue_taken_down_body({
-      date,
-      n: reason.slice("standard_".length),
-    }),
-    href: `/pedoman#${standardAnchor(reason)}`,
+    body: m.issue_taken_down_body({ date }),
+    href: "/pedoman",
     link: m.guidelines_link(),
   }
 }

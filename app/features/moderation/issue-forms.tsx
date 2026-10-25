@@ -139,7 +139,7 @@ function ReferralFields({
         error={err("ticket")}
         maxLength={L.ticket.max}
       />
-      <div className="grid gap-6 sm:grid-cols-2">
+      <div className="grid gap-6 sm:grid-cols-2 sm:items-end">
         <TextInput
           id={id("sent_on")}
           name="sentOn"

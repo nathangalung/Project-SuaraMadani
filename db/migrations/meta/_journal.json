@@ -267,6 +267,27 @@
       "when": 1792943187253,
       "tag": "0037_ranking_prefix",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792943188253,
+      "tag": "0038_tuntutan_brief_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792943189253,
+      "tag": "0039_free_text_reasons",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792943190253,
+      "tag": "0040_full_ranking",
+      "breakpoints": true
     }
   ]
 }

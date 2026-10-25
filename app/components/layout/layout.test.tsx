@@ -153,7 +153,7 @@ describe("Header", () => {
     expect(html).toContain('href="/masuk"')
   })
 
-  test("signed-in user gets a sign-out form and draft link", () => {
+  test("signed-in user gets a sign-out link and draft link", () => {
     const html = renderAt(
       "/",
       <Header
@@ -165,9 +165,9 @@ describe("Header", () => {
       />,
     )
     expect(html).toContain("warga@contoh.com")
-    expect(html).toMatch(
-      /<form[^>]*method="post"[^>]*action="\/keluar"|<form[^>]*action="\/keluar"[^>]*method="post"/,
-    )
+    // Confirm page, no direct POST
+    expect(html).toMatch(/<a[^>]*href="\/keluar"[^>]*>Keluar<\/a>/)
+    expect(html).not.toContain('action="/keluar"')
     expect(html).toContain("Lanjutkan draf laporan")
     // Grid column grows, never wraps
     expect(html).toMatch(/class="whitespace-nowrap[^"]*text-accent/)
@@ -189,7 +189,7 @@ describe("Header", () => {
     expect(account).toContain('<span class="sr-only">Menu akun: </span>')
     expect(account).toContain('title="Masuk sebagai warga@contoh.com"')
     expect(account).toMatch(/href="\/lacak"[^>]*>Laporan saya</)
-    expect(account).toContain(">Keluar</button>")
+    expect(account).toMatch(/href="\/keluar"[^>]*>Keluar<\/a>/)
     expect(html.match(/>Laporan saya</g)).toHaveLength(2)
     expect(html.match(/>Keluar</g)).toHaveLength(2)
     expect(account).toContain("transition-transform duration-(--dur-hover)")
@@ -411,15 +411,18 @@ describe("SkipLink", () => {
     expect(root).toMatch(
       /<main\s+id="konten"\s+tabIndex=\{-1\}\s+className=\{`flex-1 outline-none /,
     )
+    expect(root).toContain("{manageShell ? (")
     // S15: footer never floats up
     expect(root).toContain('<div className="flex min-h-svh flex-col">')
     const glob = new Bun.Glob("{routes,features}/**/*.tsx")
     const appDir = new URL("../../", import.meta.url).pathname
     for await (const file of glob.scan(appDir)) {
       const source = await Bun.file(`${appDir}${file}`).text()
+      // Kelola shell replaces root main
+      const owner = file === "features/moderation/manage-shell.tsx"
       expect({ file, main: source.includes("<main") }).toEqual({
         file,
-        main: false,
+        main: owner,
       })
     }
   })

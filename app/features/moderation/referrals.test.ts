@@ -60,7 +60,7 @@ async function seedIssue(options: { publish: boolean } = { publish: true }) {
   if (options.publish) {
     await runPublish(
       tenantA(),
-      { issueId: merged.issueId, actorId: moderator, notify: false },
+      { issueId: merged.issueId, actorId: moderator },
       { purge: NO_PURGE },
     )
   }
@@ -135,7 +135,7 @@ afterAll(async () => {
 })
 
 describe("runIssueAction", () => {
-  test("refer stores the referral, event, audit, job, then purges", async () => {
+  test("refer stores the referral, event, audit, then purges", async () => {
     const issue = await seedIssue()
     const purged: string[][] = []
     const result = await runIssueAction(tenantA(), refer(issue), {
@@ -195,7 +195,8 @@ describe("runIssueAction", () => {
       "SELECT data->>'template' AS template FROM pgboss.job WHERE name = 'issue-notify' AND data->>'issueId' = $1",
       [issue.id],
     )
-    expect(jobs).toEqual([{ template: "issue_refer" }])
+    // No follower emails, 25 Oct
+    expect(jobs).toEqual([])
     expect(purged).toEqual([
       issuePurgeUrls("itb.localhost", {
         code: issue.code,
@@ -282,11 +283,12 @@ describe("runIssueAction", () => {
         issueId: issue.id,
         seen: { ...INITIAL_ISSUE_STATE, version: issue.version },
         actorId: moderator,
-        action: "confirm_resolved",
-        note: "Sudah selesai menurut foto lokasi terbaru.",
+        action: "reopen",
+        note: "Warga melapor masalahnya muncul lagi.",
       },
       { purge: NO_PURGE },
     )
+    // Reopen needs a legacy claim
     expect(result).toEqual({ ok: false, reason: "not_allowed" })
     expect(await count("issue_events", issue.id)).toBe(0)
   })

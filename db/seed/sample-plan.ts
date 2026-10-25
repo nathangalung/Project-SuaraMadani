@@ -3,12 +3,6 @@ import {
   categoryOf,
   type SubcategoryId,
 } from "../../shared/categories.ts"
-import type {
-  ComplaintDecision,
-  ComplaintDecisionReason,
-  ComplaintPart,
-  ComplaintReason,
-} from "../../shared/complaints.ts"
 import {
   BOX_SCALE,
   type EvidenceDecision,
@@ -49,9 +43,6 @@ import {
 } from "../../shared/status.ts"
 import {
   ACTION_NOTES,
-  APPEAL_TEXT,
-  COMPLAINT_STATEMENTS,
-  COMPLAINT_TEXTS,
   DECISION_TEXTS,
   PLACES,
   type PlaceKey,
@@ -72,7 +63,7 @@ export const SAMPLE_EMAIL_PATTERN = "sampel.%@contoh.test"
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
 
-type LooseStatus = Exclude<ReportStatus, "merged">
+type LooseStatus = Exclude<ReportStatus, "merged" | "forwarded" | "in_review">
 
 type IssuePath = readonly IssueAction[]
 
@@ -82,14 +73,8 @@ const PATHS = {
   escalated: ["refer", "escalate"],
   responded: ["refer", "record_response"],
   inProgress: ["refer", "record_response", "mark_in_progress"],
-  claimed: ["refer", "record_response", "mark_in_progress", "claim_resolved"],
-  confirmed: [
-    "refer",
-    "mark_in_progress",
-    "claim_resolved",
-    "confirm_resolved",
-  ],
-  reopened: ["refer", "record_response", "claim_resolved", "reopen"],
+  // Admin confirms in one step
+  confirmed: ["refer", "mark_in_progress", "confirm_resolved"],
   notCompetent: ["refer", "mark_not_competent"],
   notFollowed: ["refer", "mark_not_followed_up"],
   notFollowedEscalated: ["refer", "mark_not_followed_up", "escalate"],
@@ -101,15 +86,6 @@ type PathName = keyof typeof PATHS
 
 const repeat = (name: PathName, n: number): PathName[] =>
   Array.from({ length: n }, () => name)
-
-// Complaint end states to show
-type ComplaintKind =
-  | "open"
-  | "keep"
-  | "edit"
-  | "remove"
-  | "appealed"
-  | "appeal_hide"
 
 export type SampleProfile = {
   slug: string
@@ -123,7 +99,6 @@ export type SampleProfile = {
   // Most advanced first
   paths: readonly PathName[]
   evidence: number
-  complaints: readonly ComplaintKind[]
 }
 
 const ITB_SIZES = [
@@ -145,22 +120,21 @@ export const SAMPLE_PROFILES = {
     ),
     loose: {
       submitted: 18,
-      in_review: 14,
-      verified: 20,
+      // Verify merges at once
+      verified: 0,
       unverifiable: 12,
       rejected: 15,
-      forwarded: 6,
     },
     issueSizes: ITB_SIZES,
-    draftIssues: 3,
+    draftIssues: 0,
     paths: [
       ...repeat("confirmed", 5),
       "closed",
       "closedEarly",
-      ...repeat("reopened", 3),
+      ...repeat("confirmed", 3),
       "notFollowedEscalated",
       "notFollowed",
-      ...repeat("claimed", 5),
+      ...repeat("inProgress", 5),
       ...repeat("notCompetent", 2),
       ...repeat("inProgress", 6),
       ...repeat("responded", 6),
@@ -169,15 +143,6 @@ export const SAMPLE_PROFILES = {
       ...repeat("monitoring", 3),
     ],
     evidence: 6,
-    complaints: [
-      "open",
-      "open",
-      "keep",
-      "edit",
-      "appealed",
-      "appeal_hide",
-      "remove",
-    ],
   },
   ugm: {
     slug: "ugm",
@@ -195,17 +160,15 @@ export const SAMPLE_PROFILES = {
     },
     loose: {
       submitted: 5,
-      in_review: 4,
-      verified: 6,
+      verified: 0,
       unverifiable: 3,
       rejected: 4,
-      forwarded: 2,
     },
     issueSizes: [3, 3, 2, 2, 2, 1, 1, 1],
-    draftIssues: 1,
+    draftIssues: 0,
     paths: [
       "confirmed",
-      "claimed",
+      "inProgress",
       "inProgress",
       "responded",
       "responded",
@@ -214,7 +177,6 @@ export const SAMPLE_PROFILES = {
       "monitoring",
     ],
     evidence: 2,
-    complaints: ["open", "keep"],
   },
 } as const satisfies Record<string, SampleProfile>
 
@@ -305,33 +267,11 @@ export type PlannedIssue = {
 // Sample users following others' issues
 export type PlannedFollow = { reporter: number; issue: number; at: Date }
 
-export type PlannedDecision = {
-  decision: ComplaintDecision
-  reason: ComplaintDecisionReason
-  statement: string
-  at: Date
-  // Edit keeps the first sentence
-  summary?: string
-}
-
-export type PlannedComplaint = {
-  submissionId: string
-  issue: number
-  complainant: number
-  reason: ComplaintReason
-  part: ComplaintPart
-  explanation: string
-  submittedAt: Date
-  first: PlannedDecision | null
-  appeal: { text: string; at: Date; decision: PlannedDecision | null } | null
-}
-
 export type SamplePlan = {
   reporters: { email: string; createdAt: Date }[]
   reports: PlannedReport[]
   issues: PlannedIssue[]
   follows: PlannedFollow[]
-  complaints: PlannedComplaint[]
 }
 
 /** mulberry32, small and seedable. */
@@ -454,7 +394,8 @@ function draftReport(
   const affectedGroups = rng.shuffle(AFFECTED_GROUPS).slice(0, groupCount)
   const consents = ["age_18_plus", "accurate", "public_issue"]
   consents.push("aggregate_processing")
-  if (rng.next() < 0.7) consents.push("forward_to_agency")
+  // Keep the rng sequence
+  rng.next()
   const occurred = new Date(createdAt.getTime() - rng.between(1, 14) * DAY)
   const report: Draft = {
     submissionId: uuid(rng),
@@ -611,7 +552,6 @@ export function buildSamplePlan(profile: SampleProfile, now: Date): SamplePlan {
       const mergedAt = stepAfter(rng, decided, 1, draft ? 12 : 36)
       // Only verified reports merge
       const steps: PlannedStep[] = [
-        { action: "start_review", at: review },
         {
           action: "verify",
           at: decided,
@@ -691,9 +631,9 @@ export function buildSamplePlan(profile: SampleProfile, now: Date): SamplePlan {
   const looseEntries = Object.entries(profile.loose) as [LooseStatus, number][]
   for (const [status, count] of looseEntries) {
     for (let k = 0; k < count; k++) {
-      const queued = status === "submitted" || status === "in_review"
+      const queued = status === "submitted"
       const ageDays = queued
-        ? rng.between(0.2, status === "submitted" ? 9 : 20)
+        ? rng.between(0.2, 9)
         : 8 + 342 * (1 - rng.next() ** 0.7)
       const createdAt = new Date(now.getTime() - ageDays * DAY)
       const placeKey =
@@ -702,7 +642,7 @@ export function buildSamplePlan(profile: SampleProfile, now: Date): SamplePlan {
           : rng.weighted(places)
       const fitting = THEMES.filter((t) => fits(t, placeKey))
       const theme = rng.pick(fitting)
-      const steps = looseSteps(rng, status, createdAt, end)
+      const steps = looseSteps(rng, status, createdAt)
       const report = draftReport(rng, {
         theme,
         placeKey,
@@ -781,147 +721,7 @@ export function buildSamplePlan(profile: SampleProfile, now: Date): SamplePlan {
     { reporters, reports, issues: detailed },
     end,
   )
-  const complaints = planComplaints(
-    createRng(hash(`${profile.slug}:${SAMPLE_VERSION}:complaints`)),
-    { reporters, reports, issues: detailed },
-    profile.complaints,
-    end,
-  )
-  return { reporters, reports, issues: detailed, follows, complaints }
-}
-
-type KindSpec = {
-  reason: ComplaintReason
-  first?: { decision: ComplaintDecision; reason: ComplaintDecisionReason }
-  appeal?:
-    | "pending"
-    | { decision: ComplaintDecision; reason: ComplaintDecisionReason }
-}
-
-const KIND_SPECS: Record<ComplaintKind, KindSpec> = {
-  open: { reason: "personal_data" },
-  keep: {
-    reason: "false_information",
-    first: { decision: "keep", reason: "no_violation" },
-  },
-  edit: {
-    reason: "personal_data",
-    first: { decision: "edit", reason: "standard_11" },
-  },
-  remove: {
-    reason: "hate",
-    first: { decision: "remove", reason: "standard_8" },
-  },
-  appealed: {
-    reason: "child_safety",
-    first: { decision: "keep", reason: "insufficient_detail" },
-    appeal: "pending",
-  },
-  appeal_hide: {
-    reason: "political",
-    first: { decision: "keep", reason: "no_violation" },
-    appeal: { decision: "hide", reason: "standard_7" },
-  },
-}
-
-const OPEN_REASONS: readonly ComplaintReason[] = ["personal_data", "accusation"]
-
-function firstSentence(summary: string): string {
-  const stop = summary.indexOf(". ")
-  return stop === -1 ? summary : summary.slice(0, stop + 1)
-}
-
-function plannedDecision(
-  choice: { decision: ComplaintDecision; reason: ComplaintDecisionReason },
-  at: Date,
-  summary: string,
-): PlannedDecision {
-  return {
-    ...choice,
-    statement: COMPLAINT_STATEMENTS[choice.decision],
-    at,
-    ...(choice.decision === "edit" ? { summary: firstSentence(summary) } : {}),
-  }
-}
-
-/** One complaint per issue. */
-function planComplaints(
-  rng: Rng,
-  plan: Omit<SamplePlan, "follows" | "complaints">,
-  kinds: readonly ComplaintKind[],
-  end: number,
-): PlannedComplaint[] {
-  const used = new Set<number>()
-  const order = rng.shuffle(plan.issues.map((_, i) => i))
-  let opens = 0
-  return kinds.map((kind) => {
-    const spec = KIND_SPECS[kind]
-    const decided = spec.first !== undefined
-    for (const index of order) {
-      const issue = plan.issues[index]
-      const published = issue?.publishedAt?.getTime()
-      if (!issue || published === undefined || used.has(index)) continue
-      // Decisions after all activity
-      const from = Math.max(
-        published,
-        decided ? issue.lastActivityAt.getTime() : published,
-      )
-      const submitted = decided
-        ? from + rng.between(1, 5) * DAY
-        : end - rng.between(2, 72) * HOUR
-      const firstAt = submitted + rng.between(0.5, 4) * DAY
-      const appealAt = firstAt + rng.between(1, 3) * DAY
-      const lastAt = appealAt + rng.between(1, 4) * DAY
-      const finalAt = !spec.first
-        ? submitted
-        : spec.appeal === undefined
-          ? firstAt
-          : spec.appeal === "pending"
-            ? appealAt
-            : lastAt
-      if (submitted <= published || finalAt >= end - HOUR) continue
-      const own = new Set(issue.reports.map((r) => plan.reports[r]?.reporter))
-      const complainant = rng
-        .shuffle(plan.reporters.map((_, i) => i))
-        .find(
-          (i) =>
-            !own.has(i) &&
-            (plan.reporters[i]?.createdAt.getTime() ?? end) < submitted,
-        )
-      if (complainant === undefined) continue
-      used.add(index)
-      const reason =
-        kind === "open"
-          ? (OPEN_REASONS[opens++ % OPEN_REASONS.length] ?? "other")
-          : spec.reason
-      const text = COMPLAINT_TEXTS[reason]
-      if (!text) throw new Error(`no sample text for ${reason}`)
-      const appeal = spec.appeal
-      return {
-        submissionId: uuid(rng),
-        issue: index,
-        complainant,
-        reason,
-        part: text.part,
-        explanation: text.text,
-        submittedAt: new Date(submitted),
-        first: spec.first
-          ? plannedDecision(spec.first, new Date(firstAt), issue.summary)
-          : null,
-        appeal: appeal
-          ? {
-              text: APPEAL_TEXT,
-              at: new Date(appealAt),
-              decision:
-                appeal === "pending"
-                  ? null
-                  : plannedDecision(appeal, new Date(lastAt), issue.summary),
-            }
-          : null,
-      }
-    }
-    throw new Error(`no issue fits a ${kind} complaint`)
-  })
+  return { reporters, reports, issues: detailed, follows }
 }
 
 // Covers every choice in order
@@ -1063,7 +863,7 @@ function planDetails(
 /** Few followers per issue. */
 function planFollows(
   rng: Rng,
-  plan: Omit<SamplePlan, "follows" | "complaints">,
+  plan: Omit<SamplePlan, "follows">,
   end: number,
 ): PlannedFollow[] {
   const follows: PlannedFollow[] = []
@@ -1088,29 +888,17 @@ function looseSteps(
   rng: Rng,
   status: LooseStatus,
   createdAt: Date,
-  end: number,
 ): PlannedStep[] {
   if (status === "submitted") return []
   const review = stepAfter(rng, createdAt, 2, 48)
   const decided = stepAfter(rng, review, 2, 96)
-  if (status === "in_review") {
-    const at = Math.min(review.getTime(), (createdAt.getTime() + end) / 2)
-    return [{ action: "start_review", at: new Date(at) }]
-  }
-  if (status === "forwarded" && rng.next() < 0.5) {
-    return [{ action: "forward", at: review }]
-  }
   if (status === "rejected" && rng.next() < 0.3) {
     return [{ action: "reject", at: review }]
   }
-  const action: Record<
-    Exclude<LooseStatus, "submitted" | "in_review">,
-    ReportAction
-  > = {
+  const action: Record<Exclude<LooseStatus, "submitted">, ReportAction> = {
     verified: "verify",
     unverifiable: "mark_unverifiable",
     rejected: "reject",
-    forwarded: "forward",
   }
   const last: PlannedStep =
     status === "verified"
@@ -1120,5 +908,5 @@ function looseSteps(
           method: rng.pick(SAMPLE_VERIFY_METHODS),
         }
       : { action: action[status], at: decided }
-  return [{ action: "start_review", at: review }, last]
+  return [last]
 }

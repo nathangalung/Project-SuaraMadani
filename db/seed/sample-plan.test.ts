@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { ISSUE_SUMMARY_LENGTH } from "../../app/features/moderation/fields.ts"
 import { CATEGORY_IDS } from "../../shared/categories.ts"
-import {
-  COMPLAINT_LENGTHS,
-  isDecisionReasonFor,
-} from "../../shared/complaints.ts"
 import { LOW_DATA_REPORTS } from "../../shared/dashboard.ts"
 import { UPLOAD_WINDOW_MS } from "../../shared/evidence.ts"
 import { parseDecision } from "../../shared/evidence-decision.ts"
@@ -46,7 +42,10 @@ describe("sample plan", () => {
   for (const plan of [itb, ugm]) {
     test("every report status and category", () => {
       const statuses = new Set(plan.reports.map((r) => r.status))
-      expect([...statuses].sort()).toEqual([...REPORT_STATUSES].sort())
+      const live = REPORT_STATUSES.filter(
+        (s) => !["forwarded", "in_review", "verified"].includes(s),
+      )
+      expect([...statuses].sort()).toEqual([...live].sort())
       const categories = new Set(plan.reports.map((r) => r.categoryId))
       expect([...categories].sort()).toEqual([...CATEGORY_IDS].sort())
     })
@@ -67,12 +66,17 @@ describe("sample plan", () => {
     expect(published.length).toBeGreaterThanOrEqual(38)
     const gov = new Set(published.map((i) => i.state.government))
     const advocacy = new Set(published.map((i) => i.state.advocacy))
-    expect([...gov].sort()).toEqual([...GOVERNMENT_STATUSES].sort())
+    // Claim and reopen are legacy
+    const live = GOVERNMENT_STATUSES.filter(
+      (s) => !["claimed_resolved", "reopened"].includes(s),
+    )
+    expect([...gov].sort()).toEqual([...live].sort())
     expect([...advocacy].sort()).toEqual([...ADVOCACY_STATUSES].sort())
     const labels = new Set(published.map((i) => i.verified))
     expect([...labels]).toEqual([true])
     expect(published.some((i) => i.reports.length >= 5)).toBe(true)
-    expect(itb.issues.some((i) => !i.publishedAt)).toBe(true)
+    // Verify publishes, no drafts
+    expect(itb.issues.every((i) => i.publishedAt)).toBe(true)
   })
 
   for (const plan of [itb, ugm]) {
@@ -288,86 +292,6 @@ describe("sample evidence decisions", () => {
   test("reports without files get no decision", () => {
     for (const r of [...itb.reports, ...ugm.reports]) {
       if (r.evidence === 0) expect(r.evidenceDecision).toBeNull()
-    }
-  })
-})
-
-describe("sample complaints", () => {
-  test("ITB covers every complaint state, UGM the basics", () => {
-    const kinds = (plan: typeof itb) =>
-      plan.complaints.map((c) =>
-        c.appeal?.decision
-          ? `appeal_${c.appeal.decision.decision}`
-          : c.appeal
-            ? "appealed"
-            : (c.first?.decision ?? "open"),
-      )
-    expect(kinds(itb).sort()).toEqual(
-      [
-        "appeal_hide",
-        "appealed",
-        "edit",
-        "keep",
-        "open",
-        "open",
-        "remove",
-      ].sort(),
-    )
-    expect(kinds(ugm).sort()).toEqual(["keep", "open"])
-  })
-
-  for (const plan of [itb, ugm]) {
-    test("complaints follow publication, in order, by non-reporters", () => {
-      const end = NOW.getTime() - 3_600_000
-      const issues = new Set<number>()
-      for (const c of plan.complaints) {
-        const issue = plan.issues[c.issue]
-        const published = issue?.publishedAt?.getTime() ?? Infinity
-        expect(c.submittedAt.getTime()).toBeGreaterThan(published)
-        // Changes come after activity
-        if (c.first && c.first.decision !== "keep") {
-          expect(c.first.at.getTime()).toBeGreaterThan(
-            issue?.lastActivityAt.getTime() ?? Infinity,
-          )
-        }
-        const times = [
-          c.submittedAt,
-          c.first?.at,
-          c.appeal?.at,
-          c.appeal?.decision?.at,
-        ].flatMap((t) => (t ? [t.getTime()] : []))
-        expect([...times].sort((a, b) => a - b)).toEqual(times)
-        expect(times.every((t) => t < end)).toBe(true)
-        const reporters = issue?.reports.map((r) => plan.reports[r]?.reporter)
-        expect(reporters).not.toContain(c.complainant)
-        expect(c.explanation.length).toBeGreaterThanOrEqual(
-          COMPLAINT_LENGTHS.explanation.min,
-        )
-        issues.add(c.issue)
-      }
-      // One complaint per issue
-      expect(issues.size).toBe(plan.complaints.length)
-    })
-  }
-
-  test("decisions cite a fitting reason, edits shorten the summary", () => {
-    for (const c of itb.complaints) {
-      for (const d of [c.first, c.appeal?.decision]) {
-        if (!d) continue
-        expect(isDecisionReasonFor(d.decision, d.reason)).toBe(true)
-        expect(d.statement.length).toBeGreaterThanOrEqual(
-          COMPLAINT_LENGTHS.statement.min,
-        )
-        if (d.decision === "edit") {
-          const summary = itb.issues[c.issue]?.summary ?? ""
-          expect(d.summary).toBeDefined()
-          expect(summary.startsWith(d.summary ?? "x")).toBe(true)
-          expect(d.summary?.length ?? 0).toBeLessThan(summary.length)
-          expect(d.summary?.length ?? 0).toBeGreaterThanOrEqual(
-            ISSUE_SUMMARY_LENGTH.min,
-          )
-        }
-      }
     }
   })
 })

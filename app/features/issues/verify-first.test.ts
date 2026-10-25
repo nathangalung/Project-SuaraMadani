@@ -96,7 +96,7 @@ beforeAll(async () => {
   if (!merged.ok) throw new Error(merged.reason)
   await runPublish(
     { id: orgId, host: "vfa.localhost" },
-    { issueId: merged.issueId, actorId: admin, notify: false },
+    { issueId: merged.issueId, actorId: admin },
     { purge: NO_PURGE },
   )
   await refreshDashboards(appDb, { now: () => NOW })

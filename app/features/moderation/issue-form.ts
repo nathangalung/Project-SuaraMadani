@@ -18,7 +18,7 @@ import type { IssueActionInput } from "./referrals.server.ts"
 // Omit per union member
 type Parsed = IssueActionInput extends infer T
   ? T extends unknown
-    ? Omit<T, "issueId" | "actorId" | "notify">
+    ? Omit<T, "issueId" | "actorId">
     : never
   : never
 

@@ -9,6 +9,7 @@ import { Note } from "~/components/ui/note"
 import { Select } from "~/components/ui/select"
 import { m } from "~/paraglide/messages.js"
 import {
+  BRIEF_URL_MAX,
   briefTooLarge,
   DEMAND_CATEGORIES,
   DEMAND_LENGTHS,
@@ -49,10 +50,12 @@ const FIELD_ID: Record<DemandErrorKey, string> = {
   target: "demand-target",
   raised_on: "demand-raised-on",
   raised_after_updates: "demand-raised-on",
+  brief_url: "demand-brief-url",
   items: "demand-items",
   publish_items: "demand-publish",
   issues_too_many: "issue-code",
   item_body: "item-body",
+  item_brief_url: "item-brief-url",
   brief_summary: "item-brief-summary",
   occurred_on: "update-occurred-on",
   occurred_before_last: "update-occurred-on",
@@ -78,11 +81,13 @@ const ERROR_TEXT: Record<DemandErrorKey, () => string> = {
   target: () => m.demand_error_target(L.target),
   raised_on: m.demand_error_raised_on,
   raised_after_updates: m.demand_error_raised_after_updates,
+  brief_url: () => m.demand_error_brief_url({ max: BRIEF_URL_MAX }),
   items: () => m.demand_error_items(L.item),
   publish_items: m.demand_publish_needs_items,
   issues_too_many: () =>
     m.demand_error_issues_too_many({ max: MAX_DEMAND_ISSUES }),
   item_body: () => m.demand_error_item_body(L.item),
+  item_brief_url: () => m.demand_error_brief_url({ max: BRIEF_URL_MAX }),
   brief_summary: () => m.demand_error_brief_summary(L.briefSummary),
   occurred_on: m.demand_error_occurred_on,
   occurred_before_last: m.demand_error_occurred_before_last,
@@ -126,7 +131,37 @@ export function panelOf(intent: string): ItemPanel | null {
 }
 
 // Typed text, no-JS error
-export type ItemValues = { body?: string; briefSummary?: string }
+export type ItemValues = {
+  body?: string
+  briefSummary?: string
+  briefUrl?: string
+}
+
+/** Optional brief link field. */
+function BriefUrlInput({
+  id,
+  defaultValue,
+  error,
+}: {
+  id: string
+  defaultValue?: string
+  error?: string
+}) {
+  return (
+    <TextInput
+      id={id}
+      name="briefUrl"
+      type="url"
+      inputMode="url"
+      label={m.demand_field_brief_url()}
+      hint={m.demand_field_brief_url_hint()}
+      defaultValue={defaultValue}
+      maxLength={BRIEF_URL_MAX}
+      error={error}
+      optional
+    />
+  )
+}
 
 function Submit({
   intent,
@@ -201,7 +236,7 @@ export function DemandFieldsForm({
           hint={m.demand_field_scope_regional_hint()}
         />
       </Fieldset>
-      <div className="grid gap-6 sm:grid-cols-2">
+      <div className="grid gap-6 sm:grid-cols-2 sm:items-end">
         <Select
           id={FIELD_ID.province}
           name="provinceCode"
@@ -307,11 +342,17 @@ export function DemandFieldsForm({
           name="raisedOn"
           type="date"
           label={m.demand_field_raised_on()}
+          hint={m.demand_field_raised_on_hint()}
           defaultValue={values.raisedOn ?? undefined}
           error={at(errors, FIELD_ID.raised_on)}
           requiredMark
         />
       </div>
+      <BriefUrlInput
+        id={FIELD_ID.brief_url}
+        defaultValue={values.briefUrl ?? undefined}
+        error={at(errors, FIELD_ID.brief_url)}
+      />
       {withItems ? (
         <Textarea
           id={FIELD_ID.items}
@@ -477,9 +518,8 @@ function BriefPanel({
               className="flex flex-wrap items-center gap-x-3 gap-y-2 border-line-subtle border-b pb-2"
             >
               <FileText aria-hidden="true" className="size-4 text-brand" />
-              <span className="text-sm">
-                {formatDate(brief.createdAt)} · {formatFileSize(brief.byteSize)}
-              </span>
+              <span className="text-sm">{formatDate(brief.createdAt)}</span>
+              <span className="text-sm">{formatFileSize(brief.byteSize)}</span>
               <Badge tone={brief.status === "infected" ? "danger" : "neutral"}>
                 {brief.publishedAt
                   ? m.demand_brief_published({
@@ -617,7 +657,7 @@ function UpdateForm({
             {at(errors, id("status"))}
           </p>
         ) : null}
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid gap-5 sm:grid-cols-2 sm:items-end">
           <Select
             id={`update-response-${item.id}`}
             name="response"
@@ -671,7 +711,7 @@ function UpdateForm({
           error={at(errors, id("note"))}
           requiredMark
         />
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid gap-5 sm:grid-cols-2 sm:items-end">
           <TextInput
             id={id("source_text")}
             name="sourceText"
@@ -718,6 +758,11 @@ function ItemTextForm({
         maxLength={L.item.max}
         error={at(errors, id("item_body"))}
         requiredMark
+      />
+      <BriefUrlInput
+        id={id("item_brief_url")}
+        defaultValue={values?.briefUrl ?? item.briefUrl ?? ""}
+        error={at(errors, id("item_brief_url"))}
       />
       <Submit intent="edit_item" label={m.demand_item_save()} />
     </Form>
@@ -899,7 +944,13 @@ export function ItemEditor({
   )
 }
 
-export function AddItemForm({ errors }: { errors: FieldError[] }) {
+export function AddItemForm({
+  errors,
+  values,
+}: {
+  errors: FieldError[]
+  values?: ItemValues
+}) {
   return (
     <Form method="post" className="flex flex-col gap-4">
       <Textarea
@@ -907,9 +958,15 @@ export function AddItemForm({ errors }: { errors: FieldError[] }) {
         name="body"
         label={m.demand_item_new()}
         hint={m.demand_item_new_hint()}
+        defaultValue={values?.body}
         maxLength={L.item.max}
         error={at(errors, FIELD_ID.item_body)}
         requiredMark
+      />
+      <BriefUrlInput
+        id={FIELD_ID.item_brief_url}
+        defaultValue={values?.briefUrl}
+        error={at(errors, FIELD_ID.item_brief_url)}
       />
       <Submit
         intent="add_item"
@@ -936,13 +993,12 @@ export function IssueLinks({
               key={issue.code}
               className="flex flex-wrap items-center justify-between gap-3 border-line-subtle border-b pb-2"
             >
-              <span>
-                <span className="text-sm tabular-nums">{issue.code}</span> ·{" "}
-                {issue.title}
+              <span className="flex flex-wrap items-baseline gap-x-3">
+                <span className="text-sm tabular-nums">{issue.code}</span>
+                <span>{issue.title}</span>
                 {issue.published ? null : (
                   <span className="text-ink-muted">
-                    {" "}
-                    · {m.manage_issue_unpublished()}
+                    {m.manage_issue_unpublished()}
                   </span>
                 )}
               </span>

@@ -8,7 +8,6 @@ import {
   REFERRAL_CHANNELS,
   REJECT_REASONS,
   referralWait,
-  standardAnchor,
   UNVERIFIABLE_REASONS,
 } from "./moderation.ts"
 
@@ -36,11 +35,6 @@ describe("reason codes", () => {
   test("reject reasons are told apart", () => {
     expect(isRejectReason("standard_13")).toBe(true)
     expect(isRejectReason("no_evidence")).toBe(false)
-  })
-
-  test("reasons link to the guidelines anchors", () => {
-    expect(standardAnchor("standard_4")).toBe("standar-4")
-    expect(standardAnchor("out_of_scope")).toBe("cakupan")
   })
 })
 

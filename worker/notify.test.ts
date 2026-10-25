@@ -205,34 +205,34 @@ describe("email-send", () => {
     expect(rows[0]?.address_hash).not.toContain("pelapor")
   })
 
-  test("a rejection email carries the stored reason", async () => {
+  test("an unverifiable email carries the admin's text", async () => {
     const reportId = await addReport()
+    // Free text, no code
     await su.query(
       `INSERT INTO moderation_decisions (org_id, report_id, action, reason_code, reason_text)
-       VALUES ($1, $2, 'reject', 'standard_11', 'Hapus nomor telepon tetangga, lalu kirim ulang.')`,
+       VALUES ($1, $2, 'mark_unverifiable', NULL, 'Kirim foto lokasi agar bisa kami cek.')`,
       [orgA, reportId],
     )
-    const id = await notification("report_rejected", { reportId })
+    const id = await notification("report_unverifiable", { reportId })
     expect(
       await createEmailSendHandler(deps())({ orgId: orgA, notificationId: id }),
     ).toBe("sent")
     const text = sent[0]?.text ?? ""
-    expect(text).toContain("Standar 11")
-    expect(text).toContain("Hapus nomor telepon tetangga, lalu kirim ulang.")
-    expect(text).toContain("/pedoman#standar-11")
+    expect(text).toContain(
+      "Alasan dari admin: Kirim foto lokasi agar bisa kami cek.",
+    )
+    expect(text).not.toContain("Standar")
+    expect(text).not.toContain("/pedoman#standar")
   })
 
-  test("a complaint decision mails reason and appeal date", async () => {
+  test("a legacy complaint notification is skipped", async () => {
     const { rows } = await su.query<{ id: string }>(
       `INSERT INTO content_complaints (org_id, issue_id, public_code, user_id,
-         submission_id, reason, part, explanation, status, decision,
-         decision_reason, decision_text, decided_by, decided_at)
+         submission_id, reason, part, explanation)
        VALUES ($1, $2, 'ADU-NTA-26-7K3QX', $3, gen_random_uuid(),
-         'personal_data', 'title_summary', 'Ringkasan menyebut alamat warga.',
-         'decided', 'edit', 'standard_11',
-         'Alamat warga kami hapus dari ringkasan.', $3, $4)
+         'personal_data', 'title_summary', 'Ringkasan menyebut alamat warga.')
        RETURNING id`,
-      [orgA, issueId, reporter, NOW],
+      [orgA, issueId, reporter],
     )
     const complaintId = rows[0]?.id ?? ""
     const { rows: notes } = await su.query<{ id: string }>(
@@ -243,14 +243,12 @@ describe("email-send", () => {
     const id = notes[0]?.id ?? ""
     expect(
       await createEmailSendHandler(deps())({ orgId: orgA, notificationId: id }),
-    ).toBe("sent")
-    const text = sent[0]?.text ?? ""
-    expect(sent[0]?.subject).toContain("ADU-NTA-26-7K3QX")
-    expect(text).toContain("Standar 11")
-    expect(text).toContain("Alamat warga kami hapus dari ringkasan.")
-    expect(text).toContain("https://nta.localhost/aduan/ADU-NTA-26-7K3QX")
-    // 180 days after decision
-    expect(text).toContain("12 April 2027")
+    ).toBe("skipped")
+    expect(sent).toHaveLength(0)
+    expect(await status(id)).toEqual({
+      status: "skipped",
+      error: "unpublished",
+    })
     await su.query("DELETE FROM content_complaints WHERE id = $1", [
       complaintId,
     ])
@@ -318,46 +316,6 @@ describe("email-send", () => {
     const text = sent[0]?.text ?? ""
     expect(text).toContain("LPR-2026-10-0007")
     expect(text).toContain("nta")
-  })
-
-  test("Given an appeal decision, when its mail goes out, then it carries the appeal outcome, not the first one", async () => {
-    const moderator = await insertUser(su, "moderator.banding@contoh.id")
-    const { rows } = await su.query<{ id: string }>(
-      `INSERT INTO content_complaints (org_id, issue_id, public_code, user_id,
-         submission_id, reason, part, explanation, status, decision,
-         decision_reason, decision_text, decided_by, decided_at,
-         appeal_text, appealed_at, appeal_decision, appeal_reason,
-         appeal_decision_text, appeal_decided_by, appeal_decided_at)
-       VALUES ($1, $2, 'ADU-NTA-26-BNDG1', $3, gen_random_uuid(),
-         'personal_data', 'title_summary', 'Ringkasan menyebut alamat warga.',
-         'appeal_decided', 'keep', 'no_violation',
-         'Keputusan pertama tidak mengubah isu.', $3, $5,
-         'Alamat masih terlihat jelas.', $5, 'edit', 'standard_11',
-         'Alamat warga kami hapus setelah banding.', $4, $5)
-       RETURNING id`,
-      [orgA, issueId, reporter, moderator, NOW],
-    )
-    const complaintId = rows[0]?.id ?? ""
-    try {
-      const { rows: notes } = await su.query<{ id: string }>(
-        `INSERT INTO notifications (org_id, user_id, event_id, template, complaint_id)
-         VALUES ($1, $2, uuidv7(), 'complaint_appeal_decided', $3) RETURNING id`,
-        [orgA, reporter, complaintId],
-      )
-      expect(
-        await createEmailSendHandler(deps())({
-          orgId: orgA,
-          notificationId: notes[0]?.id ?? "",
-        }),
-      ).toBe("sent")
-      const text = sent[0]?.text ?? ""
-      expect(text).toContain("Alamat warga kami hapus setelah banding.")
-      expect(text).not.toContain("Keputusan pertama tidak mengubah isu.")
-    } finally {
-      await su.query("DELETE FROM content_complaints WHERE id = $1", [
-        complaintId,
-      ])
-    }
   })
 
   test("Given a decided-reply mail for a reply still pending, when it is claimed, then it throws and sends nothing", async () => {
@@ -567,6 +525,26 @@ describe("email-send", () => {
     expect(await status(id)).toEqual({ status: "skipped", error: "closed" })
     const { rows } = await su.query("SELECT 1 FROM email_log")
     expect(rows).toHaveLength(0)
+  })
+
+  test("a legacy claim follower notification is skipped, not thrown", async () => {
+    // Claim step removed 25 Oct
+    const follower = await insertUser(su, "pengikut.klaim@contoh.id")
+    await member(orgA, follower)
+    await su.query(
+      "INSERT INTO follows (org_id, issue_id, user_id) VALUES ($1, $2, $3)",
+      [orgA, issueId, follower],
+    )
+    const id = await notification("issue_claim_resolved", { issueId }, follower)
+    expect(
+      await createEmailSendHandler(deps())({ orgId: orgA, notificationId: id }),
+    ).toBe("skipped")
+    expect(sent).toHaveLength(0)
+    expect(await status(id)).toEqual({
+      status: "skipped",
+      error: "unpublished",
+    })
+    await su.query("DELETE FROM follows WHERE user_id = $1", [follower])
   })
 
   test("a deleted account gets no email", async () => {

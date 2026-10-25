@@ -1,16 +1,20 @@
 import { Lock } from "lucide-react"
+import { redirect } from "react-router"
 import { PageHeader } from "~/components/layout/page-header"
 import { QueueNote } from "~/components/layout/queue-note"
 import { ButtonLink } from "~/components/ui/button"
 import { Card } from "~/components/ui/card"
 import { Container } from "~/components/ui/container"
 import { Note } from "~/components/ui/note"
+import { listFollowed } from "~/features/issues/followed.server"
+import { FollowedList } from "~/features/issues/followed-list"
 import { useSiteTitle } from "~/features/report/page-title"
 import { queueSlow } from "~/features/report/queue-delay.server"
 import { readLink } from "~/features/report/signed-link.server"
 import { linkedReport, listOwnReports } from "~/features/report/tracking.server"
 import { TrackingResult } from "~/features/report/tracking-result"
 import { m } from "~/paraglide/messages.js"
+import { pageNumber } from "../../../shared/canonical-query.ts"
 import { sessionContext, tenantContext } from "../../context.ts"
 import type { Route } from "./+types/track"
 
@@ -31,29 +35,42 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const session = context.get(sessionContext)
   const base = {
     campus: tenant.campusName,
-    tenant: tenant.name,
     slow: await queueSlow(tenant.id),
     // WhatsApp-only accounts get no mail
     emailReady: session ? session.user.emailVerified : true,
   }
+  const params = new URL(request.url).searchParams
   if (session) {
+    const own = await listOwnReports(
+      tenant.id,
+      session.user.id,
+      pageNumber(params.get("halaman") ?? undefined),
+    )
+    if (own.page > own.pageCount) throw redirect(trackHref(own.pageCount))
     return {
       ...base,
-      own: await listOwnReports(tenant.id, session.user.id),
+      own,
+      // Profile shows follows, no email
+      followed: await listFollowed(tenant.id, session.user.id),
       link: null,
     }
   }
-  const token = new URL(request.url).searchParams.get("t")
-  if (token === null) return { ...base, own: null, link: null }
+  const token = params.get("t")
+  if (token === null) return { ...base, own: null, followed: null, link: null }
   const claim = readLink(token, "lacak", tenant.id)
   const report = claim
     ? await linkedReport(tenant.id, claim.subjectId, claim.userId)
     : null
   return {
     ...base,
-    own: report ? { reports: [report], capped: false } : null,
+    own: report ? { reports: [report], page: 1, pageCount: 1 } : null,
+    followed: null,
     link: report ? ("valid" as const) : ("invalid" as const),
   }
+}
+
+function trackHref(page: number): string {
+  return page > 1 ? `/lacak?halaman=${page}` : "/lacak"
 }
 
 // Works without JS
@@ -86,9 +103,10 @@ export default function Track({ loaderData }: Route.ComponentProps) {
           {loaderData.own ? (
             <TrackingResult
               campus={loaderData.campus}
-              tenant={loaderData.tenant}
               reports={loaderData.own.reports}
-              capped={loaderData.own.capped}
+              page={loaderData.own.page}
+              pageCount={loaderData.own.pageCount}
+              pageHref={trackHref}
               canUpload={loaderData.link === null}
             />
           ) : (
@@ -103,6 +121,9 @@ export default function Track({ loaderData }: Route.ComponentProps) {
               </ButtonLink>
             </Card>
           )}
+          {loaderData.followed ? (
+            <FollowedList followed={loaderData.followed} />
+          ) : null}
           <p className="mx-auto mt-8 flex max-w-xl items-start justify-center gap-2 text-center text-ink-soft text-sm">
             <Lock aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
             {m.track_privacy_note()}

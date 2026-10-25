@@ -2,22 +2,22 @@
 
 export const REPORT_STATUSES = [
   "submitted",
+  // Legacy rows, review step removed
   "in_review",
   "verified",
   "unverifiable",
   "rejected",
   "merged",
+  // Legacy rows, campus forwarding removed
   "forwarded",
 ] as const
 export type ReportStatus = (typeof REPORT_STATUSES)[number]
 
 export const REPORT_ACTIONS = [
-  "start_review",
   "verify",
   "mark_unverifiable",
   "reject",
   "merge",
-  "forward",
 ] as const
 export type ReportAction = (typeof REPORT_ACTIONS)[number]
 
@@ -32,6 +32,7 @@ export const GOVERNMENT_STATUSES = [
   "awaiting_response",
   "responded",
   "in_progress",
+  // Legacy rows, claim step removed
   "claimed_resolved",
   "confirmed_resolved",
   "reopened",
@@ -81,7 +82,6 @@ export const ISSUE_ACTIONS = [
   "escalate",
   "record_response",
   "mark_in_progress",
-  "claim_resolved",
   "confirm_resolved",
   "reopen",
   "mark_not_competent",
@@ -163,13 +163,12 @@ type Rule<S> = { readonly from: readonly S[]; readonly to: S }
 export const REPORT_TRANSITIONS: Readonly<
   Record<ReportAction, Rule<ReportStatus>>
 > = {
-  start_review: { from: ["submitted"], to: "in_review" },
-  verify: { from: ["in_review", "unverifiable"], to: "verified" },
-  mark_unverifiable: { from: ["in_review"], to: "unverifiable" },
+  // Decided straight from Terkirim
+  verify: { from: ["submitted", "in_review", "unverifiable"], to: "verified" },
+  mark_unverifiable: { from: ["submitted", "in_review"], to: "unverifiable" },
   reject: { from: ["submitted", "in_review", "unverifiable"], to: "rejected" },
   // Only verified goes public
   merge: { from: ["verified"], to: "merged" },
-  forward: { from: ["submitted", "in_review"], to: "forwarded" },
 }
 
 export function canTransitionReport(
@@ -255,7 +254,8 @@ const ISSUE_TRANSITIONS: Readonly<Record<IssueAction, IssueRule>> = {
       to: "in_progress",
     },
   },
-  claim_resolved: {
+  // Admin checks, one step
+  confirm_resolved: {
     government: {
       from: [
         "awaiting_response",
@@ -263,12 +263,10 @@ const ISSUE_TRANSITIONS: Readonly<Record<IssueAction, IssueRule>> = {
         "in_progress",
         "reopened",
         "not_followed_up",
+        "claimed_resolved",
       ],
-      to: "claimed_resolved",
+      to: "confirmed_resolved",
     },
-  },
-  confirm_resolved: {
-    government: { from: ["claimed_resolved"], to: "confirmed_resolved" },
   },
   reopen: { government: { from: ["claimed_resolved"], to: "reopened" } },
   mark_not_competent: {

@@ -15,7 +15,6 @@ import {
   publicCount,
   publicShare,
   RESPONSE_DAYS,
-  type ReasonCounts,
   type ResponseSummary,
   SNAPSHOT_VERSION,
   STATUS_FILTERS,
@@ -25,8 +24,13 @@ import {
   type WaitBucket,
 } from "../shared/dashboard.ts"
 import { jakartaIsoDate } from "../shared/format.ts"
-import { REJECT_REASONS, UNVERIFIABLE_REASONS } from "../shared/moderation.ts"
-import { GOVERNMENT_STATUSES, type GovernmentStatus } from "../shared/status.ts"
+import {
+  type AdvocacyStatus,
+  type GovernmentStatus,
+  PUBLIC_STAGES,
+  type PublicStage,
+  publicStage,
+} from "../shared/status.ts"
 
 // Starting Values: aggregate refresh
 const REFRESH_STATEMENT_TIMEOUT = "300s"
@@ -48,6 +52,7 @@ type VerifyRow = {
 }
 type IssueRow = {
   category_id: string
+  advocacy_status: AdvocacyStatus
   gov_status: GovernmentStatus
   province_code: string
   n: number
@@ -84,7 +89,6 @@ type AgencyRow = {
 const WAITING: GovernmentStatus = "awaiting_response"
 // Unanswered, answer date known
 const UNANSWERED: readonly GovernmentStatus[] = [WAITING, "not_followed_up"]
-type ReasonRow = { action: string; reason_code: string; n: number }
 
 const DAY_MS = 86_400_000
 
@@ -183,24 +187,6 @@ export function summarizeResponses(
   }
 }
 
-/** Latest reject or unverifiable reason. */
-function summarizeReasons(list: ReasonRow[]): ReasonCounts {
-  const pick = <K extends string>(action: string, keys: readonly K[]) =>
-    Object.fromEntries(
-      keys.map((key) => [
-        key,
-        publicCount(
-          list.find((r) => r.action === action && r.reason_code === key)?.n ??
-            0,
-        ),
-      ]),
-    ) as Record<K, Count>
-  return {
-    rejected: pick("reject", REJECT_REASONS),
-    unverifiable: pick("mark_unverifiable", UNVERIFIABLE_REASONS),
-  }
-}
-
 function byMonth(list: MonthRow[]): Map<string, number> {
   return new Map(list.map((row) => [row.month, row.n]))
 }
@@ -211,8 +197,8 @@ export function summarizeIssues(groups: IssueRow[]) {
     CATEGORY_IDS.map((id) => [id, 0]),
   ) as Record<CategoryId, number>
   const statuses = Object.fromEntries(
-    GOVERNMENT_STATUSES.map((id) => [id, 0]),
-  ) as Record<GovernmentStatus, number>
+    PUBLIC_STAGES.map((id) => [id, 0]),
+  ) as Record<PublicStage, number>
   const sums: Record<string, Record<string, number>> = {}
   for (const category of CATEGORY_FILTERS) {
     for (const status of STATUS_FILTERS) {
@@ -222,9 +208,14 @@ export function summarizeIssues(groups: IssueRow[]) {
   for (const group of groups) {
     const category = group.category_id as CategoryId
     if (category in categories) categories[category] += group.n
-    statuses[group.gov_status] += group.n
+    // Same stages as Jelajah
+    const stage = publicStage({
+      advocacy: group.advocacy_status,
+      government: group.gov_status,
+    })
+    statuses[stage] += group.n
     for (const c of ["all", category] as const) {
-      for (const s of ["all", group.gov_status] as const) {
+      for (const s of ["all", stage] as const) {
         const cell = sums[filterKey(c, s)]
         if (!cell) continue
         cell[group.province_code] =
@@ -245,24 +236,16 @@ export function summarizeIssues(groups: IssueRow[]) {
       Object.values(cell).reduce((a, n) => a + n, 0),
     )
   }
-  // Reopen only follows a claim
-  const pending = statuses.claimed_resolved
-  const confirmed = statuses.confirmed_resolved
-  const reopened = statuses.reopened
+  // Done over published, one step
+  const done = statuses.done
+  const published = Object.values(statuses).reduce((a, n) => a + n, 0)
   // Public on /isu: exact
   return {
     categories,
     statuses,
     verifiedProvinces,
     verifiedProvinceTotals,
-    resolution: {
-      pending,
-      confirmed,
-      reopened,
-      claimTotal: pending + confirmed + reopened,
-      checked: confirmed + reopened,
-      confirmedShare: publicShare(confirmed, confirmed + reopened),
-    },
+    resolution: { done, published, share: publicShare(done, published) },
   }
 }
 
@@ -306,10 +289,11 @@ async function computeSnapshot(
   )
   const groups = await rows<IssueRow>(
     tx,
-    sql`SELECT category_id, gov_status, province_code, count(*)::int AS n,
+    sql`SELECT category_id, advocacy_status, gov_status, province_code,
+      count(*)::int AS n,
       coalesce(sum(verified_report_count), 0)::int AS verified
     FROM issues WHERE org_id = ${orgId} AND published_at IS NOT NULL
-    GROUP BY 1, 2, 3`,
+    GROUP BY 1, 2, 3, 4`,
   )
   const received = await rows<MonthRow>(
     tx,
@@ -362,17 +346,6 @@ async function computeSnapshot(
       AND NOT EXISTS (SELECT 1 FROM referrals r
         WHERE r.org_id = i.org_id AND r.issue_id = i.id AND r.kind = 'referral')`,
   )
-  const reasons = await rows<ReasonRow>(
-    tx,
-    sql`SELECT d.action, d.reason_code, count(*)::int AS n
-    FROM reports r
-    JOIN LATERAL (SELECT action, reason_code FROM moderation_decisions m
-      WHERE m.org_id = r.org_id AND m.report_id = r.id
-        AND m.action IN ('reject', 'mark_unverifiable')
-      ORDER BY m.decided_at DESC LIMIT 1) d ON true
-    WHERE r.org_id = ${orgId} AND r.status IN ('rejected', 'unverifiable')
-    GROUP BY 1, 2`,
-  )
   const receivedBy = byMonth(received)
   const verifiedBy = byMonth(verified)
   const verifyN = verify?.n ?? 0
@@ -417,7 +390,6 @@ async function computeSnapshot(
       jakartaIsoDate(now),
       waitingAlone?.n ?? 0,
     ),
-    reasons: summarizeReasons(reasons),
   }
 }
 

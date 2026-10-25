@@ -9,7 +9,6 @@ import {
   testUrl,
 } from "../../../db/testing.ts"
 import {
-  actionData,
   dropJobs,
   type FullApp,
   fullApp,
@@ -22,13 +21,11 @@ import {
 } from "../../../e2e/app-harness.ts"
 import {
   issueRow,
-  postForm,
-  publishIssue,
   reportToIssue,
   review,
   submitReport,
 } from "../../../e2e/staff-flows.ts"
-import { formatDateTime, jakartaIsoDate } from "../../../shared/format.ts"
+import { jakartaIsoDate } from "../../../shared/format.ts"
 import { createAggregateHandler } from "../../../worker/aggregates.ts"
 import type { Dashboard } from "./dashboard.server.ts"
 
@@ -126,27 +123,20 @@ beforeAll(async () => {
     const { code } = await submitReport(app, HOST, owner.cookie)
     if (i === 0) {
       issue = await reportToIssue(app, su, HOST, admin.cookie, code)
-      await publishIssue(app, su, HOST, admin.cookie, issue)
       continue
     }
-    await review(app, su, HOST, admin.cookie, code, { intent: "start_review" })
     await review(app, su, HOST, admin.cookie, code, {
       intent: "verify",
       method: "document",
-    })
-    await postForm(app, `${ORIGIN}/kelola/laporan/${code}`, admin.cookie, {
-      intent: "merge",
       target: "existing",
       issueId: (await issueRow(su, HOST, issue)).id,
     })
   }
-  const rejected = await signedIn(HOST, person("ditolak"))
-  const { code } = await submitReport(app, HOST, rejected.cookie)
-  await review(app, su, HOST, admin.cookie, code, { intent: "start_review" })
+  const declined = await signedIn(HOST, person("ditolak"))
+  const { code } = await submitReport(app, HOST, declined.cookie)
   await review(app, su, HOST, admin.cookie, code, {
-    intent: "reject",
-    reason: "standard_2",
-    reasonText: "Laporan ini menuduh orang yang bisa dikenali tanpa bukti.",
+    intent: "mark_unverifiable",
+    reasonText: "Lokasi dan waktu kejadian belum bisa kami pastikan.",
   })
   const waiting = await signedIn(HOST, person("antre"))
   await submitReport(app, HOST, waiting.cookie)
@@ -167,7 +157,7 @@ afterAll(async () => {
 })
 
 describe("dashboard and national numbers", () => {
-  test("[AC-DATA-01] Given verified, rejected and waiting reports, when the dashboard job runs, then /data and its API show the snapshot's numbers with the update time, and new reports wait for the next run", async () => {
+  test("[AC-DATA-01] Given verified, unverifiable and waiting reports, when the dashboard job runs, then /data and its API show the snapshot's numbers, the API with its update time, and new reports wait for the next run", async () => {
     await refresh()
     const numbers = await ringkasan()
     expect(numbers).toMatchObject({
@@ -181,10 +171,8 @@ describe("dashboard and national numbers", () => {
     expect(Date.parse(body.meta.computedAt)).toBeGreaterThan(
       Date.now() - 60_000,
     )
-    const page = await app.request(`${ORIGIN}/data`)
-    expect(page.status).toBe(200)
-    const computed = formatDateTime(new Date(body.meta.computedAt))
-    expect(await page.text()).toContain(`${computed} WIB`)
+    // Time shown only when stale
+    expect((await app.request(`${ORIGIN}/data`)).status).toBe(200)
     const late = await signedIn(HOST, person("baru"))
     await submitReport(app, HOST, late.cookie)
     expect((await ringkasan()).reports_total).toBe(7)
@@ -249,7 +237,7 @@ describe("dashboard and national numbers", () => {
     })
   })
 
-  test("[AC-DATA-04] Given verified reports merged into published issues in two provinces and regional tuntutan, when /data is read with ?lapisan=laporan and ?lapisan=tuntutan, then province and map totals from one to four are hidden, larger ones shown, and tuntutan counts are exact and live", async () => {
+  test("[AC-DATA-04] Given verified reports merged into published issues in two provinces, when /data is read, then the report map hides province and map totals from one to four and shows larger ones", async () => {
     await su.query("DELETE FROM referrals WHERE org_id = $1", [thirdId])
     await su.query("DELETE FROM responses WHERE org_id = $1", [thirdId])
     await su.query("DELETE FROM issues WHERE org_id = $1", [thirdId])
@@ -257,58 +245,14 @@ describe("dashboard and national numbers", () => {
     await refresh()
     const cell = (map: Dashboard & { kind: "ready" }, code: string): unknown =>
       map.map.regions.find((region) => region.code === code)?.count
-    const small = await dashboardOf("?lapisan=laporan")
-    expect(small.map.layer).toBe("laporan")
+    const small = await dashboardOf()
     expect(cell(small, "32")).toBeNull()
     expect(small.map.total).toBeNull()
     await issueAt("33", { verified: 7 })
     await refresh()
     const both = await dashboardOf()
-    expect(both.map.layer).toBe("laporan")
     expect(cell(both, "32")).toBeNull()
     expect(cell(both, "33")).toBe(7)
     expect(both.map.total).toBe(10)
-    const staff = await staffSession(THIRD, thirdId, person("peta"))
-    const res = await postForm(
-      app,
-      `http://${THIRD}/kelola/tuntutan/baru`,
-      staff.cookie,
-      {
-        scope: "regional",
-        provinceCode: "32",
-        regencyCode: "32.73",
-        category: "infrastruktur_transportasi",
-        title: "Perbaikan jalan di Kota Bandung",
-        body: "Kami menuntut perbaikan jalan rusak di seluruh Kota Bandung.",
-        summary: "Perbaikan jalan rusak dan jadwal yang terbuka untuk warga.",
-        target: "Pemerintah Kota Bandung",
-        raisedOn: "2026-08-01",
-        items: "Perbaiki jalan utama",
-      },
-    )
-    const code = /\/kelola\/tuntutan\/([^?#]+)/.exec(
-      res.headers.get("location") ?? "",
-    )?.[1]
-    if (!code) throw new Error(`create ${res.status}`)
-    const before = await dashboardOf("?lapisan=tuntutan")
-    expect(before.map.layer).toBe("tuntutan")
-    expect(before.map.total).toBe(0)
-    const { rows } = await su.query<{ version: number }>(
-      "SELECT version FROM demands WHERE public_code = $1",
-      [code],
-    )
-    const publish = await postForm(
-      app,
-      `http://${THIRD}/kelola/tuntutan/${code}.data`,
-      staff.cookie,
-      { intent: "publish", version: String(rows[0]?.version), note: "" },
-    )
-    expect(await actionData<{ saved?: string }>(publish)).toMatchObject({
-      saved: "publish",
-    })
-    const live = await dashboardOf("?lapisan=tuntutan")
-    expect(live.map.layer).toBe("tuntutan")
-    expect(cell(live, "32")).toBe(1)
-    expect(live.map.total).toBe(1)
   })
 })

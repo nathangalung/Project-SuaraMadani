@@ -67,17 +67,15 @@ export function PolicyPage({
   lead,
   updated,
   sections,
-  national = false,
 }: {
   title: string
   lead: string
   updated: string
   sections: PolicySection[]
-  national?: boolean
 }) {
   return (
     <>
-      <PageHeader title={title} description={lead}>
+      <PageHeader title={title} description={lead} wide>
         <p className="mt-4 font-ui text-ink-muted text-sm">
           {m.policy_updated({ date: updatedOn(updated) })}
         </p>
@@ -112,13 +110,9 @@ export function PolicyPage({
               <h2 id={`${section.id}-title`} className={SECTION_TITLE}>
                 {section.title}
               </h2>
-              {section.body}
+              <div className="text-justify">{section.body}</div>
             </section>
           ))}
-          {/* One next step */}
-          <p>
-            <ReportButton national={national} />
-          </p>
         </div>
       </Container>
     </>

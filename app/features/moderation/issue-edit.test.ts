@@ -15,7 +15,6 @@ import type { PurgeClient } from "../../../server/purge.server.ts"
 import { runPublish } from "../issues/publish.server.ts"
 import { editIssue, parseEditForm } from "./issue-edit.server.ts"
 import { runMerge } from "./merge.server.ts"
-import { getManagedIssue } from "./queue.server.ts"
 
 process.env.AUDIT_HMAC_KEY ||= Buffer.alloc(32, 7).toString("base64")
 
@@ -36,7 +35,7 @@ const purge: PurgeClient = {
 }
 const tenant = () => ({ id: org, host: "edt.localhost" })
 
-async function issue(consents?: string[]) {
+async function issue() {
   const reporter = await insertUser(su, `p${crypto.randomUUID()}@contoh.id`)
   const [report] = await suDb
     .insert(reports)
@@ -44,7 +43,6 @@ async function issue(consents?: string[]) {
       reportValues(org, reporter, {
         status: "verified",
         verifiedAt: NOW,
-        ...(consents ? { consents } : {}),
       }),
     )
     .returning({ id: reports.id })
@@ -188,7 +186,7 @@ describe("editIssue, PLAN §5.10 pre-publish fixes", () => {
     const merged = await issue()
     await runPublish(
       tenant(),
-      { issueId: merged.issueId, actorId: moderator, notify: false },
+      { issueId: merged.issueId, actorId: moderator },
       { purge },
     )
     purged = []
@@ -239,27 +237,5 @@ describe("editIssue, PLAN §5.10 pre-publish fixes", () => {
         { purge },
       ),
     ).toEqual({ ok: false, reason: "not_found" })
-  })
-})
-
-describe("forward consent, PLAN §7 step 7", () => {
-  test("the issue lists who declined forwarding", async () => {
-    const merged = await issue([
-      "age_18_plus",
-      "accurate",
-      "public_issue",
-      "aggregate_processing",
-    ])
-    const managed = await getManagedIssue(org, "admin", merged.code)
-    expect(managed?.reports.map((r) => r.forwardConsent)).toEqual([false])
-    const agreed = await issue([
-      "age_18_plus",
-      "accurate",
-      "public_issue",
-      "aggregate_processing",
-      "forward_to_agency",
-    ])
-    const ok = await getManagedIssue(org, "admin", agreed.code)
-    expect(ok?.reports.map((r) => r.forwardConsent)).toEqual([true])
   })
 })

@@ -13,7 +13,7 @@ import {
 } from "../../db/testing.ts"
 import { publicMediaPath } from "../../server/files.server.ts"
 import { sessionContext, tenantContext } from "../context.ts"
-import * as signOut from "./account/sign-out.ts"
+import * as signOut from "./account/sign-out.tsx"
 import * as auth from "./api/auth.ts"
 import * as upload from "./api/upload.ts"
 import * as media from "./media.ts"
@@ -173,10 +173,20 @@ describe("public media, /media/:file", () => {
 })
 
 describe("sign-out, /keluar", () => {
-  test("a GET never signs out and goes home", async () => {
-    const res = signOut.loader()
-    expect(res.status).toBe(302)
-    expect(res.headers.get("Location")).toBe("/")
+  test("a signed-out GET goes home, a signed-in GET asks first", async () => {
+    let thrown: unknown = null
+    try {
+      signOut.loader(args(at("/keluar")))
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown).toBeInstanceOf(Response)
+    expect((thrown as Response).status).toBe(302)
+    expect((thrown as Response).headers.get("Location")).toBe("/")
+    const signedIn = args(at("/keluar")) as { context: RouterContextProvider }
+    signedIn.context.set(sessionContext, { user: { id: "u" } } as never)
+    // Confirmation page, no sign-out
+    expect(signOut.loader(signedIn as never)).toBeNull()
   })
 
   test("Given a stale cookie and no session, when the form posts, then it redirects with 303 and clears the cookie", async () => {

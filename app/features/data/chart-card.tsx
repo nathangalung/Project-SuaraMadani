@@ -80,7 +80,7 @@ export function ChartCard({
         {meta}
         {changed ? (
           <>
-            {" · "}
+            {" "}
             <a
               href="#metode"
               className="font-semibold text-ink underline underline-offset-2"
@@ -129,7 +129,7 @@ export function DataTable({
                 <th
                   key={columns[i]}
                   scope="row"
-                  className="border-line-subtle border-b px-3 py-2 text-left font-semibold"
+                  className="border-line-subtle border-r border-b px-4 py-3 text-left font-semibold"
                 >
                   {cell}
                 </th>

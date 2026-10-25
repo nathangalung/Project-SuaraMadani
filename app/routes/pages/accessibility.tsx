@@ -3,7 +3,6 @@ import {
   PolicyPage,
   type PolicySection,
   Prose,
-  useNational,
 } from "~/features/content/policy-page"
 import { PROSE_LIST } from "~/features/content/prose"
 import { useSiteTitle } from "~/features/report/page-title"
@@ -34,7 +33,6 @@ function List({ items }: { items: readonly (() => string)[] }) {
 
 /** PLAN §6.1 footer statement. */
 export default function Accessibility() {
-  const national = useNational()
   const sections: PolicySection[] = [
     {
       id: "standar",
@@ -66,7 +64,6 @@ export default function Accessibility() {
     <>
       <title>{useSiteTitle(m.accessibility_title())}</title>
       <PolicyPage
-        national={national}
         title={m.accessibility_title()}
         lead={m.accessibility_lead()}
         updated={UPDATED}

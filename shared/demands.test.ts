@@ -61,8 +61,12 @@ describe("citizen ranking", () => {
     raisedOn,
   })
 
-  test("Borda: first place gets five points", () => {
-    expect([1, 2, 3, 4, 5].map(rankingPoints)).toEqual([5, 4, 3, 2, 1])
+  test("Borda: first of N gets N points", () => {
+    const of = (n: number) =>
+      Array.from({ length: n }, (_, i) => rankingPoints(i + 1, n))
+    expect(of(8)).toEqual([8, 7, 6, 5, 4, 3, 2, 1])
+    // Old five-entry lists still count
+    expect(of(5)).toEqual([5, 4, 3, 2, 1])
   })
 
   test("orders by points, then rankers, then age", () => {

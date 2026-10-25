@@ -5,6 +5,7 @@ import { SECTION_TITLE } from "~/components/layout/section-heading"
 import { ButtonLink } from "~/components/ui/button"
 import { Container } from "~/components/ui/container"
 import { Note } from "~/components/ui/note"
+import { Pagination } from "~/components/ui/pagination"
 import { DemandFilters } from "~/features/demands/demand-filters"
 import { demandsHref } from "~/features/demands/demand-href"
 import { DemandLedger } from "~/features/demands/demand-ledger"
@@ -21,7 +22,6 @@ import {
   DEMAND_LIST_QUERY,
   readQuery,
 } from "../../../shared/canonical-query.ts"
-import { DEMAND_PAGE_SIZE } from "../../../shared/demands.ts"
 import { tenantContext } from "../../context.ts"
 import type { Route } from "./+types/list"
 
@@ -34,9 +34,9 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     demandScorecard(tenant.id),
     demandProvinces(tenant.id, query.provinsi),
   ])
-  if (result.kind === "bad_cursor") {
-    const { kursor: _drop, ...rest } = query
-    throw redirect(demandsHref(rest), 301)
+  // Data-dependent, so 302
+  if (result.kind === "results" && result.page > result.pageCount) {
+    throw redirect(demandsHref({ ...query, halaman: String(result.pageCount) }))
   }
   return { query, result, scorecard, provinces, organization: tenant.name }
 }
@@ -66,17 +66,35 @@ export default function DemandList({ loaderData }: Route.ComponentProps) {
       <div className="mt-6 bg-page sm:mt-10">
         <Container className="space-y-10 pt-8 pb-24 sm:pt-12">
           {/* Nothing to count or filter */}
+          {/* Ranking first, team 25 Oct */}
+          {scorecard.total > 0 ? (
+            <section
+              aria-labelledby="susun-peringkat"
+              className="flex flex-col gap-6 rounded-2xl bg-brand-soft p-6 sm:p-8 lg:flex-row lg:items-center lg:justify-between"
+            >
+              <div className="max-w-2xl">
+                <h2
+                  id="susun-peringkat"
+                  className="font-bold font-heading text-2xl text-ink leading-tight [font-synthesis-weight:none] sm:text-3xl"
+                >
+                  {m.demands_rank_cta_lead()}
+                </h2>
+                <p className="mt-3 text-ink-soft text-lg leading-relaxed">
+                  {m.demands_rank_cta_body()}
+                </p>
+              </div>
+              <ButtonLink
+                to="/tuntutan/peringkat"
+                size="lg"
+                className="w-full shrink-0 sm:w-auto"
+              >
+                {m.demands_rank_cta()}
+              </ButtonLink>
+            </section>
+          ) : null}
           {scorecard.total > 0 || filtered ? (
             <>
               <DemandScorecard scorecard={scorecard} query={query} />
-              <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span className="text-ink-soft">
-                  {m.demands_rank_cta_lead()}
-                </span>
-                <Link to="/tuntutan/peringkat" className={LINK}>
-                  {m.demands_rank_cta()}
-                </Link>
-              </p>
               <DemandFilters query={query} provinces={provinces} />
             </>
           ) : null}
@@ -123,42 +141,17 @@ export default function DemandList({ loaderData }: Route.ComponentProps) {
                     </p>
                   </div>
                 ) : (
-                  <DemandLedger
-                    demands={result.demands}
-                    start={(result.page - 1) * DEMAND_PAGE_SIZE}
-                  />
+                  <DemandLedger demands={result.demands} />
                 )}
-                {result.capped ? (
-                  <Note className="mt-8">{m.demands_page_cap()}</Note>
-                ) : null}
-                {result.page > 1 || result.nextCursor ? (
-                  <nav
-                    aria-label={m.issues_pagination_label()}
-                    className="mt-10 flex flex-wrap gap-6"
-                  >
-                    {result.page > 1 ? (
-                      <Link
-                        to={demandsHref({ ...query, kursor: undefined })}
-                        className={LINK}
-                      >
-                        {m.issues_first()}
-                      </Link>
-                    ) : null}
-                    {result.nextCursor ? (
-                      <Link
-                        to={demandsHref({
-                          ...query,
-                          kursor: result.nextCursor,
-                        })}
-                        className={LINK}
-                      >
-                        {m.issues_next()}
-                      </Link>
-                    ) : null}
-                  </nav>
-                ) : null}
+                <Pagination
+                  page={result.page}
+                  pageCount={result.pageCount}
+                  href={(page) =>
+                    demandsHref({ ...query, halaman: String(page) })
+                  }
+                  className="mt-10"
+                />
                 {result.demands.length > 0 ? (
-                  // Ledger already ends ruled
                   <p className="mt-10 text-ink-soft">
                     {m.demands_closing()}{" "}
                     <Link to="/lapor" className={LINK}>

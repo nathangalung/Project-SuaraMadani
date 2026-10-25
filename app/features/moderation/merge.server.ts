@@ -35,7 +35,7 @@ export type MergeResult =
     }
   | { ok: false; reason: "changed" | "not_found" }
 
-class MergeRefused extends Error {
+export class MergeRefused extends Error {
   readonly reason: "changed" | "not_found"
 
   constructor(reason: "changed" | "not_found") {
@@ -152,7 +152,7 @@ export async function recomputeIssue(
 }
 
 /** Throws to roll back. */
-async function mergeIntoIssue(
+export async function mergeIntoIssue(
   tx: Tx,
   orgId: string,
   input: MergeInput,

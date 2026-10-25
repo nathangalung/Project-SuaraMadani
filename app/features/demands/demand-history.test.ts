@@ -35,7 +35,7 @@ describe("demandHistory", () => {
     )
     expect(entry?.title).toBe("Status subtuntutan 3 berubah")
     // Verb said once
-    expect(entry?.status).toBe("Menjadi Direspons · Dipenuhi")
+    expect(entry?.status).toBe("Menjadi Dipenuhi")
     expect(entry?.body).toBeUndefined()
     // Jumps to the sub-tuntutan
     expect(entry?.href).toBe("#sub-3")

@@ -274,7 +274,6 @@ export const consentStep = z
             true,
             e("error_consent_aggregate_required"),
           ),
-          forward_to_agency: z.boolean(e("error_step_required")).optional(),
         },
         e("error_step_required"),
       ),

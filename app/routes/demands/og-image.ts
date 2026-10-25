@@ -37,7 +37,7 @@ export async function loader({ params, request, context }: Route.LoaderArgs) {
         done: demand.progress.fulfilled,
         total: demand.progress.total,
       }),
-    ].join(" · "),
+    ].join(", "),
     label: FULFILMENT_TEXT[demand.progress.status](),
     siteName: m.og_site_name({ name: tenant.name }),
   })

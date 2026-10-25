@@ -1,13 +1,10 @@
 import { Printer } from "lucide-react"
 import { useEffect } from "react"
 import { data, useLocation } from "react-router"
-import { StepNumber } from "~/components/ui/badge"
 import { Button, ButtonLink } from "~/components/ui/button"
 import { Card } from "~/components/ui/card"
 import { Note } from "~/components/ui/note"
 import { ContactLine } from "~/features/content/policy-page"
-import { readVerifyMedian } from "~/features/data/dashboard.server"
-import { durationText } from "~/features/data/format"
 import { CopyCode } from "~/features/report/copy-code"
 import { EmergencyBanner } from "~/features/report/emergency"
 import { useHydrated } from "~/features/report/hydrated"
@@ -16,7 +13,6 @@ import { ReportLabel } from "~/features/report/report-label"
 import type { ReportHandle } from "~/features/report/step-page"
 import { reportCodeExists } from "~/features/report/tracking.server"
 import { m } from "~/paraglide/messages.js"
-import { VERIFY_WINDOW_DAYS } from "../../../shared/dashboard.ts"
 import { formatDate } from "../../../shared/format.ts"
 import { normalizeReportCode } from "../../../shared/report-id.ts"
 import { sessionContext, tenantContext } from "../../context.ts"
@@ -41,7 +37,6 @@ export async function loader({ params, context }: Route.LoaderArgs) {
     // WhatsApp-only accounts get no mail
     emailReady: context.get(sessionContext)?.user.emailVerified ?? true,
     // PLAN §5.5, real median only
-    verifyHours: await readVerifyMedian(tenant.id),
   }
 }
 
@@ -99,19 +94,14 @@ export default function Success({ loaderData }: Route.ComponentProps) {
       body: loaderData.signedIn
         ? m.success_next_body_signed_in()
         : m.success_next_body(),
-      usually:
-        loaderData.verifyHours === null
-          ? null
-          : m.success_next_usually({
-              duration: durationText(loaderData.verifyHours),
-              days: VERIFY_WINDOW_DAYS,
-            }),
     },
-    { title: m.success_next_merge(), body: m.home_how_step_3(), usually: null },
+    {
+      title: m.success_next_merge(),
+      body: m.success_next_merge_body(),
+    },
     {
       title: m.success_next_follow(),
       body: m.home_how_step_4(),
-      usually: null,
     },
   ]
   return (
@@ -152,15 +142,17 @@ export default function Success({ loaderData }: Route.ComponentProps) {
         <ol className="mt-5 flex flex-col gap-5">
           {next.map((step, index) => (
             <li key={step.title} className="flex items-start gap-4">
-              <StepNumber>{index + 1}</StepNumber>
-              <div className="mt-2">
-                <p className="font-semibold">{step.title}</p>
-                <p className="text-ink-soft text-sm leading-relaxed">
+              <span
+                aria-hidden="true"
+                className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-soft font-heading text-brand text-lg"
+              >
+                {index + 1}
+              </span>
+              <div className="pt-1.5">
+                <p className="font-semibold text-lg">{step.title}</p>
+                <p className="mt-1 text-ink-soft leading-relaxed">
                   {step.body}
                 </p>
-                {step.usually ? (
-                  <p className="mt-1 font-semibold text-sm">{step.usually}</p>
-                ) : null}
               </div>
             </li>
           ))}

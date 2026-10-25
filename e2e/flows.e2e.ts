@@ -24,12 +24,12 @@ test("the report form starts and keeps its draft", async ({ page }) => {
   await expect(page.locator('input[name="relation"]').first()).toBeChecked()
 })
 
-test("the dashboard table toggle shows the numbers", async ({ page }) => {
+// Tables shown, no toggle
+test("the dashboard shows its numbers in tables", async ({ page }) => {
   await page.goto("/data")
-  const toggle = page.getByRole("button", { name: /^Tabel/ }).first()
-  await toggle.click()
-  await expect(toggle).toHaveAttribute("aria-pressed", "true")
-  await expect(page.locator("table").first()).toBeVisible()
+  const table = page.locator("main table").first()
+  await expect(table).toBeVisible()
+  await expect(table.locator("tbody tr").first()).toBeVisible()
 })
 
 for (const width of [1024, 1280]) {

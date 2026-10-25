@@ -71,7 +71,6 @@ export const CONSENT_KEYS = [
   "accurate",
   "public_issue",
   "aggregate_processing",
-  "forward_to_agency",
 ] as const
 export type ConsentKey = (typeof CONSENT_KEYS)[number]
 

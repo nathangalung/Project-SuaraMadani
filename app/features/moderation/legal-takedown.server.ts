@@ -5,7 +5,7 @@ import { withTenant } from "../../../db/tenant.server.ts"
 import type { PurgeDeps } from "../../../server/purge.server.ts"
 import { isLegalReason, type LegalReason } from "../../../shared/complaints.ts"
 import { purgeDemandPages } from "../demands/purge.server.ts"
-import { hideDemand, withdrawIssue } from "./complaints.server.ts"
+import { hideDemand, withdrawIssue } from "./takedown.server.ts"
 
 export type LegalTakedownInput = {
   issueId: string
@@ -45,7 +45,6 @@ export function legalTakedown(
       return withdrawIssue(tx, tenant.id, issue, {
         remove: input.decision === "remove",
         reason: input.reason,
-        complaintId: null,
         actorId: input.actorId,
       })
     },
@@ -92,7 +91,6 @@ export async function legalTakedownDemand(
       const purge = await hideDemand(tx, tenant.id, demand, {
         reason: input.reason,
         actorId: input.actorId,
-        complaintId: null,
       })
       return { ok: true, purge } as const
     },

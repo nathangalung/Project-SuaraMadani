@@ -70,7 +70,7 @@ function PendingRow({ item }: { item: PendingUpload }) {
         <span className="font-semibold">
           {m.manage_evidence_item({ position: item.position + 1 })}
         </span>{" "}
-        · {item.name}
+        {item.name}
       </p>
       <div className="flex flex-col items-start gap-1 sm:items-end">
         {state.kind === "done" ? null : (

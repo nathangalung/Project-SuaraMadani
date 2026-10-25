@@ -28,9 +28,7 @@ import {
 import {
   issueRow,
   postForm,
-  publishIssue,
   reportToIssue,
-  review,
   submitReport,
 } from "../e2e/staff-flows.ts"
 import { defaultFilesDir, originalPath } from "../server/files.server.ts"
@@ -122,7 +120,6 @@ async function publishedWithPhoto(
   )
   if (decided.status !== 303) throw new Error(`decide ${decided.status}`)
   const issue = await reportToIssue(app, su, HOST, admin.cookie, sent.code)
-  await publishIssue(app, su, HOST, admin.cookie, issue)
   const publish = createPublishHandler({
     filesDir: defaultFilesDir(),
     db: mediaDb,
@@ -313,17 +310,10 @@ describe("operations", () => {
       headers: { cookie: owner.cookie, origin: ORIGIN },
       body: jpeg,
     })
-    await review(app, su, HOST, admin.cookie, rejected.code, {
-      intent: "start_review",
-    })
-    await review(app, su, HOST, admin.cookie, rejected.code, {
-      intent: "reject",
-      reason: "standard_2",
-      reasonText: "Laporan ini menuduh orang yang bisa dikenali tanpa bukti.",
-    })
+    // Rejection is legacy only
     await su.query(
-      "UPDATE reports SET updated_at = now() - interval '91 days' WHERE public_code = $1",
-      [rejected.code],
+      "UPDATE reports SET status = 'rejected', updated_at = now() - interval '91 days' WHERE org_id = $1 AND public_code = $2",
+      [orgId, rejected.code],
     )
     const late = await submitReport(app, HOST, owner.cookie, {
       evidence: [{ name: "b.jpg", size: 100, type: "image/jpeg" }],

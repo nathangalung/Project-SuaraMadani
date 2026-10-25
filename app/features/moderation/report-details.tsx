@@ -125,9 +125,6 @@ export function ReportDetails({ report }: { report: ReviewReport }) {
       <Row term={m.review_contact()}>
         {labelOf(CONTACTABLE_TEXT, report.contactable ? "yes" : "no")}
       </Row>
-      <Row term={m.review_forward_consent()}>
-        {labelOf(CONTACTABLE_TEXT, report.forwardConsent ? "yes" : "no")}
-      </Row>
     </dl>
   )
 }
@@ -204,7 +201,7 @@ export function EvidenceList({ report }: { report: ReviewReport }) {
             )}
             <div className="flex flex-1 flex-col gap-1.5 p-4">
               <p className="font-semibold">
-                {m.manage_evidence_item({ position })} · {kindText(file)}
+                {m.manage_evidence_item({ position })}, {kindText(file)}
               </p>
               <p className="break-all text-ink-muted text-sm">
                 {file.declaredName}

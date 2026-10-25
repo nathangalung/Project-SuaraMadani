@@ -28,12 +28,14 @@ import {
   stubTurnstile,
 } from "../../../e2e/app-harness.ts"
 import {
+  CHECKLIST,
   issueAction,
   issueRow,
   postForm,
   publishIssue,
   referFields,
   reportStatus,
+  reportToDraftIssue,
   reportToIssue,
   review,
   submitReport,
@@ -72,13 +74,27 @@ async function reporter(label: string) {
   return signedIn(HOST, person(label))
 }
 
+async function emailOf(userId: string): Promise<string> {
+  const { rows } = await su.query<{ email: string }>(
+    "SELECT email FROM users WHERE id = $1",
+    [userId],
+  )
+  return rows[0]?.email ?? ""
+}
+
+const NEW_ISSUE = {
+  target: "new",
+  title: "Lampu jalan padam di Coblong",
+  summary: "Lampu jalan di jalan utama Coblong padam sejak dua minggu.",
+}
+
 const today = () => jakartaIsoDate(new Date())
 const inDays = (days: number) =>
   jakartaIsoDate(new Date(Date.now() + days * 86_400_000))
 
 async function mailTo(
   email: string,
-): Promise<{ subject: string; text: string }[]> {
+): Promise<{ subject: string; text: string; html: string }[]> {
   const box = mailbox()
   await box.deliver(su, orgA)
   await box.deliver(su, orgB)
@@ -89,8 +105,6 @@ async function publishedIssue(label: string) {
   const owner = await reporter(label)
   const { code } = await submitReport(app, HOST, owner.cookie)
   const issue = await reportToIssue(app, su, HOST, adminA.cookie, code)
-  const res = await publishIssue(app, su, HOST, adminA.cookie, issue)
-  if (res.status !== 303) throw new Error(`publish ${res.status}`)
   return { owner, report: code, issue }
 }
 
@@ -129,88 +143,125 @@ afterAll(async () => {
 })
 
 describe("report review", () => {
-  test("[AC-MOD-01] Given a new report, when an admin starts the review and verifies it, then each step changes its status and emails the reporter", async () => {
+  test("[AC-MOD-01] Given a new report, when an admin verifies it into a new issue with the full checklist, then in one step the report is merged into a published issue and the reporter gets one email, while the removed review step, a partial checklist and a stale decision are refused", async () => {
     const owner = await reporter("tinjau")
     const { code } = await submitReport(app, HOST, owner.cookie)
-    const email = (
-      await su.query<{ email: string }>(
-        "SELECT email FROM users WHERE id = $1",
-        [owner.userId],
-      )
-    ).rows[0]?.email
-    await mailTo(email ?? "")
+    const email = await emailOf(owner.userId)
+    await mailTo(email)
+    // Review step removed 25 Oct
     const started = await review(app, su, HOST, adminA.cookie, code, {
       intent: "start_review",
     })
-    expect(started.status).toBe(303)
-    expect(await reportStatus(su, HOST, code)).toBe("in_review")
+    expect(started.status).toBe(400)
+    const partial = await review(app, su, HOST, adminA.cookie, code, {
+      intent: "verify",
+      method: "site_photo",
+      ...NEW_ISSUE,
+      checklist: CHECKLIST.slice(0, 3),
+    })
+    expect(partial.status).toBe(400)
+    expect(await reportStatus(su, HOST, code)).toBe("submitted")
     const verified = await review(app, su, HOST, adminA.cookie, code, {
       intent: "verify",
       method: "site_photo",
+      ...NEW_ISSUE,
+      checklist: CHECKLIST,
     })
     expect(verified.status).toBe(303)
-    expect(await reportStatus(su, HOST, code)).toBe("verified")
-    const mails = await mailTo(email ?? "")
-    expect(mails).toHaveLength(2)
-    for (const mail of mails) expect(mail.text).toContain(code)
-    const stale = await review(app, su, HOST, adminA.cookie, code, {
-      intent: "start_review",
-      from: "submitted",
-    })
+    const issue = /\/kelola\/isu\/([^/#?]+)/.exec(
+      verified.headers.get("location") ?? "",
+    )?.[1]
+    expect(await reportStatus(su, HOST, code)).toBe("merged")
+    expect((await app.request(`${ORIGIN}/isu/${issue}`)).status).toBe(200)
+    const mails = await mailTo(email)
+    expect(mails).toHaveLength(1)
+    expect(mails[0]?.text).toContain(code)
+    const stale = await postForm(
+      app,
+      `${ORIGIN}/kelola/laporan/${code}`,
+      adminA.cookie,
+      {
+        intent: "verify",
+        from: "submitted",
+        method: "site_photo",
+        ...NEW_ISSUE,
+        checklist: CHECKLIST,
+      },
+    )
     expect(stale.status).toBe(409)
   })
 
-  test("[AC-MOD-02] Given a report under review, when an admin rejects it with a numbered standard, then the reporter gets the reason by email and on /lacak, and a reason without text is refused", async () => {
+  test("[AC-MOD-02] Given a new report, when an admin marks it unverifiable with a free-text reason, then the decision is audited without its text, the reporter reads that reason safely by email and on /lacak with no reason code or standard link, a short or blank reason is refused, and a rejection is no longer accepted", async () => {
     const owner = await reporter("tolak")
     const { code } = await submitReport(app, HOST, owner.cookie)
-    await review(app, su, HOST, adminA.cookie, code, { intent: "start_review" })
-    const short = await review(app, su, HOST, adminA.cookie, code, {
-      intent: "reject",
-      reason: "standard_2",
-      reasonText: "pendek",
-    })
-    expect(short.status).toBe(400)
-    expect(await reportStatus(su, HOST, code)).toBe("in_review")
-    const reasonText =
-      "Laporan ini menuduh orang yang bisa dikenali tanpa bukti."
+    for (const reasonText of ["pendek", " ".repeat(30)]) {
+      const short = await review(app, su, HOST, adminA.cookie, code, {
+        intent: "mark_unverifiable",
+        reasonText,
+      })
+      expect(short.status).toBe(400)
+    }
+    // Reject form removed 25 Oct
     const rejected = await review(app, su, HOST, adminA.cookie, code, {
       intent: "reject",
       reason: "standard_2",
+      reasonText: "Laporan ini menuduh orang yang bisa dikenali tanpa bukti.",
+    })
+    expect(rejected.status).toBe(400)
+    expect(await reportStatus(su, HOST, code)).toBe("submitted")
+    const reasonText =
+      "Lokasi “Jl. Dago” <b>belum</b> bisa kami pastikan & fotonya buram."
+    const decided = await review(app, su, HOST, adminA.cookie, code, {
+      intent: "mark_unverifiable",
       reasonText,
     })
-    expect(rejected.status).toBe(303)
-    expect(await reportStatus(su, HOST, code)).toBe("rejected")
+    expect(decided.status).toBe(303)
+    expect(await reportStatus(su, HOST, code)).toBe("unverifiable")
     const { rows } = await su.query<{
-      reason_code: string
+      reason_code: string | null
+      reason_text: string
       decided_by: string
     }>(
-      `SELECT d.reason_code, d.decided_by FROM moderation_decisions d
+      `SELECT d.reason_code, d.reason_text, d.decided_by FROM moderation_decisions d
        JOIN reports r ON r.id = d.report_id WHERE r.public_code = $1`,
       [code],
     )
     expect(rows).toEqual([
-      { reason_code: "standard_2", decided_by: adminA.userId },
+      { reason_code: null, reason_text: reasonText, decided_by: adminA.userId },
     ])
-    const box = mailbox()
-    await box.deliver(su, orgA)
-    const mail = box.sent.find(
-      (m) => m.text.includes(code) && m.text.includes(reasonText),
+    // Audited, text stays redactable
+    const audit = await su.query<{ reason_code: string | null; row: string }>(
+      `SELECT a.reason_code, row_to_json(a)::text AS row FROM audit_log a
+       JOIN reports r ON r.id = a.entity_id
+       WHERE a.action = 'report.mark_unverifiable' AND r.public_code = $1`,
+      [code],
     )
-    expect(mail?.text).toContain("/pedoman")
+    expect(audit.rows).toHaveLength(1)
+    expect(audit.rows[0]?.reason_code).toBeNull()
+    expect(audit.rows[0]?.row).not.toContain("fotonya buram")
+    const mail = (await mailTo(await emailOf(owner.userId))).find((m) =>
+      m.text.includes("fotonya buram"),
+    )
+    expect(mail?.text).toContain(reasonText)
+    expect(mail?.html).toContain("&lt;b&gt;belum&lt;/b&gt;")
+    expect(mail?.html).not.toContain("<b>belum")
+    expect(mail?.text).not.toContain("/pedoman#standar")
     const track = await app.request(`${ORIGIN}/lacak`, {
       headers: { cookie: owner.cookie },
     })
     expect(track.status).toBe(200)
     expect(track.headers.get("Cache-Control")).toBe("private, no-store")
-    expect(await track.text()).toContain(reasonText)
+    const page = await track.text()
+    expect(page).toContain("&lt;b&gt;belum&lt;/b&gt;")
+    expect(page).not.toContain("<b>belum")
   })
 })
 
 describe("issues", () => {
-  test("[AC-MOD-03] Given a verified report, when an admin merges it into a new issue, then the issue stays private until published and the reporter follows it, and a closed issue cannot take new reports", async () => {
+  test("[AC-MOD-03] Given a verified report from before 25 Oct, when an admin merges it into a new issue, then the issue stays private until published and the reporter follows it, and a closed issue cannot take a newly verified report", async () => {
     const owner = await reporter("gabung")
     const { code } = await submitReport(app, HOST, owner.cookie)
-    const issue = await reportToIssue(app, su, HOST, adminA.cookie, code)
+    const issue = await reportToDraftIssue(app, su, HOST, adminA.cookie, code)
     expect(await reportStatus(su, HOST, code)).toBe("merged")
     expect((await app.request(`${ORIGIN}/isu/${issue}`)).status).toBe(404)
     const follows = await su.query(
@@ -226,38 +277,26 @@ describe("issues", () => {
     expect(closed.status).toBe(303)
     const late = await reporter("telat")
     const next = await submitReport(app, HOST, late.cookie)
-    await review(app, su, HOST, adminA.cookie, next.code, {
-      intent: "start_review",
-    })
-    await review(app, su, HOST, adminA.cookie, next.code, {
+    const { id } = await issueRow(su, HOST, issue)
+    const refused = await review(app, su, HOST, adminA.cookie, next.code, {
       intent: "verify",
       method: "document",
+      target: "existing",
+      issueId: id,
     })
-    const { id } = await issueRow(su, HOST, issue)
-    const refused = await postForm(
-      app,
-      `${ORIGIN}/kelola/laporan/${next.code}`,
-      adminA.cookie,
-      { intent: "merge", target: "existing", issueId: id },
-    )
     // Closed issue is no target
     expect(refused.status).toBe(400)
-    expect(await reportStatus(su, HOST, next.code)).toBe("verified")
+    expect(await reportStatus(su, HOST, next.code)).toBe("submitted")
   })
 
-  test("[AC-MOD-04] Given an unpublished issue, when an admin publishes it with the full checklist, then it becomes public and its followers are emailed, and a partial checklist is refused", async () => {
+  test("[AC-MOD-04] Given an unpublished issue, when an admin publishes it with the full checklist, then it becomes public without emailing its followers, and a partial checklist is refused", async () => {
     const owner = await reporter("terbit")
     const { code } = await submitReport(app, HOST, owner.cookie)
-    const issue = await reportToIssue(app, su, HOST, adminA.cookie, code)
+    const issue = await reportToDraftIssue(app, su, HOST, adminA.cookie, code)
     const { id } = await issueRow(su, HOST, issue)
-    const email = (
-      await su.query<{ email: string }>(
-        "SELECT email FROM users WHERE id = $1",
-        [owner.userId],
-      )
-    ).rows[0]?.email
-    // Review and merge mails out
-    await mailTo(email ?? "")
+    const email = await emailOf(owner.userId)
+    // Merge mail out
+    await mailTo(email)
     const partial = await postForm(
       app,
       `${ORIGIN}/kelola/isu/${issue}`,
@@ -272,9 +311,8 @@ describe("issues", () => {
     expect(page.status).toBe(200)
     const list = await (await app.request(`${ORIGIN}/isu`)).text()
     expect(list).toContain(issue)
-    const mails = await mailTo(email ?? "")
-    expect(mails).toHaveLength(1)
-    expect(mails[0]?.text).toContain(issue)
+    // Follower emails removed 25 Oct
+    expect(await mailTo(email)).toEqual([])
   })
 
   test("[AC-MOD-05] Given a published issue, when an admin refers, escalates, re-refers and records a response, then each step follows the two-axis state machine, needs an http(s) source and refuses a stale version", async () => {
@@ -400,80 +438,27 @@ describe("issues", () => {
     expect(await page.text()).not.toContain(phone ?? "missing")
   })
 
-  test("[AC-MOD-07] Given a report about another campus, when an admin forwards it, then campus B gets a copy with its own code and evidence but no contact, both audit logs record it and the reporter gets B's tracking link", async () => {
+  test("[AC-MOD-07] Given a report about another campus, when an admin posts the removed forward action, then it is refused, the report stays where it is and the other campus gets no copy", async () => {
     const owner = await reporter("terus")
-    await su.query("UPDATE users SET phone_verified = true WHERE id = $1", [
-      owner.userId,
-    ])
-    const png = await sharp({
-      create: { width: 8, height: 8, channels: 3, background: "#336699" },
-    })
-      .png()
-      .toBuffer()
-    const sent = await submitReport(app, HOST, owner.cookie, {
-      contact: { contactable: "yes", method: "whatsapp" },
-      evidence: [{ name: "a.png", size: png.length, type: "image/png" }],
-    })
-    const evidenceId = sent.evidence[0]?.id ?? ""
-    const upload = await app.request(`${ORIGIN}/api/upload/${evidenceId}`, {
-      method: "POST",
-      headers: { cookie: owner.cookie, origin: ORIGIN },
-      body: png,
-    })
-    expect(upload.status).toBe(201)
-    await review(app, su, HOST, adminA.cookie, sent.code, {
-      intent: "start_review",
-    })
+    const sent = await submitReport(app, HOST, owner.cookie)
+    // Forwarding removed 25 Oct
     const res = await postForm(
       app,
       `${ORIGIN}/kelola/laporan/${sent.code}`,
       adminA.cookie,
-      { intent: "forward", targetOrgId: orgB },
+      { intent: "forward", from: "submitted", targetOrgId: orgB },
     )
-    expect(res.status).toBe(303)
-    expect(await reportStatus(su, HOST, sent.code)).toBe("forwarded")
-    const copy = await su.query<{
-      public_code: string
-      id: string
-      contacts: number
-      files: number
-    }>(
-      `SELECT r.public_code, r.id,
-         (SELECT count(*)::int FROM report_contacts c WHERE c.report_id = r.id) AS contacts,
-         (SELECT count(*)::int FROM evidence e WHERE e.report_id = r.id) AS files
-       FROM reports r WHERE r.org_id = $1
-         AND r.forwarded_from_report_id = (SELECT id FROM reports
-           WHERE org_id = $2 AND public_code = $3)`,
-      [orgB, orgA, sent.code],
-    )
-    expect(copy.rows).toHaveLength(1)
-    // Campus B's monthly counter
-    const counter = await su.query<{ code: string }>(
-      `SELECT format('LPR-%s-%s-%s', year, lpad(month::text, 2, '0'),
-         lpad(next::text, 4, '0')) AS code
-       FROM org_counters WHERE org_id = $1 AND kind = 'report'
-       ORDER BY year DESC, month DESC LIMIT 1`,
+    expect(res.status).toBe(400)
+    expect(await reportStatus(su, HOST, sent.code)).toBe("submitted")
+    const copies = await su.query(
+      "SELECT 1 FROM reports WHERE org_id = $1 AND forwarded_from_report_id IS NOT NULL",
       [orgB],
     )
-    expect(copy.rows[0]?.public_code).toBe(counter.rows[0]?.code ?? "")
-    expect(copy.rows[0]?.contacts).toBe(0)
-    expect(copy.rows[0]?.files).toBe(1)
-    const audits = await su.query<{ org_id: string }>(
-      "SELECT org_id FROM audit_log WHERE action LIKE 'report.forward%' ORDER BY org_id",
+    expect(copies.rowCount).toBe(0)
+    const audits = await su.query(
+      "SELECT 1 FROM audit_log WHERE action LIKE 'report.forward%'",
     )
-    expect(new Set(audits.rows.map((row) => row.org_id))).toEqual(
-      new Set([orgA, orgB]),
-    )
-    const email = (
-      await su.query<{ email: string }>(
-        "SELECT email FROM users WHERE id = $1",
-        [owner.userId],
-      )
-    ).rows[0]?.email
-    const mails = await mailTo(email ?? "")
-    expect(mails.some((m) => m.text.includes(`http://${OTHER}/lacak`))).toBe(
-      true,
-    )
+    expect(audits.rowCount).toBe(0)
   })
 
   test("[AC-MOD-08] Given a published issue, when an admin edits its title, then the public page shows the new title and the audit log holds only column names and hashes", async () => {
@@ -533,7 +518,7 @@ describe("issues", () => {
         [owner.userId],
       )
     ).rows[0]?.email
-    // Publish mail already out
+    // Verify mail already out
     await mailTo(email ?? "")
     const res = await postForm(
       app,
@@ -551,7 +536,7 @@ describe("issues", () => {
     const page = await app.request(`${ORIGIN}/isu/${issue}`)
     expect(page.status).toBe(410)
     expect(page.headers.get("Cache-Control")).toBe("no-store")
-    expect(await page.text()).toContain("/pedoman#perintah")
+    expect(await page.text()).toContain('href="/pedoman"')
     const takedown = await su.query<{ id: string }>(
       "SELECT id FROM takedowns WHERE issue_id = $1",
       [row.id],
@@ -708,7 +693,7 @@ describe("accounts and evidence", () => {
     }
   })
 
-  test("[AC-MOD-13] Given published issues in the report's regency, another regency and a closed one, when an admin opens a verified report, then merge targets list the same regency first, never the closed issue, and the search finds others by code", async () => {
+  test("[AC-MOD-13] Given published issues in the report's regency, another regency and a closed one, when an admin opens a new report, then verify targets list the same regency first, never the closed issue, and the search finds others by code", async () => {
     await su.query(
       `INSERT INTO regions (code, parent_code, level, name)
        VALUES ('32.04', '32', 2, 'Kabupaten Bandung') ON CONFLICT DO NOTHING`,
@@ -726,11 +711,6 @@ describe("accounts and evidence", () => {
     })
     const owner = await reporter("sarang")
     const { code } = await submitReport(app, HOST, owner.cookie)
-    await review(app, su, HOST, adminA.cookie, code, { intent: "start_review" })
-    await review(app, su, HOST, adminA.cookie, code, {
-      intent: "verify",
-      method: "document",
-    })
     const page = await (
       await app.request(`${ORIGIN}/kelola/laporan/${code}`, {
         headers: { cookie: adminA.cookie },

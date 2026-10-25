@@ -4,7 +4,6 @@ import {
   DEMAND_ACTIONS,
   type GovernmentStatus,
   ISSUE_ACTIONS,
-  type IssueAction,
   REPORT_ACTIONS,
   type VisibilityAction,
 } from "./status.ts"
@@ -52,13 +51,6 @@ export function isRejectReason(value: string): value is RejectReason {
   return (REJECT_REASONS as readonly string[]).includes(value)
 }
 
-export function isDecisionReason(value: string): value is DecisionReason {
-  return (
-    isRejectReason(value) ||
-    (UNVERIFIABLE_REASONS as readonly string[]).includes(value)
-  )
-}
-
 // Official channels, PLAN §5.4
 export const REFERRAL_CHANNELS = [
   "official_letter",
@@ -73,13 +65,22 @@ export const ESCALATION_CHANNELS = ["ombudsman", "dprd", "media"] as const
 export type EscalationChannel = (typeof ESCALATION_CHANNELS)[number]
 
 // Public timeline rows
-export const ISSUE_EVENT_ACTIONS = [...ISSUE_ACTIONS, "merge"] as const
-export type IssueEventAction = IssueAction | "merge"
+// Legacy claim rows still render
+export const ISSUE_EVENT_ACTIONS = [
+  ...ISSUE_ACTIONS,
+  "merge",
+  "claim_resolved",
+] as const
+export type IssueEventAction = (typeof ISSUE_EVENT_ACTIONS)[number]
 
 // Every audit_log action written
 export const AUDIT_ACTIONS = [
   "report.submit",
   ...REPORT_ACTIONS.map((action) => `report.${action}` as const),
+  // Legacy rows, steps removed
+  "report.start_review",
+  "issue.claim_resolved",
+  "report.forward",
   "report.forward_in",
   "issue.create",
   "issue.publish",
@@ -92,6 +93,7 @@ export const AUDIT_ACTIONS = [
   "settings.identity",
   "evidence.decide",
   "evidence.download_original",
+  // Legacy rows, complaints removed
   "complaint.submit",
   "complaint.decide",
   "complaint.appeal",
@@ -114,6 +116,7 @@ export const AUDIT_ACTIONS = [
   "demand.edit",
   "demand.delete",
   ...DEMAND_ACTIONS.map((action) => `demand.${action}` as const),
+  // Legacy rows, complaints removed
   "demand.hide",
   "demand.item_add",
   "demand.item_edit",
@@ -134,6 +137,7 @@ export const AUDIT_ENTITIES = [
   "issue",
   "user",
   "evidence",
+  // Legacy rows, complaints removed
   "complaint",
   "invitation",
   "organization",
@@ -180,13 +184,6 @@ export const MODERATION_LENGTHS = {
 } as const
 
 const URL_MAX = 2000
-
-/** /pedoman anchor for a reason. */
-export function standardAnchor(reason: RejectReason): string {
-  return reason === "out_of_scope"
-    ? "cakupan"
-    : `standar-${reason.slice("standard_".length)}`
-}
 
 /** http(s) only, no credentials. */
 export function parseSourceUrl(value: string): string | null {

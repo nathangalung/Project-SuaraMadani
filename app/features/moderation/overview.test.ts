@@ -123,17 +123,11 @@ describe("readManageSummary", () => {
 
     expect(summary.counts).toEqual({
       submitted: 1,
-      in_review: 1,
-      verified: 1,
       unverifiable: 0,
     })
-    expect(summary.forwardedIn).toBe(1)
-    expect(summary.oldestWaiting).toBeInstanceOf(Date)
     expect(summary.needs).toEqual({
-      draf: 1,
       "belum-diteruskan": 1,
       "lewat-tenggat": 1,
-      klaim: 1,
     })
   })
 })
@@ -147,10 +141,6 @@ describe("listManagedIssues", () => {
     const all = await listManagedIssues(orgA, "admin", null, NOW)
     expect(all).toHaveLength(3)
     expect(all.filter((row) => row.takenDown)).toHaveLength(1)
-    const drafts = await listManagedIssues(orgA, "admin", "draf", NOW)
-    expect(drafts.map((row) => [row.published, row.takenDown])).toEqual([
-      [false, false],
-    ])
     const late = await listManagedIssues(orgA, "admin", "lewat-tenggat", NOW)
     expect(late).toHaveLength(1)
   })

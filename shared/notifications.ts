@@ -27,13 +27,13 @@ const MORNING_HOUR_WIB = 7
 const WIB_OFFSET_MS = 7 * 3_600_000
 const DAY_MS = 86_400_000
 
-// Complainant mail, PLAN §5.10
-export const COMPLAINT_TEMPLATES = [
+// Legacy rows, complaints removed
+const COMPLAINT_TEMPLATES = [
   "complaint_received",
   "complaint_decided",
   "complaint_appeal_decided",
 ] as const
-export type ComplaintTemplate = (typeof COMPLAINT_TEMPLATES)[number]
+type ComplaintTemplate = (typeof COMPLAINT_TEMPLATES)[number]
 
 // Admin digest, no subject row
 export const DEADLINE_TEMPLATE = "referral_deadline" as const
@@ -45,9 +45,13 @@ export const SURVEY_TEMPLATE = "claim_survey" as const
 const REPLY_TEMPLATES = ["reply_received", "reply_decided"] as const
 export type ReplyTemplate = (typeof REPLY_TEMPLATES)[number]
 
+// Legacy rows, claim removed
+export const LEGACY_CLAIM_TEMPLATE = "issue_claim_resolved" as const
+
 export type NotificationTemplate =
   | EmailTemplate
   | "issue_published"
+  | typeof LEGACY_CLAIM_TEMPLATE
   | ComplaintTemplate
   | typeof DEADLINE_TEMPLATE
   | typeof SURVEY_TEMPLATE
@@ -57,6 +61,7 @@ export const NOTIFICATION_TEMPLATES: readonly NotificationTemplate[] = [
   ...REPORT_STATUSES.map((status) => `report_${status}` as const),
   ...ISSUE_ACTIONS.map((action) => `issue_${action}` as const),
   "issue_published",
+  LEGACY_CLAIM_TEMPLATE,
   ...COMPLAINT_TEMPLATES,
   ...DEMAND_ACTIONS.map((action) => `demand_${action}` as const),
   "demand_update",
@@ -69,12 +74,6 @@ export type DemandTemplate = `demand_${DemandAction}` | "demand_update"
 
 export function isDemandTemplate(template: string): template is DemandTemplate {
   return template.startsWith("demand_")
-}
-
-export function isComplaintTemplate(
-  template: string,
-): template is ComplaintTemplate {
-  return (COMPLAINT_TEMPLATES as readonly string[]).includes(template)
 }
 
 export function isReplyTemplate(template: string): template is ReplyTemplate {

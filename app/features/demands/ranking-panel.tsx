@@ -15,7 +15,6 @@ import { m } from "~/paraglide/messages.js"
 import {
   RANKING_ACCOUNT_DAYS,
   RANKING_MIN_RANKERS,
-  RANKING_SIZE,
 } from "../../../shared/demands.ts"
 import { CATEGORY_TEXT } from "./category-labels"
 import { demandPlace } from "./labels"
@@ -33,7 +32,7 @@ const IDS = {
 } as const
 
 const FIELD_TEXT: Record<RankingErrorKey, () => string> = {
-  empty: m.error_rank_empty,
+  missing: m.error_rank_missing,
   duplicate: m.error_rank_duplicate,
 }
 
@@ -47,8 +46,6 @@ function failureError(error: string): FieldError {
   }
   return { fieldId: IDS.submit, message: m.error_rank_unavailable() }
 }
-
-const POSITIONS = Array.from({ length: RANKING_SIZE }, (_, i) => i + 1)
 
 /** Signed-in form, needs JS. */
 export function RankingForm({
@@ -106,6 +103,8 @@ export function RankingForm({
     fetcher.submit(form, { method: "post" })
   }
 
+  // One place per tuntutan
+  const positions = choices.map((_, index) => index + 1)
   const errorFor = (id: string) => errors.find((e) => e.fieldId === id)?.message
   const listError = errorFor(IDS.list)
   return (
@@ -153,7 +152,7 @@ export function RankingForm({
                       choice.category ? CATEGORY_TEXT[choice.category]() : null,
                     ]
                       .filter(Boolean)
-                      .join(" · ")}
+                      .join(", ")}
                   </p>
                 </div>
                 <SelectControl
@@ -165,7 +164,7 @@ export function RankingForm({
                   defaultValue={choice.position ?? ""}
                 >
                   <option value="">{m.demand_rank_none()}</option>
-                  {POSITIONS.map((position) => (
+                  {positions.map((position) => (
                     <option key={position} value={position}>
                       {position}
                     </option>

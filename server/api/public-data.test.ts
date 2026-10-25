@@ -139,7 +139,7 @@ test("the no-PII guard knows every personal key", () => {
 
 function snapshot(): DashboardSnapshot {
   const data: DashboardSnapshot = {
-    v: 6,
+    v: 8,
     firstReportAt: "2026-03-02",
     reports: {
       total: 64,
@@ -150,27 +150,16 @@ function snapshot(): DashboardSnapshot {
     },
     issues: { published: 26, mergedReports: 40, reportsPerIssue: 1.5 },
     verifyTime: { n: 40, medianHours: 20, p90Hours: 70 },
-    resolution: {
-      pending: 2,
-      confirmed: 5,
-      reopened: 3,
-      claimTotal: 10,
-      checked: 8,
-      confirmedShare: 0.625,
-    },
+    resolution: { done: 5, published: 26, share: 0.19 },
     trend: [{ month: "2026-10", received: 10, verified: 5 }],
     trendTotal: 10,
     categories: { program: 20, bencana: 6, bansos: 0 },
     statuses: {
-      awaiting_response: 12,
+      verified: 4,
+      referred: 8,
       responded: 6,
       in_progress: 0,
-      claimed_resolved: 2,
-      confirmed_resolved: 5,
-      reopened: 3,
-      not_competent: 0,
-      not_followed_up: 0,
-      closed: 0,
+      done: 5,
     },
     verifiedProvinces: { "all|all": { "32": 22, "34": null } },
     verifiedProvinceTotals: { "all|all": 26 },
@@ -184,30 +173,6 @@ function snapshot(): DashboardSnapshot {
       overdue: [{ agency: "BPBD Kota Bandung", overdue: 1, referred: 2 }],
       clearAgencies: 1,
       unreferred: 2,
-    },
-    reasons: {
-      rejected: {
-        standard_1: 0,
-        standard_2: 6,
-        standard_3: null,
-        standard_4: 0,
-        standard_5: 0,
-        standard_6: 0,
-        standard_7: 0,
-        standard_8: 0,
-        standard_9: 0,
-        standard_10: 0,
-        standard_11: 0,
-        standard_12: 0,
-        standard_13: 0,
-        out_of_scope: 5,
-      },
-      unverifiable: {
-        no_evidence: 7,
-        source_unreachable: 0,
-        conflicting_information: 0,
-        location_unclear: null,
-      },
     },
   }
   // Worker writes every key
@@ -230,6 +195,7 @@ const FIELDS: DemandFields = {
   summary: "Waktu pemulihan suplai air dan tangki air bantuan.",
   target: "Pemerintah Provinsi Jawa Barat",
   raisedOn: "2026-07-30",
+  briefUrl: null,
 }
 let demandCode = ""
 let draftDemand = ""
@@ -531,7 +497,7 @@ describe("issue JSON", () => {
   test("Given more issues than one page, when a client follows next, then it gets the rest without a redirect", async () => {
     const orgId = await insertOrg(su, "halapi")
     await suDb.insert(issues).values(
-      Array.from({ length: 21 }, (_, i) => ({
+      Array.from({ length: 16 }, (_, i) => ({
         orgId,
         year: 2026,
         number: i + 1,
@@ -551,9 +517,9 @@ describe("issue JSON", () => {
     )
     expect(first.status).toBe(200)
     const page = await first.json()
-    expect(page.issues).toHaveLength(20)
-    expect(page.next).toStartWith(
-      "http://halapi.localhost/api/v1/isu?kategori=program&kursor=",
+    expect(page.issues).toHaveLength(15)
+    expect(page.next).toBe(
+      "http://halapi.localhost/api/v1/isu?halaman=2&kategori=program",
     )
     const second = await get(page.next)
     expect(second.status).toBe(200)
@@ -561,17 +527,16 @@ describe("issue JSON", () => {
     const codes = (body: { issues: { code: string }[] }) =>
       body.issues.map((issue) => issue.code)
     expect(codes(rest)).toEqual(["ISU-2026-10-0001"])
-    expect(new Set([...codes(page), ...codes(rest)]).size).toBe(21)
+    expect(new Set([...codes(page), ...codes(rest)]).size).toBe(16)
     expect(rest.next).toBeNull()
   })
 
   test("bad list queries are refused before any read", async () => {
     await expectError(await get(`${ITB}/api/v1/isu?q=ab`), 400, "short_query")
-    await expectError(
-      await get(`${ITB}/api/v1/isu?kursor=bad`),
-      400,
-      "bad_cursor",
-    )
+    // Old cursor links: canonical redirect
+    const old = await get(`${ITB}/api/v1/isu?kursor=bad`)
+    expect(old.status).toBe(301)
+    expect(old.headers.get("Location")).toBe("/api/v1/isu")
     const res = await get(`${ITB}/api/v1/isu?utm_source=x`)
     expect(res.status).toBe(301)
     expect(res.headers.get("Location")).toBe("/api/v1/isu")
@@ -645,6 +610,39 @@ describe("tuntutan JSON", () => {
     }
   })
 
+  test("Given brief links on the demand and one item, when the demand JSON is read, then each carries its link and the others null", async () => {
+    const link = "https://docs.google.com/document/d/kajian/view"
+    await su.query("UPDATE demands SET brief_url = $2 WHERE public_code = $1", [
+      demandCode,
+      link,
+    ])
+    await su.query(
+      `UPDATE demand_items SET brief_url = $2 WHERE id = (
+         SELECT i.id FROM demand_items i JOIN demands d ON d.id = i.demand_id
+         WHERE d.public_code = $1 ORDER BY i.position DESC LIMIT 1)`,
+      [demandCode, `${link}#bagian-2`],
+    )
+    try {
+      const body = await (
+        await get(`${ITB}/api/v1/tuntutan/${demandCode}`)
+      ).json()
+      expect(body.demand.briefUrl).toBe(link)
+      expect(
+        body.demand.items.map((one: { briefUrl: unknown }) => one.briefUrl),
+      ).toEqual([null, `${link}#bagian-2`])
+    } finally {
+      await su.query(
+        `UPDATE demand_items SET brief_url = NULL WHERE demand_id =
+           (SELECT id FROM demands WHERE public_code = $1)`,
+        [demandCode],
+      )
+      await su.query(
+        "UPDATE demands SET brief_url = NULL WHERE public_code = $1",
+        [demandCode],
+      )
+    }
+  })
+
   test("drafts and other tenants are 404, the list skips drafts", async () => {
     await expectError(
       await get(`${ITB}/api/v1/tuntutan/${draftDemand}`),
@@ -701,28 +699,33 @@ describe("dashboard data", () => {
   })
 
   test("CSV per table, suppressed cells empty", async () => {
-    const res = await get(`${ITB}/api/v1/data/alasan.csv`)
+    const res = await get(`${ITB}/api/v1/data/wilayah.csv`)
     expect(res.status).toBe(200)
     expectPublic(res)
     expect(res.headers.get("Content-Type")).toBe(
       "text/csv; charset=utf-8; header=present",
     )
     expect(res.headers.get("Content-Disposition")).toBe(
-      'attachment; filename="itbapi-alasan.csv"',
+      'attachment; filename="itbapi-wilayah.csv"',
     )
     expect(res.headers.get("Link")).toContain(
       '<http://itbapi.localhost/api/v1/data>; rel="describedby"',
     )
     const text = await res.text()
-    expect(text.startsWith("outcome,reason,reports\r\n")).toBe(true)
-    expect(text).toContain("rejected,standard_2,6\r\n")
-    expect(text).toContain("rejected,standard_3,\r\n")
+    expect(text).toContain(",verified_reports\r\n")
     const totals = await get(`${ITB}/api/v1/data/wilayah-total.csv`)
     expect(totals.status).toBe(200)
     expectPublic(totals)
     const rows = await totals.text()
     expect(rows.startsWith("category,status,verified_reports\r\n")).toBe(true)
     expect(rows).toContain("all,all,26\r\n")
+  })
+
+  test("reasons are free text, so no reason table", async () => {
+    // Per-reason table removed
+    expect((await get(`${ITB}/api/v1/data/alasan.csv`)).status).toBe(404)
+    const body = await (await get(`${ITB}/api/v1/data`)).json()
+    expect(Object.keys(body.datasets)).not.toContain("alasan")
   })
 
   test("a README carries the licence beside the CSVs", async () => {

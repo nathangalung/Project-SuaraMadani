@@ -57,10 +57,10 @@ export default function Members({
       <h1 className="font-bold font-heading text-3xl [font-synthesis-weight:none]">
         {title}
       </h1>
-      <p className="mt-2 max-w-3xl text-ink-muted">
+      <p className="mt-2 text-ink-muted">
         {m.team_lead({ operator: loaderData.operator })}
       </p>
-      <section aria-labelledby="undang-anggota" className="mt-10 max-w-2xl">
+      <section aria-labelledby="undang-anggota" className="mt-10">
         <h2 id="undang-anggota" className="mb-4 font-bold text-2xl">
           {m.team_invite_title()}
         </h2>

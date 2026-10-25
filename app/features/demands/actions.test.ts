@@ -59,6 +59,7 @@ const FIELDS: DemandFields = {
   summary: "Rincian anggaran beasiswa daerah dibuka untuk publik.",
   target: "Pemerintah Kota Bandung",
   raisedOn: "2026-09-01",
+  briefUrl: null,
 }
 
 // Form strings for FIELDS
@@ -433,6 +434,7 @@ describe("sub-tuntutan", () => {
     expect(await edit(code, { intent: "add_item", body: "pendek" })).toEqual({
       errors: ["item_body"],
       intent: "add_item",
+      values: { body: "pendek", briefUrl: "" },
     })
     expect(
       await edit(code, {
@@ -469,7 +471,7 @@ describe("sub-tuntutan", () => {
       errors: ["item_body"],
       intent: "edit_item",
       itemId: item.id,
-      values: { body: "pendek" },
+      values: { body: "pendek", briefUrl: "" },
     })
     expect(
       await edit(code, {
@@ -480,6 +482,54 @@ describe("sub-tuntutan", () => {
     expect((await firstItem(code)).body).toBe(
       "Rincian anggaran per sekolah negeri",
     )
+  })
+
+  test("a brief link is checked on the server, kept on error, saved and cleared", async () => {
+    const code = await draft()
+    for (const bad of [
+      "javascript:alert(1)",
+      "data:text/html,<b>x</b>",
+      `https://contoh.id/${"a".repeat(483)}`,
+    ]) {
+      expect(
+        await edit(code, {
+          intent: "add_item",
+          body: "Jadwal penyaluran beasiswa",
+          briefUrl: bad,
+        }),
+      ).toEqual({
+        errors: ["item_brief_url"],
+        intent: "add_item",
+        values: { body: "Jadwal penyaluran beasiswa", briefUrl: bad },
+      })
+    }
+    expect((await managed(code)).items).toHaveLength(2)
+    const item = await firstItem(code)
+    const base = {
+      intent: "edit_item",
+      itemId: item.id,
+      version: String(item.version),
+      body: item.body,
+    }
+    expect(
+      await edit(code, { ...base, briefUrl: "javascript:alert(1)" }),
+    ).toMatchObject({ errors: ["item_brief_url"], itemId: item.id })
+    expect((await firstItem(code)).briefUrl).toBeNull()
+    const link = "https://docs.google.com/document/d/kajian/view"
+    expect(await edit(code, { ...base, briefUrl: ` ${link} ` })).toEqual({
+      saved: "edit_item",
+      itemId: item.id,
+    })
+    expect((await firstItem(code)).briefUrl).toBe(link)
+    const saved = await firstItem(code)
+    expect(
+      await edit(code, {
+        ...base,
+        version: String(saved.version),
+        briefUrl: "",
+      }),
+    ).toEqual({ saved: "edit_item", itemId: item.id })
+    expect((await firstItem(code)).briefUrl).toBeNull()
   })
 
   test("the brief summary is length checked, saved, and cleared", async () => {

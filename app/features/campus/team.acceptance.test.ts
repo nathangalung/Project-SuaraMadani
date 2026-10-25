@@ -226,7 +226,15 @@ describe("team and settings", () => {
     expect((await send()).status).toBe(201)
   })
 
-  test("[AC-TEAM-04] Given the logo and theme settings, when an admin uploads an SVG or a script-bearing colour, then both are refused, and a PNG logo is served re-encoded as WebP that cannot run", async () => {
+  test("[AC-TEAM-04] Given the removed logo and theme settings, when an admin posts an SVG logo or a script-bearing colour, then both are refused and nothing is stored, and a logo stored earlier is still served as a WebP that cannot run", async () => {
+    const stored = async () =>
+      (
+        await su.query<{ theme: unknown; logo_hash: string | null }>(
+          "SELECT theme, logo_hash FROM organizations WHERE id = $1",
+          [orgId],
+        )
+      ).rows[0]
+    const before = await stored()
     const svg = new FormData()
     svg.set("intent", "logo")
     svg.set(
@@ -234,71 +242,53 @@ describe("team and settings", () => {
       new File(
         ['<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>'],
         "logo.svg",
-        {
-          type: "image/svg+xml",
-        },
+        { type: "image/svg+xml" },
       ),
     )
-    const refused = await app.request(`${ORIGIN}/kelola/pengaturan.data`, {
+    // Settings trimmed 25 Oct
+    const logo = await app.request(`${ORIGIN}/kelola/pengaturan.data`, {
       method: "POST",
       headers: { cookie: admin.cookie, origin: ORIGIN },
       body: svg,
     })
-    expect(await actionData<Record<string, unknown>>(refused)).toEqual({
-      error: "logo",
-    })
-    const stored = async () =>
-      (
-        await su.query<{ theme: unknown }>(
-          "SELECT theme FROM organizations WHERE id = $1",
-          [orgId],
-        )
-      ).rows[0]?.theme
-    const before = await stored()
-    const theme = await settings(admin, {
-      intent: "theme",
-      brand: "#0f55d6</style><script>alert(1)</script>",
-    })
-    expect(theme.error).toBe("theme")
+    expect(logo.status).toBe(400)
+    const theme = await postForm(
+      app,
+      `${ORIGIN}/kelola/pengaturan.data`,
+      admin.cookie,
+      { intent: "theme", brand: "#0f55d6</style><script>alert(1)</script>" },
+    )
+    expect(theme.status).toBe(400)
     expect(await stored()).toEqual(before)
-    expect(
-      await settings(admin, { intent: "theme", brand: "#0b3fa0" }),
-    ).toEqual({ saved: "theme" })
-    const home = await app.request(`${ORIGIN}/`)
-    expect(home.status).toBe(200)
-    const html = await home.text()
-    expect(html).toContain("--theme-brand:#0b3fa0")
+    const html = await (await app.request(`${ORIGIN}/`)).text()
     expect(html).not.toContain("<script>alert(1)</script>")
-    const png = await sharp({
-      create: { width: 400, height: 100, channels: 3, background: "#123456" },
+    const webp = await sharp({
+      create: { width: 40, height: 10, channels: 3, background: "#123456" },
     })
-      .png()
+      .webp()
       .toBuffer()
-    const form = new FormData()
-    form.set("intent", "logo")
-    form.set(
-      "logo",
-      new File([new Uint8Array(png)], "logo.png", { type: "image/png" }),
+    const hash = "a".repeat(16)
+    await su.query(
+      "UPDATE organizations SET logo_bytes = $2, logo_hash = $3 WHERE id = $1",
+      [orgId, webp, hash],
     )
-    const saved = await app.request(`${ORIGIN}/kelola/pengaturan.data`, {
-      method: "POST",
-      headers: { cookie: admin.cookie, origin: ORIGIN },
-      body: form,
-    })
-    expect(await actionData<Record<string, unknown>>(saved)).toEqual({
-      saved: "logo",
-    })
-    const { rows } = await su.query<{ logo_hash: string }>(
-      "SELECT logo_hash FROM organizations WHERE id = $1",
-      [orgId],
-    )
-    const file = rows[0]?.logo_hash
-    const served = await app.request(`${ORIGIN}/logo/${file}.webp`)
-    expect(served.status).toBe(200)
-    expect(served.headers.get("Content-Type")).toBe("image/webp")
-    expect(served.headers.get("Content-Security-Policy")).toContain("sandbox")
-    const bytes = new Uint8Array(await served.arrayBuffer())
-    expect(new TextDecoder().decode(bytes.subarray(8, 12))).toBe("WEBP")
+    try {
+      const served = await app.request(`${ORIGIN}/logo/${hash}.webp`)
+      expect(served.status).toBe(200)
+      expect(served.headers.get("Content-Type")).toBe("image/webp")
+      expect(served.headers.get("Content-Security-Policy")).toContain("sandbox")
+      expect(served.headers.get("X-Content-Type-Options")).toBe("nosniff")
+      const bytes = new Uint8Array(await served.arrayBuffer())
+      expect(new TextDecoder().decode(bytes.subarray(8, 12))).toBe("WEBP")
+      expect(
+        (await app.request(`${ORIGIN}/logo/${"b".repeat(16)}.webp`)).status,
+      ).toBe(404)
+    } finally {
+      await su.query(
+        "UPDATE organizations SET logo_bytes = NULL, logo_hash = NULL WHERE id = $1",
+        [orgId],
+      )
+    }
   })
 
   test("[AC-TEAM-05] Given a TOTP-verified superadmin, when they add a campus from /admin, then the campus gets its own host and an invitation for its first admin, and a taken slug is refused", async () => {

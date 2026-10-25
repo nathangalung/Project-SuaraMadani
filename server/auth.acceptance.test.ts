@@ -24,12 +24,7 @@ import {
   staffSession,
   stubTurnstile,
 } from "../e2e/app-harness.ts"
-import {
-  issueRow,
-  postForm,
-  reportToIssue,
-  submitReport,
-} from "../e2e/staff-flows.ts"
+import { postForm, reportToIssue, submitReport } from "../e2e/staff-flows.ts"
 import { AGE_CONSENT_VERSION } from "../shared/report-fields.ts"
 
 const HOST = "accauth.localhost"
@@ -346,8 +341,9 @@ describe("staff and campus boundaries", () => {
           ...headers,
         },
         body: new URLSearchParams({
-          intent: "start_review",
+          intent: "mark_unverifiable",
           from: "submitted",
+          reasonText: "Lokasi kejadian belum bisa kami pastikan dari laporan.",
         }),
       })
     // React Router refuses first, 400
@@ -363,7 +359,7 @@ describe("staff and campus boundaries", () => {
     expect(same.status).toBe(303)
   })
 
-  test("[AC-AUTH-09] Given an admin of campus A, when the same session is used on campus B, then /kelola there is 403, and an admin of both campuses gets 404 for campus A's report, issue, evidence and complaint on host B", async () => {
+  test("[AC-AUTH-09] Given an admin of campus A, when the same session is used on campus B, then /kelola there is 403, and an admin of both campuses gets 404 for campus A's report, issue and evidence on host B", async () => {
     const b = `http://${OTHER}`
     expect((await get(`${b}/kelola`, staff.cookie)).status).toBe(403)
     const both = await staffSession(HOST, orgA, person("dua"))
@@ -376,21 +372,12 @@ describe("staff and campus boundaries", () => {
       evidence: [{ name: "a.png", size: 100, type: "image/png" }],
     })
     const issue = await reportToIssue(app, su, HOST, both.cookie, sent.code)
-    const complaint = (
-      await su.query<{ code: string }>(
-        `INSERT INTO content_complaints (org_id, user_id, issue_id, public_code, submission_id, reason, part, explanation)
-         VALUES ($1, $2, $3, 'ADU-ACCAUTH-26-7K3QX', gen_random_uuid(), 'hate', 'title_summary', 'Penjelasan aduan yang cukup panjang.')
-         RETURNING public_code AS code`,
-        [orgA, owner.userId, (await issueRow(su, HOST, issue)).id],
-      )
-    ).rows[0]?.code
     const own = await get(`${ORIGIN}/kelola/laporan/${sent.code}`, both.cookie)
     expect(own.status).toBe(200)
     for (const path of [
       `/kelola/laporan/${sent.code}`,
       `/kelola/isu/${issue}`,
       `/kelola/bukti/${sent.evidence[0]?.id}/asli`,
-      `/kelola/aduan/${complaint}`,
     ]) {
       expect((await get(`${b}${path}`, both.cookie)).status).toBe(404)
     }

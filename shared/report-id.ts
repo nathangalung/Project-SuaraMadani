@@ -59,7 +59,7 @@ export function normalizeReportCode(input: string): string | null {
   return normalizeSequenceCode(input, "LPR")
 }
 
-/** Complaint codes, caller retries. */
+/** Random codes, caller retries. */
 export function generateRandomCode(
   campusCode: string,
   now: Date,

@@ -4,6 +4,8 @@ import type { DemandItemState } from "../../shared/status.ts"
 // Sample tuntutan, admin authored
 
 export const SAMPLE_MARK = "[Data sampel]"
+export const SAMPLE_BRIEF_URL =
+  "https://docs.google.com/document/d/contoh-brief-tuntutan/view"
 
 export type PlannedDemandUpdate = {
   // Index into items
@@ -33,6 +35,8 @@ export type PlannedDemand = {
   // Subcategory prefix of linked issues
   issues: string | null
   close: { daysAgo: number; note: string } | null
+  // Example external brief links
+  briefLinks?: { demand: boolean; items: number[] }
 }
 
 const responded = (
@@ -46,6 +50,7 @@ const ITB: PlannedDemand[] = [
     regencyCode: null,
     category: "bantuan_sosial",
     title: "Buka data penerima bantuan pangan per desa",
+    briefLinks: { demand: true, items: [0, 1] },
     body: `${SAMPLE_MARK} Kami menuntut daftar penerima bantuan pangan dibuka per desa dan kelurahan dalam bentuk tersamarkan, beserta jadwal penyaluran setiap bulan, agar warga bisa ikut mengawasi ketepatan sasaran.`,
     summary:
       "Daftar penerima bantuan pangan (tersamarkan) dan jadwal penyaluran dibuka per desa agar warga bisa mengawasi sasaran.",
@@ -103,6 +108,7 @@ const ITB: PlannedDemand[] = [
     regencyCode: "32.73",
     category: "infrastruktur_transportasi",
     title: "Standar layanan minimum air bersih di Kota Bandung",
+    briefLinks: { demand: true, items: [] },
     body: `${SAMPLE_MARK} Kami menuntut standar waktu pemulihan suplai air bersih saat gangguan, kewajiban tangki air bantuan bila gangguan lebih dari 24 jam, dan laporan gangguan yang terbuka untuk warga.`,
     summary:
       "Waktu pemulihan suplai air bersih ditetapkan, tangki air bantuan wajib saat gangguan panjang, dan laporan gangguan dibuka.",
@@ -326,6 +332,7 @@ const UGM: PlannedDemand[] = [
     regencyCode: "34.03",
     category: "kebencanaan",
     title: "Air bersih saat kemarau di Gunungkidul",
+    briefLinks: { demand: true, items: [2] },
     body: `${SAMPLE_MARK} Kami menuntut jadwal distribusi air bersih yang pasti selama kemarau, prioritas dusun tanpa sumber air, dan rencana jaringan pipa jangka panjang.`,
     summary:
       "Jadwal distribusi air bersih yang pasti selama kemarau dan rencana jaringan pipa untuk dusun tanpa sumber air.",

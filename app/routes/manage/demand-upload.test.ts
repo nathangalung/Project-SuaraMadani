@@ -113,6 +113,7 @@ async function published(): Promise<{ code: string; itemId: string }> {
       summary: "Kebijakan pengurangan sampah plastik sekali pakai di kampus.",
       target: "Kementerian Lingkungan Hidup",
       raisedOn: "2026-09-01",
+      briefUrl: null,
     },
     items: ["Larangan plastik sekali pakai"],
     actorId: admin,

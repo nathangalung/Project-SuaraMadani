@@ -106,7 +106,7 @@ async function publishedIssue(reportIds: string[]) {
   if (!merged.ok) throw new Error(merged.reason)
   await runPublish(
     { id: orgA, host: "itb.localhost" },
-    { issueId: merged.issueId, actorId: moderator, notify: false },
+    { issueId: merged.issueId, actorId: moderator },
     {
       purge: {
         purgeUrls: async () => ({ skipped: true }),
@@ -437,40 +437,39 @@ describe("closeAccount", () => {
       purgeUrls: async () => ({ skipped: true as const }),
       purgeHosts: async () => ({ skipped: true as const }),
     }
-    for (const action of ["refer", "claim_resolved"] as const) {
-      const { rows } = await su.query(
-        "SELECT advocacy_status, gov_status, version FROM issues WHERE id = $1",
-        [merged.issueId],
-      )
-      const done = await runIssueAction(
-        { id: orgA, host: "itb.localhost" },
-        {
-          issueId: merged.issueId,
-          seen: {
-            advocacy: rows[0]?.advocacy_status,
-            government: rows[0]?.gov_status,
-            version: rows[0]?.version,
-          },
-          actorId: moderator,
-          ...(action === "refer"
-            ? {
-                action,
-                referral: {
-                  agency: "Dinas Pendidikan Kota Bandung",
-                  channel: "agency_email",
-                  ticket: null,
-                  sentOn: "2026-10-01",
-                  deadlineOn: "2026-10-15",
-                },
-              }
-            : { action, note: null, notify: false }),
-        } as IssueActionInput,
-        { purge },
-      )
-      expect(done.ok).toBe(true)
-    }
+    const { rows } = await su.query(
+      "SELECT advocacy_status, gov_status, version FROM issues WHERE id = $1",
+      [merged.issueId],
+    )
+    const referred = await runIssueAction(
+      { id: orgA, host: "itb.localhost" },
+      {
+        issueId: merged.issueId,
+        seen: {
+          advocacy: rows[0]?.advocacy_status,
+          government: rows[0]?.gov_status,
+          version: rows[0]?.version,
+        },
+        actorId: moderator,
+        action: "refer",
+        referral: {
+          agency: "Dinas Pendidikan Kota Bandung",
+          channel: "agency_email",
+          ticket: null,
+          sentOn: "2026-10-01",
+          deadlineOn: "2026-10-15",
+        },
+      } as IssueActionInput,
+      { purge },
+    )
+    expect(referred.ok).toBe(true)
+    // Old open round, step removed
     const { rows: claim } = await su.query<{ id: string }>(
-      "SELECT id FROM resolution_claims WHERE issue_id = $1",
+      "INSERT INTO resolution_claims (org_id, issue_id, claimed_by) VALUES ($1, $2, $3) RETURNING id",
+      [orgA, merged.issueId, moderator],
+    )
+    await su.query(
+      "UPDATE issues SET gov_status = 'claimed_resolved', version = version + 1 WHERE id = $1",
       [merged.issueId],
     )
     const claimId = claim[0]?.id
@@ -482,12 +481,12 @@ describe("closeAccount", () => {
     expect(await closeAccount(input(shared), { purge })).toMatchObject({
       ok: true,
     })
-    const { rows } = await su.query(
+    const { rows: closed } = await su.query(
       `SELECT i.gov_status, c.outcome, c.basis FROM issues i
        JOIN resolution_claims c ON c.issue_id = i.id WHERE c.id = $1`,
       [claimId],
     )
-    expect(rows).toEqual([
+    expect(closed).toEqual([
       {
         gov_status: "confirmed_resolved",
         outcome: "confirmed",

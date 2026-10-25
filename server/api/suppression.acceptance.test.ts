@@ -20,8 +20,6 @@ import {
 } from "../../e2e/app-harness.ts"
 import {
   issueRow,
-  postForm,
-  publishIssue,
   reportToIssue,
   review,
   submitReport,
@@ -46,16 +44,23 @@ function person(label: string) {
   }
 }
 
-async function reject(reason: string) {
-  const owner = await signedIn(HOST, person(reason))
+let issue = ""
+
+/** Verified into the one issue. */
+async function verifiedReport(i: number) {
+  const owner = await signedIn(HOST, person(`terverifikasi${i}`))
   const { code } = await submitReport(app, HOST, owner.cookie)
-  await review(app, su, HOST, admin.cookie, code, { intent: "start_review" })
+  if (!issue) {
+    issue = await reportToIssue(app, su, HOST, admin.cookie, code)
+    return
+  }
   const res = await review(app, su, HOST, admin.cookie, code, {
-    intent: "reject",
-    reason,
-    reasonText: "Laporan ini tidak memenuhi standar yang dikutip admin.",
+    intent: "verify",
+    method: "document",
+    target: "existing",
+    issueId: (await issueRow(su, HOST, issue)).id,
   })
-  if (res.status !== 303) throw new Error(`reject ${res.status}`)
+  if (res.status !== 303) throw new Error(`verify ${res.status}`)
 }
 
 beforeAll(async () => {
@@ -67,30 +72,8 @@ beforeAll(async () => {
   restore = stubTurnstile()
   app = await fullApp()
   admin = await staffSession(HOST, orgId, person("admin"))
-  // Three verified reports, one issue
-  let issue = ""
-  for (let i = 0; i < 3; i++) {
-    const owner = await signedIn(HOST, person(`terverifikasi${i}`))
-    const { code } = await submitReport(app, HOST, owner.cookie)
-    if (i === 0) {
-      issue = await reportToIssue(app, su, HOST, admin.cookie, code)
-      await publishIssue(app, su, HOST, admin.cookie, issue)
-      continue
-    }
-    await review(app, su, HOST, admin.cookie, code, { intent: "start_review" })
-    await review(app, su, HOST, admin.cookie, code, {
-      intent: "verify",
-      method: "document",
-    })
-    await postForm(app, `${ORIGIN}/kelola/laporan/${code}`, admin.cookie, {
-      intent: "merge",
-      target: "existing",
-      issueId: (await issueRow(su, HOST, issue)).id,
-    })
-  }
-  // Two hidden, five shown
-  for (let i = 0; i < 2; i++) await reject("standard_3")
-  for (let i = 0; i < 5; i++) await reject("standard_2")
+  // Four verified, one issue
+  for (let i = 0; i < 4; i++) await verifiedReport(i)
   await createAggregateHandler({ db: database().db })({})
 })
 
@@ -112,35 +95,29 @@ async function csvCells(path: string): Promise<string[]> {
 }
 
 describe("small counts", () => {
-  test("[AC-API-09] Given region and reason counts from one to four from real reports, when the dashboard job has run and the region and reason tables are read, then those cells are empty and the minimum n is published", async () => {
-    const res = await app.request(`${ORIGIN}/api/v1/data`)
-    expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.meta.suppression.minPublicN).toBe(5)
-    const region = body.datasets.wilayah.find(
-      (row: { province_code: string; category: string; status: string }) =>
-        row.province_code === "32" &&
-        row.category === "all" &&
-        row.status === "all",
-    )
-    expect(region).toBeDefined()
-    expect(region.verified_reports).toBeNull()
-    const reasons = Object.fromEntries(
-      body.datasets.alasan.map((row: { reason: string; reports: unknown }) => [
-        row.reason,
-        row.reports,
-      ]),
-    )
-    expect(reasons).toHaveProperty("standard_3", null)
-    expect(reasons).toHaveProperty("standard_2", 5)
+  test("[AC-API-09] Given four and then five verified reports in one province, when the dashboard job has run and the region tables are read, then four is an empty cell, five is shown and the minimum n is published", async () => {
+    const province = async () => {
+      const body = await (await app.request(`${ORIGIN}/api/v1/data`)).json()
+      expect(body.meta.suppression.minPublicN).toBe(5)
+      return body.datasets.wilayah.find(
+        (row: { province_code: string; category: string; status: string }) =>
+          row.province_code === "32" &&
+          row.category === "all" &&
+          row.status === "all",
+      )
+    }
+    expect(await province()).toMatchObject({ verified_reports: null })
     for (const path of [
       "/api/v1/data/wilayah.csv",
-      "/api/v1/data/alasan.csv",
+      "/api/v1/data/wilayah-total.csv",
     ]) {
       const cells = await csvCells(path)
       expect(cells.length).toBeGreaterThan(0)
       expect(cells.filter((cell) => /^[1-4]$/.test(cell))).toEqual([])
     }
-    expect(await csvCells("/api/v1/data/alasan.csv")).toContain("5")
+    await verifiedReport(4)
+    await createAggregateHandler({ db: database().db })({})
+    expect(await province()).toMatchObject({ verified_reports: 5 })
+    expect(await csvCells("/api/v1/data/wilayah-total.csv")).toContain("5")
   })
 })
